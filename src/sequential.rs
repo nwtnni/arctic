@@ -42,25 +42,84 @@ impl<K: Key, V: Value> Map<K, V> {
     #[expect(unused_variables)]
     #[inline]
     pub fn get(&self, key: K::Borrow<'_>) -> Option<u64> {
-        todo!()
+        let mut r = K::Read::from(key);
+        let mut edge_ref = self.root();
+
+        loop {
+            let edge = edge_ref.load_packed(Ordering::Relaxed);
+            let meta = edge.meta();
+
+            let _ = meta.key().match_exact(&mut r)?;
+
+            match edge.child()? {
+                edge::Child::Node(node) => {
+                    let byte = r.next()?;
+                    let node = unsafe { node.into_ref_unchecked() };
+                    edge_ref = node.get(byte)?;
+                }
+                edge::Child::Value(value) => {
+                    return Some(value.raw());
+                }
+            }
+        }
+
     }
 
     #[expect(unused_variables)]
     #[inline]
     pub fn insert(&mut self, key: K::Borrow<'_>, value: u64) -> Option<u64> {
+        // how to do structural expansions?
         todo!()
     }
 
     #[expect(unused_variables)]
     #[inline]
     pub fn remove(&mut self, key: K::Borrow<'_>) -> Option<u64> {
-        todo!()
+        unsafe { self.write(key, |_old| Edge::DEFAULT) }
     }
 
     #[expect(unused_variables)]
     #[inline]
     pub fn update(&mut self, key: K::Borrow<'_>, value: u64) -> Option<u64> {
-        todo!()
+        unsafe { self.write(key, |old| {
+            let packed = unsafe { ribbit::Packed::<edge::Value<V>>::new_unchecked(value) };
+            old.with_value(packed)
+        }) }
+    }
+
+    #[inline]
+    unsafe fn write<F>(
+        &mut self,
+        key: K::Borrow<'_>,
+        mut exchange: F,
+    ) -> Option<V>
+    where
+        F: FnMut(ribbit::Packed<Edge<V>>) -> ribbit::Packed<Edge<V>>,
+    {
+        let mut r = K::Read::from(key);
+        let mut edge_ref = self.root();
+
+        loop {
+            let old = edge_ref.load_packed(Ordering::Relaxed);
+            let meta = old.meta();
+
+            let _ = meta.match_exact(&mut r);
+
+            match old.child()? {
+                edge::Child::Node(node) => {
+                    let b = r.next()?;
+                    let node = unsafe { node.into_ref_unchecked() };
+                    edge_ref = node.get(b)?;
+                }
+                edge::Child::Value(value) => {
+                    let new = exchange(old);
+                    edge_ref.store_packed(new, Ordering::Relaxed);
+
+                    let old_value = { old.as_value().unwrap_unchecked() }.raw();
+                    return Some(old_value);
+                }
+            }
+        }
     }
 
     pub fn iter<S: Sort>(&self) -> Iter<'_, K, V, S> {
