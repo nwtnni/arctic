@@ -64,7 +64,9 @@ pub(crate) use prefix::Prefix;
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+use core::ptr;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::Ordering;
 
 use crate::concurrent::Smr;
@@ -88,16 +90,25 @@ impl Smr for Hazard {
 struct Cache<T>(T);
 
 pub struct Global<P: ribbit::Pack<Packed: Prefix>, V: Value> {
+    membarrier: AtomicBool,
+    reclaim_threshold: usize,
+    global: Cache<AtomicPtr<Batch<P, V>>>,
+
     // FIXME: jagged/triangular array
     hazards: [Cache<ribbit::Atomic<P>>; smr::thread::MAX],
     locals: [UnsafeCell<Local<P, V>>; smr::thread::MAX],
-    membarrier: AtomicBool,
-    reclaim_threshold: usize,
     value: PhantomData<V>,
+}
+
+struct Batch<P: ribbit::Pack, T> {
+    next: *mut Self,
+    _type: PhantomData<T>,
+    free: Vec<(ribbit::Packed<P>, u64)>,
 }
 
 impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Default for Global<P, V> {
     fn default() -> Self {
+        const RECLAIM_THRESHOLD: usize = 64;
         Self {
             hazards: core::array::from_fn(|_| {
                 Cache(ribbit::Atomic::new_packed(
@@ -109,11 +120,13 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Default for Global<P, V> {
                     cycle: 0,
                     snapshot: Vec::new(),
                     retired: Vec::new(),
+                    free: Vec::with_capacity(RECLAIM_THRESHOLD),
                     _value: PhantomData,
                 })
             }),
+            global: Cache(AtomicPtr::default()),
             membarrier: AtomicBool::new(false),
-            reclaim_threshold: 64,
+            reclaim_threshold: RECLAIM_THRESHOLD,
             value: PhantomData,
         }
     }
@@ -124,6 +137,9 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Global<P, V> {
     #[must_use]
     pub fn with_reclaim_threshold(mut self, reclaim_threshold: usize) -> Self {
         self.reclaim_threshold = reclaim_threshold;
+        self.locals
+            .iter_mut()
+            .for_each(|local| local.get_mut().free.reserve(reclaim_threshold));
         self
     }
 
@@ -183,7 +199,11 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> smr::Global<P, V> for Box<Global
 pub struct Local<P: ribbit::Pack<Packed: Prefix>, V> {
     cycle: usize,
     snapshot: Vec<ribbit::Packed<P>>,
+
     retired: Vec<(ribbit::Packed<P>, u64)>,
+
+    free: Vec<(ribbit::Packed<P>, u64)>,
+
     _value: PhantomData<V>,
 }
 
@@ -237,12 +257,81 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Global<P, V> {
                 }
             }
 
-            deallocate::<P, V>(*prefix, *raw, stat::Counter::FreeRetire);
+            local.free.push((*prefix, *raw));
+
+            // deallocate::<P, V>(*prefix, *raw, stat::Counter::FreeRetire);
             false
         });
 
         local.snapshot.clear();
-        stat::record(stat::Record::Flush, freed);
+
+        let mut old = global.global.0.load(Ordering::Acquire);
+        let mut ptr = old.map_addr(|old| old & ((1usize << 48) - 1));
+        let mut len = (old as usize) >> 48;
+
+        while len >= 8 {
+            match global.global.0.compare_exchange(
+                old,
+                ptr::null_mut(),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                // failure means someone else has pushed or popped
+                Err(conflict) => {
+                    old = conflict;
+                    ptr = old.map_addr(|old| old & ((1usize << 48) - 1));
+                    len = (old as usize) >> 48;
+                }
+            }
+        }
+
+        // cas must have been successful
+        if len >= 8 {
+            local.free.drain(..).for_each(|(prefix, raw)| {
+                deallocate::<P, V>(prefix, raw, stat::Counter::FreeRetire)
+            });
+
+            while let Some(walk) = unsafe { ptr.as_mut() } {
+                len -= 1;
+                walk.free.drain(..).for_each(|(prefix, raw)| {
+                    deallocate::<P, V>(prefix, raw, stat::Counter::FreeRetire)
+                });
+
+                let next = walk.next;
+                unsafe { ptr::drop_in_place(ptr) };
+                ptr = next;
+            }
+
+            validate_eq!(len, 0);
+            stat::record(stat::Record::Flush, freed);
+        }
+        // local queue full, push to global queue
+        else if local.free.len() >= global.reclaim_threshold {
+            let new = Box::leak(Box::new(Batch {
+                next: ptr::null_mut(),
+                free: local.free.drain(..).collect(),
+                _type: PhantomData,
+            })) as *mut Batch<P, V>;
+
+            loop {
+                unsafe { (*new).next = ptr };
+
+                match global.global.0.compare_exchange(
+                    old,
+                    new.map_addr(|new| new | ((len + 1) << 48)),
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => break,
+                    Err(conflict) => {
+                        old = conflict;
+                        ptr = old.map_addr(|old| old & ((1usize << 48) - 1));
+                        len = (old as usize) >> 48;
+                    }
+                }
+            }
+        }
     }
 }
 
