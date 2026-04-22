@@ -312,6 +312,17 @@ mod tests {
         map.insert(0u64, 1u64).unwrap_err();
     }
 
+    #[test]
+    fn smoke_key_slice() {
+        let keys = [b"ad".as_slice(), b"abc".as_slice()];
+        let map = crate::concurrent::Map::<&[u8], u64>::new();
+        map.insert(keys[0], 0).unwrap_or_else(|(_, _)| panic!());
+        map.insert(keys[1], 1).unwrap_or_else(|(_, _)| panic!());
+        let temp = b"adabc".to_vec();
+        assert_eq!(map.get(&temp[..2]).as_deref().copied(), Some(0));
+        assert_eq!(map.get(&temp[2..]).as_deref().copied(), Some(1));
+    }
+
     fn insert_all<I, K>(iter: I) -> Map<K, u64>
     where
         I: IntoIterator<Item = K>,
@@ -326,7 +337,7 @@ mod tests {
         let mut map = Map::default();
 
         for (key, value) in &keys {
-            map.upsert(key.borrow(), *value);
+            map.upsert(key.borrow_insert(), *value);
             assert_eq!(map.get(key.borrow()).as_deref().copied(), Some(*value));
         }
 

@@ -1,5 +1,6 @@
 pub mod dynamic;
 pub mod integer;
+pub mod slice;
 
 use core::fmt;
 use core::marker::PhantomData;
@@ -8,9 +9,10 @@ use crate::raw::edge;
 
 pub trait Key {
     type Borrow<'k>: Copy;
+    type BorrowInsert<'k>: Copy;
 
     #[expect(private_bounds)]
-    type Read<'k>: Read<Edge = Self::Edge> + From<Self::Borrow<'k>>;
+    type Read<'k>: Read<Edge = Self::Edge> + From<Self::Borrow<'k>> + From<Self::BorrowInsert<'k>>;
 
     #[expect(private_bounds)]
     type Write: Write<Edge = Self::Edge> + for<'k> From<Self::Read<'k>>;
@@ -25,6 +27,8 @@ pub trait Key {
     fn clone_from_borrow<'k>(borrow: Self::Borrow<'k>) -> Self;
 
     fn borrow<'k>(&'k self) -> Self::Borrow<'k>;
+
+    fn borrow_insert<'k>(&'k self) -> Self::BorrowInsert<'k>;
 
     // Key length in bytes
     fn len(borrow: Self::Borrow<'_>) -> usize;
@@ -92,7 +96,7 @@ pub(crate) trait Read: Copy + fmt::Debug + Default {
     fn common_prefix(self, other: Self) -> Self;
 }
 
-pub(crate) trait Write: Clone + fmt::Debug + Default + Ord {
+pub(crate) trait Write: Clone + fmt::Debug + Default {
     type Len: Copy;
     type Edge: ribbit::Pack<Packed: edge::Meta>;
 
@@ -175,11 +179,17 @@ macro_rules! impl_unsigned_int {
                 type Read<'k> = integer::Reader<$ty>;
                 type Write = integer::Writer<$ty>;
                 type Borrow<'k> = Self;
+                type BorrowInsert<'k> = Self;
 
                 type Edge = edge::Be;
 
                 #[inline]
                 fn borrow(&self) -> Self {
+                    *self
+                }
+
+                #[inline]
+                fn borrow_insert(&self) -> Self {
                     *self
                 }
 
@@ -223,6 +233,11 @@ impl Key for u64 {
     }
 
     #[inline]
+    fn borrow_write(&self) -> Self {
+        *self
+    }
+
+    #[inline]
     fn clone_from_borrow<'k>(borrow: Self::Borrow<'k>) -> Self {
         borrow
     }
@@ -252,11 +267,17 @@ impl Key for Vec<u8> {
     type Read<'k> = dynamic::Reader<'k>;
     type Write = dynamic::Writer;
     type Borrow<'k> = &'k [u8];
+    type BorrowInsert<'k> = &'k [u8];
 
     type Edge = edge::Le;
 
     #[inline]
     fn borrow<'k>(&'k self) -> Self::Borrow<'k> {
+        self
+    }
+
+    #[inline]
+    fn borrow_insert(&self) -> Self::Borrow<'_> {
         self
     }
 
@@ -299,11 +320,17 @@ impl Key for String {
     type Read<'k> = dynamic::Reader<'k>;
     type Write = dynamic::Writer;
     type Borrow<'k> = &'k str;
+    type BorrowInsert<'k> = &'k str;
 
     type Edge = edge::Le;
 
     #[inline]
     fn borrow<'k>(&'k self) -> Self::Borrow<'k> {
+        self
+    }
+
+    #[inline]
+    fn borrow_insert(&self) -> Self::Borrow<'_> {
         self
     }
 

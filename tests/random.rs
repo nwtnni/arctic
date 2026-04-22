@@ -238,7 +238,7 @@ where
 
                 for (index, key) in chunk {
                     let value = key_set.value(*index);
-                    map.insert(key.borrow(), value)
+                    map.insert(key.borrow_insert(), value)
                         .ok()
                         .as_deref()
                         .expect("Key should not be present");

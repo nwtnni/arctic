@@ -93,7 +93,7 @@ where
     ) -> Self::SystemUnderTest {
         match transition {
             Transition::Upsert(key, value) => {
-                state.0.upsert(K::borrow(&key), value);
+                state.0.upsert(K::borrow_insert(&key), value);
             }
             Transition::Remove(key) => {
                 state.0.remove(K::borrow(&key));

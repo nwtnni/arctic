@@ -437,7 +437,7 @@ where
     }
 
     #[inline]
-    pub fn upsert(&self, key: K::Borrow<'_>, value: V) -> Upserted<'_, K, V, S> {
+    pub fn upsert(&self, key: K::BorrowInsert<'_>, value: V) -> Upserted<'_, K, V, S> {
         match self.upsert_with(key, Some(value), |_, new| {
             ControlFlow::<(), _>::Continue(new.take().expect("Value is always initialized"))
         }) {
@@ -449,7 +449,7 @@ where
     #[inline]
     pub fn insert(
         &self,
-        key: K::Borrow<'_>,
+        key: K::BorrowInsert<'_>,
         value: V,
     ) -> Result<Shared<K, V, S>, (Shared<K, V, S>, V)> {
         let mut value = Some(value);
@@ -467,7 +467,7 @@ where
     #[inline]
     pub fn insert_with<F>(
         &self,
-        key: K::Borrow<'_>,
+        key: K::BorrowInsert<'_>,
         insert: F,
     ) -> Result<Shared<K, V, S>, (Shared<K, V, S>, Option<V>)>
     where
@@ -492,7 +492,7 @@ where
     #[inline]
     pub fn upsert_with<F>(
         &self,
-        key: K::Borrow<'_>,
+        key: K::BorrowInsert<'_>,
         initial: Option<V>,
         mut upsert: F,
     ) -> Upsert<K, V, S>
@@ -514,7 +514,7 @@ where
     #[inline]
     fn upsert_with_optimistic<F>(
         &self,
-        key: K::Borrow<'_>,
+        key: K::BorrowInsert<'_>,
         initial: Option<V>,
         upsert: F,
     ) -> Result<Upsert<K, V, S>, Option<V>>
@@ -527,7 +527,7 @@ where
     #[cold]
     fn upsert_with_pessimistic<F>(
         &self,
-        key: K::Borrow<'_>,
+        key: K::BorrowInsert<'_>,
         initial: Option<V>,
         upsert: F,
     ) -> Upsert<K, V, S>
@@ -544,7 +544,7 @@ where
     #[inline]
     fn upsert_with_impl<'k, H, F>(
         &self,
-        key: K::Borrow<'k>,
+        key: K::BorrowInsert<'k>,
         mut initial: Option<V>,
         mut upsert: F,
     ) -> Result<Upsert<K, V, S>, Option<V>>

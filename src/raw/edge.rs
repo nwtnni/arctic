@@ -1,9 +1,11 @@
 mod be;
 mod le;
+mod slice;
 
 pub(crate) use be::Be;
 pub(crate) use le::Le;
 use ribbit::u6;
+pub(crate) use slice::Slice;
 
 use core::fmt::Debug;
 use core::ops::Add;
