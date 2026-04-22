@@ -138,13 +138,17 @@ impl From<Reader> for Writer {
 pub struct Writer(Vec<u8>);
 
 impl key::Write for Writer {
-    type Len = ();
+    type Len = usize;
     type Edge = edge::Slice;
 
-    fn len_from_bits(_: usize) -> Self::Len {}
+    fn len_from_bits(bits: usize) -> Self::Len {
+        bits >> 3
+    }
 
     fn write(&mut self, start: Self::Len, edge: ribbit::Packed<Self::Edge>) -> Self::Len {
-        todo!()
+        validate_eq!(self.0.len(), start);
+        self.0.extend(unsafe { edge.as_slice() });
+        self.0.len()
     }
 
     fn replace(
@@ -153,6 +157,10 @@ impl key::Write for Writer {
         node: u8,
         edge: ribbit::Packed<Self::Edge>,
     ) -> Self::Len {
-        todo!()
+        validate!(start <= self.0.len());
+        self.0.truncate(start);
+        self.0.push(node);
+        self.0.extend(unsafe { edge.as_slice() });
+        self.0.len()
     }
 }
