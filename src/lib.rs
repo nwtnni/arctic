@@ -323,6 +323,20 @@ mod tests {
         assert_eq!(map.get(&temp[2..]).as_deref().copied(), Some(1));
     }
 
+    #[test]
+    fn key_slice_long_prefix() {
+        let keys = (0..10)
+            .map(|i| "a".repeat(100) + &i.to_string())
+            .collect::<Vec<_>>();
+        let map = crate::concurrent::Map::<&[u8], u64>::new();
+        for (i, key) in keys.iter().enumerate() {
+            map.insert(key.as_bytes(), i as u64).unwrap();
+        }
+        for (i, key) in keys.iter().enumerate() {
+            assert_eq!(map.get(key.as_bytes()).as_deref().copied(), Some(i as u64));
+        }
+    }
+
     fn insert_all<I, K>(iter: I) -> Map<K, u64>
     where
         I: IntoIterator<Item = K>,

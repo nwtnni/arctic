@@ -103,10 +103,15 @@ impl edge::Meta for SlicePacked {
     }
 
     #[inline]
-    fn compress(self, _byte: u8, _child: Self) -> Option<Self> {
+    fn compress(self, byte: u8, child: Self) -> Option<Self> {
         validate!(self.frozen());
-
         todo!()
+        //
+        // let parent = unsafe { self.as_slice() };
+        // let child = unsafe { child.as_slice() };
+        // let len = u16::try_from(parent.len() + 1 + child.len())
+        //     .ok()
+        //     .and_then(|len| u14::try_from(len).ok())?;
     }
 }
 
