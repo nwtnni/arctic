@@ -571,7 +571,7 @@ where
                         // Restore value and fall through to freeze
                         Err(Frozen) => initial = Some(unsafe { V::from_raw(new_value) }),
 
-                        Ok(new) => match cursor.edge().compare_exchange_packed(
+                        Ok((new, _)) => match cursor.edge().compare_exchange_packed(
                             old,
                             new,
                             Ordering::AcqRel,

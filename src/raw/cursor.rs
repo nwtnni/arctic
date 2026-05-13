@@ -240,7 +240,13 @@ where
         &self,
         old: ribbit::Packed<Edge<R::Edge>>,
         value: u64,
-    ) -> Result<ribbit::Packed<Edge<R::Edge>>, Frozen> {
+    ) -> Result<
+        (
+            ribbit::Packed<Edge<R::Edge>>,
+            Option<NonNull<ribbit::Atomic<Edge<R::Edge>>>>,
+        ),
+        Frozen,
+    > {
         if old.meta().is_frozen() {
             return Err(Frozen);
         }
@@ -248,19 +254,18 @@ where
         let new = match self.reader.expand(old.meta()) {
             Err(_) => Edge::new_path(self.reader, value),
             Ok((start, old_middle, new_middle, end)) => {
+                let (head, _) =
+                    Edge::new_path(self.reader.suffix(R::Len::BYTE + start.len().into()), value);
+
                 // NOTE: must put new allocation first because
                 // `deallocate_recursive` recurses on first edge
-                Node3::new_expand(
+                let (head, tail) = Node3::new_expand(
                     start,
                     [new_middle, old_middle],
-                    [
-                        Edge::new_path(
-                            self.reader.suffix(R::Len::BYTE + start.len().into()),
-                            value,
-                        ),
-                        old.with_meta(old.meta().with_key(end)),
-                    ],
-                )
+                    [head, old.with_meta(old.meta().with_key(end))],
+                );
+
+                (head, Some(tail))
             }
         };
 

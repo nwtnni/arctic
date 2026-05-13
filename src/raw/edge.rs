@@ -56,13 +56,19 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
     }
 
     #[inline]
-    pub(crate) fn new_path<R>(mut reader: R, value: u64) -> ribbit::Packed<Self>
+    pub(crate) fn new_path<R>(
+        mut reader: R,
+        value: u64,
+    ) -> (
+        ribbit::Packed<Self>,
+        Option<NonNull<ribbit::Atomic<Edge<M>>>>,
+    )
     where
         R: key::Read<Edge = M>,
     {
         let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
         let Some(byte) = reader.get_byte(edge.len()) else {
-            return Self::new_value(edge, value);
+            return (Self::new_value(edge, value), None);
         };
 
         reader = reader.suffix(R::Len::BYTE + edge.len().into());
@@ -80,7 +86,7 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
             crate::cold();
         }
 
-        Node3::new_path(edge, byte, || {
+        let (head, tail) = Node3::new_path(edge, byte, || {
             let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
             match reader.get_byte(edge.len()) {
                 None => ControlFlow::Break((edge, value)),
@@ -89,7 +95,9 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
                     ControlFlow::Continue((edge, byte))
                 }
             }
-        })
+        });
+
+        (head, Some(tail))
     }
 
     #[inline]

@@ -27,6 +27,8 @@ pub use key::Key;
 pub(crate) use map::Map;
 
 pub(crate) use int::Int;
+
+#[derive(Debug)]
 pub(crate) struct Frozen;
 
 /// Structural modification operation.

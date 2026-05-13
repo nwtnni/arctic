@@ -101,12 +101,19 @@ where
                 value: unsafe { cursor.as_value_unchecked().cast::<V>() },
                 _value: PhantomData,
             }),
+
             raw::cursor::Insert::Value {
                 old_value: None,
                 old: _,
-            }
-            | raw::cursor::Insert::Replace { .. } => Entry::Vacant(entry::Vacant {
+            } => Entry::Vacant(entry::Vacant {
                 cursor,
+                replace: false,
+                _value: PhantomData,
+            }),
+
+            raw::cursor::Insert::Replace { .. } => Entry::Vacant(entry::Vacant {
+                cursor,
+                replace: true,
                 _value: PhantomData,
             }),
         }

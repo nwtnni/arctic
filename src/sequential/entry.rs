@@ -2,10 +2,10 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::raw::Cursor;
+use crate::raw::Edge;
 use crate::raw::Frozen;
 use crate::raw::Key;
 use crate::raw::cursor::path;
-use crate::raw::edge::Meta as _;
 use crate::sequential::Value;
 use crate::stat;
 
@@ -59,6 +59,7 @@ impl<'g, 'k, K: Key, V: Value + Default + 'g> Entry<'g, 'k, K, V> {
 
 pub struct Vacant<'g, 'k, K: Key, V: Value + 'g> {
     pub(super) cursor: Cursor<'g, K::Read<'k>, path::Discard>,
+    pub(super) replace: bool,
     pub(super) _value: PhantomData<&'g V>,
 }
 
@@ -75,32 +76,40 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
 
     pub fn insert_entry(mut self, value: V) -> Occupied<'g, V> {
         let new_value = V::into_raw(value);
-        loop {
-            match self.cursor.traverse_insert() {
-                crate::raw::cursor::Insert::Value { old_value, old } => {
-                    match self.cursor.create_path(old, new_value) {
-                        Err(Frozen) => unreachable!(),
-                        Ok(new) => {
-                            validate!(old_value.is_none());
-                            unsafe {
-                                self.cursor.edge_mut().set_packed(new);
-                                return Occupied {
-                                    value: self.cursor.as_value_unchecked().cast::<V>(),
-                                    _value: PhantomData,
-                                };
-                            };
-                        }
-                    }
-                }
-                crate::raw::cursor::Insert::Replace { old_node, old } => {
-                    validate!(!old.meta().is_frozen());
-                    let (_smo, new) = unsafe { old_node.replace::<false>(old.meta()) };
-                    unsafe { self.cursor.edge_mut() }.set_packed(new);
-                    if let Some(node) = old.as_node() {
-                        unsafe { node.deallocate(stat::Counter::FreeRetire) };
-                    }
-                }
+
+        if self.replace {
+            let old = unsafe { self.cursor.edge_mut().get_packed() };
+            let old_node = old.as_node().expect("Replace implies node");
+            let (_smo, new) = unsafe { old_node.replace::<false>(old.meta()) };
+            unsafe { self.cursor.edge_mut() }.set_packed(new);
+            unsafe { old_node.deallocate(stat::Counter::FreeRetire) };
+        }
+
+        match self.cursor.traverse_insert() {
+            crate::raw::cursor::Insert::Value {
+                old_value: Some(_),
+                old: _,
             }
+            | crate::raw::cursor::Insert::Replace { .. } => unreachable!(),
+            crate::raw::cursor::Insert::Value {
+                old_value: None,
+                old,
+            } => match self.cursor.create_path(old, new_value) {
+                Err(Frozen) => unreachable!(),
+                Ok((head, tail)) => unsafe {
+                    self.cursor.edge_mut().set_packed(head);
+
+                    let value = match tail {
+                        None => self.cursor.as_value_unchecked(),
+                        Some(tail) => Edge::as_value_unchecked(tail),
+                    };
+
+                    Occupied {
+                        value: value.cast::<V>(),
+                        _value: PhantomData,
+                    }
+                },
+            },
         }
     }
 }

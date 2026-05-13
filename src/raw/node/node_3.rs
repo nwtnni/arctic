@@ -107,7 +107,7 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
         meta: ribbit::Packed<M>,
         keys: [u8; 2],
         edges: [ribbit::Packed<Edge<M>>; 2],
-    ) -> ribbit::Packed<Edge<M>> {
+    ) -> (ribbit::Packed<Edge<M>>, NonNull<ribbit::Atomic<Edge<M>>>) {
         let mut node = Box::new(Self::default());
 
         node.header.set_packed(ribbit::Packed::<Header>::new(
@@ -118,14 +118,16 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
         node.edges[0].set_packed(edges[0]);
         node.edges[1].set_packed(edges[1]);
 
-        Edge::new_node(meta, node::Ptr::new_node_3(node))
+        let tail = NonNull::from(&node.edges[0]);
+        let head = Edge::new_node(meta, node::Ptr::new_node_3(node));
+        (head, tail)
     }
 
     pub(crate) fn new_path<F>(
         meta: ribbit::Packed<M>,
         byte: u8,
         mut next: F,
-    ) -> ribbit::Packed<Edge<M>>
+    ) -> (ribbit::Packed<Edge<M>>, NonNull<ribbit::Atomic<Edge<M>>>)
     where
         F: FnMut() -> ControlFlow<(ribbit::Packed<M>, u64), (ribbit::Packed<M>, u8)>,
     {
@@ -136,7 +138,7 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
             const { u2::new(1) },
         ));
 
-        let mut tail = NonNull::from(&head.as_ref().edges[0]);
+        let mut tail = NonNull::from(&head.edges[0]);
 
         loop {
             match next() {
@@ -161,6 +163,7 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
             }
         }
 
-        Edge::<M>::new_node(meta, node::Ptr::new_node_3(head))
+        let head = Edge::<M>::new_node(meta, node::Ptr::new_node_3(head));
+        (head, tail)
     }
 }
