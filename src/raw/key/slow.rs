@@ -94,11 +94,6 @@ impl key::Read for Reader {
     }
 
     #[inline]
-    fn trim(&mut self, len: Self::Len) {
-        self.len -= len;
-    }
-
-    #[inline]
     fn prefix(self, end: Self::Len) -> Self {
         let mut buffer = [0u8; 8];
         buffer[..end.bytes()].copy_from_slice(&self.buffer[..end.bytes()]);

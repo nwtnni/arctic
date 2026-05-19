@@ -366,6 +366,6 @@ where
     #[inline]
     pub(crate) fn trim(&mut self, len: R::Len) {
         self.path.trim(len);
-        self.reader.trim(len);
+        self.reader = self.reader.prefix(self.reader.len() - len);
     }
 }

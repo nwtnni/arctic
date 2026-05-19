@@ -168,11 +168,6 @@ impl<const N: usize> key::Read for Reader<'_, N> {
     }
 
     #[inline]
-    fn trim(&mut self, len: Self::Len) {
-        self.0 = &self.0[..(self.len() - len).0]
-    }
-
-    #[inline]
     fn prefix(self, end: Self::Len) -> Self {
         validate!(end <= self.len());
         Reader(&self.0[..end.0])

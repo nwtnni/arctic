@@ -91,8 +91,6 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
         (),
     >;
 
-    fn trim(&mut self, len: Self::Len);
-
     fn prefix(self, end: Self::Len) -> Self;
     fn suffix(self, start: Self::Len) -> Self;
     fn common_prefix(self, other: Self) -> Self;

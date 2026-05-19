@@ -68,7 +68,7 @@ where
     fn trim(&mut self, len: R::Len) {
         self.0
             .iter_mut()
-            .for_each(|segment| segment.reader.trim(len))
+            .for_each(|segment| segment.reader = segment.reader.prefix(segment.reader.len() - len))
     }
 
     #[inline]

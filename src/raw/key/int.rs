@@ -102,11 +102,6 @@ impl<I: Int> key::Read for Reader<I> {
     }
 
     #[inline]
-    fn trim(&mut self, len: Self::Len) {
-        self.len -= len;
-    }
-
-    #[inline]
     fn prefix(self, end: Self::Len) -> Self {
         validate!(end <= self.len());
 
