@@ -261,27 +261,3 @@ impl SubAssign for Len {
         self.0 -= rhs.0;
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use crate::raw::key::tests::take_all;
-//
-//     #[test]
-//     fn smoke() {
-//         take_all_u64(0x1234_5678_9ABC_DEF0u64, &[7, 1]);
-//     }
-//
-//     #[test]
-//     fn take_0() {
-//         take_all_u64(0x1234_5678_9ABC_DEF0u64, &[0, 1, 0]);
-//     }
-//
-//     #[test]
-//     fn take_1() {
-//         take_all_u64(0x1234_5678_9ABC_DEF0u64, &[1, 1, 1, 1, 1, 1, 1, 1]);
-//     }
-//
-//     fn take_all_u64(key: u64, lens: &[usize]) {
-//         take_all::<u64>(key.to_be_bytes().as_slice(), &key, lens)
-//     }
-// }
