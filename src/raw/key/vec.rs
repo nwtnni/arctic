@@ -1,4 +1,3 @@
-use core::cmp::Ordering;
 use core::fmt;
 use core::ops::Add;
 use core::ops::AddAssign;
@@ -29,66 +28,23 @@ impl Key for Vec<u8> {
 
     #[inline]
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
-        let (last, key) = writer.0.split_last().expect("Vec has terminator");
-        validate_eq!(*last, TERMINATOR[0]);
-        key
+        &writer.0
     }
 
     #[inline]
-    unsafe fn from_writer_unchecked(mut writer: Self::Write) -> Self {
-        let last = writer.0.pop().expect("Vec has terminator");
-        validate_eq!(last, TERMINATOR[0]);
+    unsafe fn from_writer_unchecked(writer: Self::Write) -> Self {
         writer.0
     }
 }
 
-impl Key for String {
-    type Read<'k> = Reader<'k, { usize::MAX }>;
-    type Write = Writer;
-    type Borrowed = str;
-    type Edge = edge::Le;
-    type Len = Len;
-
-    #[inline]
-    fn clone_from_borrow(borrow: &Self::Borrowed) -> Self {
-        String::from(borrow)
-    }
-
-    #[inline]
-    unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
-        let (last, key) = writer.0.split_last().expect("Vec has terminator");
-        validate_eq!(*last, TERMINATOR[0]);
-
-        if_validate!(core::str::from_utf8(key).unwrap(), unsafe {
-            core::str::from_utf8_unchecked(key)
-        })
-    }
-
-    #[inline]
-    unsafe fn from_writer_unchecked(mut writer: Self::Write) -> Self {
-        let last = writer.0.pop().expect("Vec has terminator");
-        validate_eq!(last, TERMINATOR[0]);
-
-        if_validate!(String::from_utf8(writer.0).unwrap(), unsafe {
-            String::from_utf8_unchecked(writer.0)
-        })
-    }
-}
-
-// https://github.com/surrealdb/vart/issues/13
-static TERMINATOR: &[u8] = &[0];
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Reader<'k, const N: usize> {
-    pub(crate) slice: &'k [u8],
-    pub(crate) terminate: bool,
-}
+pub struct Reader<'k, const N: usize>(pub(crate) &'k [u8]);
 
 impl<'k, const N: usize> Reader<'k, N> {
     #[inline]
     fn next_u64(&self) -> u64 {
-        if self.slice.len() >= 8 {
-            return unsafe { self.slice.as_ptr().cast::<u64>().read_unaligned() };
+        if self.0.len() >= 8 {
+            return unsafe { self.0.as_ptr().cast::<u64>().read_unaligned() };
         }
 
         // FIXME: try to avoid memcpy?
@@ -96,8 +52,7 @@ impl<'k, const N: usize> Reader<'k, N> {
         // https://github.com/rust-lang/rust/issues/92993
         // https://github.com/rust-lang/rust/pull/37573
         let mut buffer = [0u8; 8];
-        buffer[..self.slice.len()].copy_from_slice(self.slice);
-        buffer[self.slice.len()] = if self.terminate { TERMINATOR[0] } else { 0 };
+        buffer[..self.0.len()].copy_from_slice(self.0);
 
         u64::from_le_bytes(buffer)
     }
@@ -106,10 +61,7 @@ impl<'k, const N: usize> Reader<'k, N> {
 impl<'k> From<&'k [u8]> for Reader<'k, { usize::MAX }> {
     #[inline]
     fn from(key: &'k [u8]) -> Self {
-        Self {
-            slice: key,
-            terminate: true,
-        }
+        Self(key)
     }
 }
 
@@ -120,27 +72,10 @@ impl<'k> From<&'k Vec<u8>> for Reader<'k, { usize::MAX }> {
     }
 }
 
-impl<'k> From<&'k str> for Reader<'k, { usize::MAX }> {
-    #[inline]
-    fn from(key: &'k str) -> Self {
-        Self::from(key.as_bytes())
-    }
-}
-
-impl<'k> From<&'k String> for Reader<'k, { usize::MAX }> {
-    #[inline]
-    fn from(key: &'k String) -> Self {
-        Self::from(key.as_str())
-    }
-}
-
 impl<const N: usize> Default for Reader<'_, N> {
     #[inline]
     fn default() -> Self {
-        Self {
-            slice: &[],
-            terminate: false,
-        }
+        Self(&[])
     }
 }
 
@@ -152,7 +87,7 @@ impl<const N: usize> key::Read for Reader<'_, N> {
 
     #[inline]
     fn len(&self) -> Self::Len {
-        Len(self.slice.len() + self.terminate as usize)
+        Len(self.0.len())
     }
 
     #[inline]
@@ -166,17 +101,7 @@ impl<const N: usize> key::Read for Reader<'_, N> {
 
     #[inline]
     fn get_byte(&self, index: u6) -> Option<u8> {
-        let index = index.bytes();
-
-        if let Some(byte) = self.slice.get(index) {
-            return Some(*byte);
-        }
-
-        if self.terminate && index == self.slice.len() {
-            Some(TERMINATOR[0])
-        } else {
-            None
-        }
+        self.0.get(index.bytes()).copied()
     }
 
     #[inline]
@@ -197,61 +122,21 @@ impl<const N: usize> key::Read for Reader<'_, N> {
 
     #[inline]
     fn prefix(self, end: Self::Len) -> Self {
-        let end = end.bytes();
-
-        if end <= self.slice.len() {
-            Self {
-                slice: &self.slice[..end],
-                terminate: false,
-            }
-        } else {
-            Self {
-                slice: &TERMINATOR[..end - self.slice.len()],
-                terminate: false,
-            }
-        }
+        Self(&self.0[..end.bytes()])
     }
 
     #[inline]
     fn suffix(self, start: Self::Len) -> Self {
         validate!(start <= self.len());
-        let start = start.bytes();
-
-        if start <= self.slice.len() {
-            Self {
-                slice: &self.slice[start..],
-                terminate: self.terminate,
-            }
-        } else {
-            Self {
-                slice: &TERMINATOR[start - self.slice.len()..],
-                terminate: false,
-            }
-        }
+        Self(&self.0[start.bytes()..])
     }
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        match core::iter::zip(self.slice, other.slice).position(|(l, r)| *l != *r) {
-            Some(index) => Self {
-                slice: &self.slice[..index],
-                terminate: false,
-            },
-            None => match self.slice.len().cmp(&other.slice.len()) {
-                Ordering::Less => Self {
-                    slice: self.slice,
-                    terminate: false,
-                },
-                Ordering::Equal => Self {
-                    slice: self.slice,
-                    terminate: self.terminate && other.terminate,
-                },
-                Ordering::Greater => Self {
-                    slice: other.slice,
-                    terminate: false,
-                },
-            },
-        }
+        let index = core::iter::zip(self.0, other.0)
+            .position(|(l, r)| l != r)
+            .unwrap_or_else(|| self.0.len().min(other.0.len()));
+        Self(&self.0[..index])
     }
 
     fn expand(
@@ -298,11 +183,7 @@ impl<'k> key::Write<Reader<'k, { usize::MAX }>> for Writer {
     fn new(prefix: Reader<'k, { usize::MAX }>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         let mut buffer = Vec::new();
-        buffer.extend_from_slice(prefix.slice);
-        if prefix.terminate {
-            buffer.push(TERMINATOR[0]);
-            validate_eq!(key.len().bits(), 0);
-        }
+        buffer.extend_from_slice(prefix.0);
         buffer.extend(key);
         (Writer(buffer), len)
     }

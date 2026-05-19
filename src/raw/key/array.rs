@@ -33,10 +33,7 @@ impl<const N: usize> Key for [u8; N] {
 impl<'k, const N: usize> From<&'k [u8; N]> for key::vec::Reader<'k, N> {
     #[inline]
     fn from(array: &'k [u8; N]) -> Self {
-        key::vec::Reader {
-            slice: array.as_slice(),
-            terminate: false,
-        }
+        key::vec::Reader(array.as_slice())
     }
 }
 
@@ -55,12 +52,10 @@ impl<'k, const N: usize> key::Write<key::vec::Reader<'k, N>> for Writer<N> {
 
     #[inline]
     fn new(prefix: key::vec::Reader<'k, N>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
-        validate!(!prefix.terminate);
-
         let len = prefix.len() + key.len().into();
         let mut buffer = [0u8; N];
-        buffer[..prefix.slice.len()].copy_from_slice(prefix.slice);
-        buffer[prefix.slice.len()..]
+        buffer[..prefix.0.len()].copy_from_slice(prefix.0);
+        buffer[prefix.0.len()..]
             .iter_mut()
             .zip(key)
             .for_each(|(out, r#in)| {

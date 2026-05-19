@@ -2,6 +2,7 @@ pub mod array;
 mod discard;
 pub mod int;
 pub mod slow;
+pub mod string;
 pub mod vec;
 
 pub(crate) use discard::Discard;

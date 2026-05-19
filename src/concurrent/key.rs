@@ -27,7 +27,7 @@ impl Key for String {
 
     #[inline]
     fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
-        hazard_vec(reader)
+        hazard_string(reader)
     }
 }
 
@@ -88,6 +88,19 @@ fn hazard_integer<I: Int>(reader: key::int::Reader<I>) -> ribbit::Packed<hazard:
 
 #[inline]
 fn hazard_vec<const N: usize>(reader: key::vec::Reader<'_, N>) -> ribbit::Packed<Le> {
+    let prefix = if reader.0.len() >= 16 {
+        unsafe { reader.0.as_ptr().cast::<u128>().read_unaligned() }
+    } else {
+        let mut buffer = [0u8; 16];
+        buffer[..reader.0.len()].copy_from_slice(reader.0);
+        u128::from_le_bytes(buffer)
+    };
+
+    Le::new_hazard(prefix, reader.len().bytes().min(15) << 3)
+}
+
+#[inline]
+fn hazard_string(reader: key::string::Reader<'_>) -> ribbit::Packed<Le> {
     let prefix = if reader.slice.len() >= 16 {
         unsafe { reader.slice.as_ptr().cast::<u128>().read_unaligned() }
     } else {
