@@ -1,4 +1,5 @@
 use core::cmp;
+use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::ControlFlow;
 use core::ops::RangeFrom;
@@ -261,7 +262,7 @@ where
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Include<T>(pub(crate) T);
 
 pub struct Unbound<T = ()>(PhantomData<T>);
@@ -278,6 +279,12 @@ impl<T> Default for Unbound<T> {
     #[inline]
     fn default() -> Self {
         Self(PhantomData)
+    }
+}
+
+impl<T> Debug for Unbound<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unbound")
     }
 }
 
@@ -381,7 +388,7 @@ where
     }
 }
 
-trait Lower<M>
+trait Lower<M>: Debug
 where
     M: ribbit::Pack<Packed: edge::Meta>,
 {
@@ -390,7 +397,7 @@ where
     fn check(&mut self, edge: ribbit::Packed<M>) -> Option<Self::Bound>;
 }
 
-trait Upper<M>
+trait Upper<M>: Debug
 where
     M: ribbit::Pack<Packed: edge::Meta>,
 {
