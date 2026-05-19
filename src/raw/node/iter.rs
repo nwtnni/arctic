@@ -1,3 +1,4 @@
+use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
@@ -135,7 +136,7 @@ impl Ord for KeyIndex {
     }
 }
 
-impl core::fmt::Debug for KeyIndex {
+impl Debug for KeyIndex {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:#.02X}:{:#.02X}", self.key, self.index)
     }
@@ -278,13 +279,13 @@ impl Drop for KeyIter {
     }
 }
 
-pub(crate) trait Lower: Copy + Default {
+pub(crate) trait Lower: Copy + Default + Debug {
     const UNBOUND: bool = false;
     fn get(self) -> u8;
     fn check(self, byte: u8) -> bool;
 }
 
-pub(crate) trait Upper: Copy + Default {
+pub(crate) trait Upper: Copy + Default + Debug {
     const UNBOUND: bool = false;
     fn get(self) -> u8;
     fn check(self, byte: u8) -> bool;
