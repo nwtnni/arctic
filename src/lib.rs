@@ -307,8 +307,26 @@ mod tests {
     }
 
     #[test]
+    fn short_key() {
+        insert_all(["\n".as_bytes().to_vec()]);
+    }
+
+    #[test]
     fn two_long_keys() {
         insert_all(["a".repeat(1000), "b".repeat(1000)]);
+    }
+
+    #[test]
+    fn range_empty() {
+        // assert!("" < " ");
+        // assert!(vec![0] < vec![b' ', 0]);
+        let map = crate::concurrent::Map::<String, u64>::new();
+        map.upsert("", 1u64);
+        map.upsert("\0", 0u64);
+        let range = map.range(""..="A").unwrap();
+        assert_eq!(range.entries::<crate::Ascend>().count(), 2);
+
+        // insert_all([b"A".to_vec()]);
     }
 
     fn insert_all<I, K>(iter: I) -> Map<K, u64>
@@ -373,13 +391,16 @@ mod tests {
 
         // Concurrent range iteration, non-linearizable
         let range = map.range(first.borrow()..=last.borrow()).unwrap();
+        let mut i = 0;
         range
-            .entries::<Ascend>()
-            .zip(&keys)
+            .entries::<Descend>()
+            .zip(keys.iter().rev())
             .for_each(|((lk, lv), (rk, rv))| {
+                i += 1;
                 assert_eq!(lk, *rk);
                 assert_eq!(lv, *rv);
             });
+        assert_eq!(i, keys.len());
         drop(range);
 
         map

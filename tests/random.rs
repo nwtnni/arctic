@@ -148,7 +148,6 @@ mod vec {
                 hasher.write_u64(i);
                 buffer.push(hasher.finish() as u8);
             }
-            buffer.push(0);
             buffer
         }
 
@@ -281,7 +280,7 @@ where
                     map.insert(key.borrow(), value)
                         .ok()
                         .as_deref()
-                        .expect("Key should not be present");
+                        .unwrap_or_else(|| panic!("Key {:?} should not be present", key.borrow()));
                 }
 
                 barrier.wait();
