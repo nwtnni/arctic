@@ -397,12 +397,12 @@ where
                         },
                     };
 
-                    let new = match old.child() {
+                    let (smo, new) = match old.child() {
                         None => break 'outer,
                         Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
-                        Some(edge::Child::Node(node)) if node == target => {
-                            unsafe { node.replace::<true>(old.meta()) }.1
-                        }
+                        Some(edge::Child::Node(node)) if node == target => unsafe {
+                            node.replace::<true>(old.meta())
+                        },
                         // Must have been replaced by someone else
                         Some(edge::Child::Node(_)) => break 'outer,
                     };
@@ -419,8 +419,10 @@ where
                             continue 'outer;
                         }
                         Err(_) => {
-                            if let Some(node) = new.as_node() {
-                                unsafe { node.deallocate(stat::Counter::FreeConflict) };
+                            if smo.is_allocate() {
+                                if let Some(node) = new.as_node() {
+                                    unsafe { node.deallocate(stat::Counter::FreeConflict) };
+                                }
                             }
                         }
                     }

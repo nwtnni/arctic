@@ -60,7 +60,7 @@ impl<'g, 'k, K: Key, V: Value + Default + 'g> Entry<'g, 'k, K, V> {
 pub struct Vacant<'g, 'k, K: Key, V: Value + 'g> {
     pub(super) cursor: Cursor<'g, K::Read<'k>, path::Discard>,
     pub(super) replace: bool,
-    pub(super) _value: PhantomData<&'g V>,
+    pub(super) _value: PhantomData<&'g mut V>,
 }
 
 pub struct Occupied<'g, V: Value + 'g> {
@@ -80,7 +80,9 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
         if self.replace {
             let old = unsafe { self.cursor.edge_mut().get_packed() };
             let old_node = old.as_node().expect("Replace implies node");
-            let (_smo, new) = unsafe { old_node.replace::<false>(old.meta()) };
+            let (smo, new) = unsafe { old_node.replace::<false>(old.meta()) };
+            // No concurrent operations, so must be node replacement with larger node
+            validate_eq!(smo, crate::raw::Smo::ReplaceNode);
             unsafe { self.cursor.edge_mut() }.set_packed(new);
             unsafe { old_node.deallocate(stat::Counter::FreeRetire) };
         }
