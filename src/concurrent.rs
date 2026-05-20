@@ -389,13 +389,22 @@ where
                 cursor.trim(K::Len::BYTE + trim.into());
 
                 loop {
-                    let Some(old) = cursor.traverse_prefix() else {
-                        break 'outer;
+                    let old = match cursor.traverse_prefix() {
+                        None => break 'outer,
+                        Some(old) if !old.meta().is_frozen() => old,
+                        Some(_) => match cursor.freeze() {
+                            Err(_) => unreachable!("Recursive remove requires path"),
+                            Ok(None) => continue,
+                            Ok(Some(node)) => unsafe {
+                                guard.retire_node(cursor.len().bits(), node);
+                                continue;
+                            },
+                        },
                     };
 
                     let new = match old.child() {
                         None => break 'outer,
-                        Some(edge::Child::Value(_)) => unreachable!(),
+                        Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
                         Some(edge::Child::Node(node)) if node == target => {
                             unsafe { node.replace::<true>(old.meta()) }.1
                         }
@@ -414,8 +423,6 @@ where
                             trim = old.meta().len();
                             continue 'outer;
                         }
-                        // FIXME: help freeze
-                        Err(conflict) if conflict.meta().is_frozen() => todo!(),
                         Err(_) => {
                             if let Some(node) = new.as_node() {
                                 unsafe { node.deallocate(stat::Counter::FreeConflict) };
