@@ -1,0 +1,685 @@
+use core::ops::ControlFlow;
+use core::ops::RangeFull;
+use core::sync::atomic::Ordering;
+
+use crate::concurrent::Key;
+use crate::concurrent::Prefix;
+use crate::concurrent::Smr;
+use crate::concurrent::Value;
+use crate::concurrent::iter;
+use crate::concurrent::smr;
+use crate::concurrent::smr::Global as _;
+use crate::concurrent::smr::Guard as _;
+use crate::concurrent::value;
+use crate::raw::Edge;
+use crate::raw::Frozen;
+use crate::raw::cursor;
+use crate::raw::cursor::Path;
+use crate::raw::cursor::path;
+use crate::raw::edge;
+use crate::raw::edge::Meta as _;
+use crate::raw::key::Len as _;
+use crate::sequential;
+use crate::stat;
+
+pub type Guard<'g, K, V, S> = <<S as Smr>::Global<K, V> as smr::Global<K, V>>::Guard<'g>;
+pub type Owned<'g, K, V, S> = value::Owned<Guard<'g, K, V, S>, V>;
+pub type Shared<'g, K, V, S> = value::Shared<Guard<'g, K, V, S>, V>;
+pub type Updated<'g, K, V, S> = value::Updated<Guard<'g, K, V, S>, V>;
+pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
+
+pub struct Map<K: Key, V: Value, S: Smr = smr::Hazard> {
+    smr: S::Global<K, V>,
+    seq: sequential::Map<K, V>,
+}
+
+unsafe impl<K: Key, V: Value + Send + Sync, S: Smr> Sync for Map<K, V, S> {}
+
+impl<K: crate::Key, V: Value, S: Smr> Default for Map<K, V, S> {
+    fn default() -> Self {
+        Self {
+            smr: S::Global::default(),
+            seq: sequential::Map::<K, V>::default(),
+        }
+    }
+}
+
+impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_smr(smr: S::Global<K, V>) -> Self {
+        Self {
+            smr,
+            seq: sequential::Map::<K, V>::default(),
+        }
+    }
+
+    #[inline]
+    pub fn as_sequential(&mut self) -> &mut sequential::Map<K, V> {
+        &mut self.seq
+    }
+
+    #[inline]
+    pub fn smr(&self) -> &S::Global<K, V> {
+        &self.smr
+    }
+
+    #[inline]
+    pub fn smr_mut(&mut self) -> &mut S::Global<K, V> {
+        &mut self.smr
+    }
+}
+
+pub enum Update<'g, K, V, S>
+where
+    K: Key,
+    V: Value + 'g,
+    S: Smr,
+    S::Global<K, V>: 'g,
+{
+    Absent {
+        initial: Option<V>,
+    },
+    Success(Updated<'g, K, V, S>),
+    Break {
+        old: Shared<'g, K, V, S>,
+        initial: Option<V>,
+    },
+}
+
+pub enum Remove<'g, K, V, S>
+where
+    K: Key,
+    V: Value + 'g,
+    S: Smr,
+    S::Global<K, V>: 'g,
+{
+    Absent,
+    Success { old: Owned<'g, K, V, S> },
+    Break { old: Shared<'g, K, V, S> },
+}
+
+pub enum Upsert<'g, K, V, S>
+where
+    K: Key,
+    V: Value + 'g,
+    S: Smr,
+    S::Global<K, V>: 'g,
+{
+    Success(Upserted<'g, K, V, S>),
+    Break {
+        old: Option<Shared<'g, K, V, S>>,
+        initial: Option<V>,
+    },
+}
+
+impl<K, V, S> Map<K, V, S>
+where
+    K: Key,
+    V: Value + Send + Sync,
+    S: Smr,
+{
+    pub fn get(&self, key: &K::Borrowed) -> Option<Shared<K, V, S>> {
+        let reader = K::Read::from(key);
+        let guard = self.smr.guard(reader);
+        let value = unsafe {
+            self.seq
+                .raw
+                .cursor::<path::Discard>(reader)
+                .traverse_get()?
+        };
+        Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
+    }
+
+    pub fn update(&self, key: &K::Borrowed, value: V) -> Result<Updated<K, V, S>, V> {
+        match self.update_with(key, Some(value), |_, initial| {
+            ControlFlow::<(), _>::Continue(initial.take().expect("Value is always initialized"))
+        }) {
+            Update::Absent {
+                initial: Some(initial),
+            } => Err(initial),
+            Update::Success(updated) => Ok(updated),
+            Update::Absent { initial: None } | Update::Break { .. } => unreachable!(),
+        }
+    }
+
+    pub fn update_with<F>(
+        &self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        mut update: F,
+    ) -> Update<K, V, S>
+    where
+        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        let initial = if cfg!(feature = "opt-no-path") {
+            initial
+        } else {
+            match self.update_with_optimistic(key, initial, &mut update) {
+                Ok(update) => return update,
+                Err(initial) => initial,
+            }
+        };
+
+        self.update_with_pessimistic(key, initial, update)
+    }
+
+    #[inline]
+    fn update_with_optimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        update: F,
+    ) -> Result<Update<K, V, S>, Option<V>>
+    where
+        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        self.update_with_impl::<path::Discard, _>(key, initial, update)
+    }
+
+    #[cold]
+    fn update_with_pessimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        update: F,
+    ) -> Update<K, V, S>
+    where
+        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        stat::increment(stat::Counter::UpdatePessimistic);
+        match self.update_with_impl::<path::Retain<_>, _>(key, initial, update) {
+            Ok(update) => update,
+            Err(_) => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn update_with_impl<'k, P, F>(
+        &self,
+        key: &'k K::Borrowed,
+        mut initial: Option<V>,
+        mut update: F,
+    ) -> Result<Update<K, V, S>, Option<V>>
+    where
+        P: Path<K::Read<'k>>,
+        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        let reader = K::Read::from(key);
+        let mut guard = self.smr.guard(reader);
+        let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+
+        loop {
+            let old = match cursor.traverse_update() {
+                None => return Ok(Update::Absent { initial }),
+                Some(Ok(old)) => old,
+                Some(Err(Frozen)) => match cursor.freeze() {
+                    Err(_) => return Err(initial),
+                    Ok(None) => continue,
+                    Ok(Some(node)) => unsafe {
+                        guard.retire_node(cursor.len().bits(), node);
+                        continue;
+                    },
+                },
+            };
+
+            let old_value = unsafe { old.into_value_unchecked() };
+            let new_value = match update(unsafe { V::target_from_raw(&old_value) }, &mut initial) {
+                ControlFlow::Continue(new) => V::into_raw(new),
+                ControlFlow::Break(()) => {
+                    return Ok(Update::Break {
+                        old: unsafe { Shared::<K, V, S>::wrap(guard, old_value) },
+                        initial,
+                    });
+                }
+            };
+
+            match cursor.edge().compare_exchange_packed(
+                old,
+                unsafe { old.with_value_unchecked(new_value) },
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    return Ok(Update::Success(unsafe {
+                        Updated::<K, V, S>::wrap(guard, old_value, new_value)
+                    }));
+                }
+                Err(_) => {
+                    initial = Some(unsafe { V::from_raw(new_value) });
+                }
+            }
+        }
+    }
+
+    pub fn remove_non_recursive(&self, key: &K::Borrowed) -> Option<Owned<'_, K, V, S>> {
+        match self.remove_non_recursive_with(key, |_| ControlFlow::Continue(())) {
+            Remove::Absent => None,
+            Remove::Success { old } => Some(old),
+            Remove::Break { old: _ } => unreachable!(),
+        }
+    }
+
+    pub fn remove_non_recursive_with<F>(
+        &self,
+        key: &K::Borrowed,
+        mut with: F,
+    ) -> Remove<'_, K, V, S>
+    where
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        match self.remove_non_recursive_with_optimistic(key, &mut with) {
+            Ok(remove) => remove,
+            Err(()) => self.remove_non_recursive_with_pessimistic(key, &mut with),
+        }
+    }
+
+    #[inline]
+    fn remove_non_recursive_with_optimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        with: &mut F,
+    ) -> Result<Remove<'_, K, V, S>, ()>
+    where
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        self.remove_with_impl::<false, path::Discard, _>(key, with)
+    }
+
+    #[cold]
+    fn remove_non_recursive_with_pessimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        with: &mut F,
+    ) -> Remove<'_, K, V, S>
+    where
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(key, with);
+        remove
+    }
+
+    pub fn remove(&self, key: &K::Borrowed) -> Option<Owned<K, V, S>> {
+        match self.remove_with(key, |_| ControlFlow::Continue(())) {
+            Remove::Absent => None,
+            Remove::Success { old } => Some(old),
+            Remove::Break { old: _ } => unreachable!(),
+        }
+    }
+
+    pub fn remove_with<F>(&self, key: &K::Borrowed, mut with: F) -> Remove<K, V, S>
+    where
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(key, &mut with);
+        remove
+    }
+
+    #[inline]
+    fn remove_with_impl<'k, const RECURSIVE: bool, P, F>(
+        &self,
+        key: &'k K::Borrowed,
+        remove: &mut F,
+    ) -> Result<Remove<K, V, S>, P::PopError>
+    where
+        P: Path<K::Read<'k>>,
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        let reader = K::Read::from(key);
+        let mut guard = self.smr.guard(reader);
+        let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+
+        let old = loop {
+            let old = match cursor.traverse_update() {
+                None => return Ok(Remove::Absent),
+                Some(Ok(old)) => old,
+                Some(Err(Frozen)) => match cursor.freeze()? {
+                    None => continue,
+                    Some(node) => unsafe {
+                        guard.retire_node(cursor.len().bits(), node);
+                        continue;
+                    },
+                },
+            };
+
+            let old_value = unsafe { old.into_value_unchecked() };
+
+            match remove(unsafe { V::target_from_raw(&old_value) }) {
+                ControlFlow::Continue(()) => (),
+                ControlFlow::Break(()) => {
+                    return Ok(Remove::Break {
+                        old: unsafe { Shared::<K, V, S>::wrap(guard, old_value) },
+                    });
+                }
+            }
+
+            if cursor
+                .edge()
+                .compare_exchange_packed(old, Edge::DEFAULT, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                break old;
+            }
+        };
+
+        if RECURSIVE {
+            let mut trim = old.meta().len();
+
+            'outer: while let Some(target) = cursor
+                .pop()
+                .unwrap_or_else(|_| panic!("Recursive remove requires path"))
+            {
+                if unsafe { target.len() } > 0 {
+                    break 'outer;
+                }
+
+                cursor.trim(K::Len::BYTE + trim.into());
+
+                loop {
+                    let old = match cursor.traverse_prefix() {
+                        None => break 'outer,
+                        Some(old) if !old.meta().is_frozen() => old,
+                        Some(_) => match cursor.freeze() {
+                            Err(_) => unreachable!("Recursive remove requires path"),
+                            Ok(None) => continue,
+                            Ok(Some(node)) => unsafe {
+                                guard.retire_node(cursor.len().bits(), node);
+                                continue;
+                            },
+                        },
+                    };
+
+                    let (smo, new) = match old.child() {
+                        None => break 'outer,
+                        Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
+                        Some(edge::Child::Node(node)) if node == target => unsafe {
+                            node.replace::<true>(old.meta())
+                        },
+                        // Must have been replaced by someone else
+                        Some(edge::Child::Node(_)) => break 'outer,
+                    };
+
+                    match cursor.edge().compare_exchange_packed(
+                        old,
+                        new,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(old) => {
+                            unsafe { guard.retire_node(cursor.len().bits(), target) };
+                            trim = old.meta().len();
+                            continue 'outer;
+                        }
+                        Err(_) => {
+                            if smo.is_allocate() {
+                                if let Some(node) = new.as_node() {
+                                    unsafe { node.deallocate(stat::Counter::FreeConflict) };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Remove::Success {
+            old: unsafe { Owned::<K, V, S>::wrap(guard, old.into_value_unchecked()) },
+        })
+    }
+
+    pub fn upsert(&self, key: &K::Borrowed, value: V) -> Upserted<'_, K, V, S> {
+        match self.upsert_with(key, Some(value), |_, new| {
+            ControlFlow::<(), _>::Continue(new.take().expect("Value is always initialized"))
+        }) {
+            Upsert::Success(upserted) => upserted,
+            Upsert::Break { .. } => unreachable!(),
+        }
+    }
+
+    pub fn insert(
+        &self,
+        key: &K::Borrowed,
+        value: V,
+    ) -> Result<Shared<K, V, S>, (Shared<K, V, S>, V)> {
+        let mut value = Some(value);
+        self.insert_with(key, || value.take().expect("Call thunk once"))
+            .map_err(|(shared, initial)| {
+                (
+                    shared,
+                    value
+                        .xor(initial)
+                        .expect("Value must be in thunk or initial"),
+                )
+            })
+    }
+
+    pub fn insert_with<F>(
+        &self,
+        key: &K::Borrowed,
+        insert: F,
+    ) -> Result<Shared<K, V, S>, (Shared<K, V, S>, Option<V>)>
+    where
+        F: FnOnce() -> V,
+    {
+        let mut thunk = Some(insert);
+
+        match self.upsert_with(key, None, |old, new| match old {
+            None => ControlFlow::Continue(match new.take() {
+                None => (thunk.take().expect("Call thunk once"))(),
+                Some(new) => new,
+            }),
+            Some(_) => ControlFlow::Break(()),
+        }) {
+            Upsert::Success(upserted) => Ok(upserted
+                .try_into_inserted()
+                .unwrap_or_else(|_| unreachable!("Continue on `None`"))),
+            Upsert::Break { old, initial } => Err((old.expect("Break on `Some`"), initial)),
+        }
+    }
+
+    pub fn upsert_with<F>(
+        &self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        mut upsert: F,
+    ) -> Upsert<K, V, S>
+    where
+        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        let initial = if cfg!(feature = "opt-no-path") {
+            initial
+        } else {
+            match self.upsert_with_optimistic(key, initial, &mut upsert) {
+                Ok(update) => return update,
+                Err(initial) => initial,
+            }
+        };
+
+        self.upsert_with_pessimistic(key, initial, upsert)
+    }
+
+    #[inline]
+    fn upsert_with_optimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        upsert: F,
+    ) -> Result<Upsert<K, V, S>, Option<V>>
+    where
+        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        self.upsert_with_impl::<path::Discard, _>(key, initial, upsert)
+    }
+
+    #[cold]
+    fn upsert_with_pessimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        upsert: F,
+    ) -> Upsert<K, V, S>
+    where
+        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        stat::increment(stat::Counter::InsertPessimistic);
+        match self.upsert_with_impl::<path::Retain<_>, _>(key, initial, upsert) {
+            Ok(upsert) => upsert,
+            Err(_) => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn upsert_with_impl<'k, P, F>(
+        &self,
+        key: &'k K::Borrowed,
+        mut initial: Option<V>,
+        mut upsert: F,
+    ) -> Result<Upsert<K, V, S>, Option<V>>
+    where
+        P: Path<K::Read<'k>>,
+        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        let reader = K::Read::from(key);
+        let mut guard = self.smr.guard(reader);
+        let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+
+        loop {
+            match cursor.traverse_insert() {
+                cursor::Insert::Value { old_value, old } => {
+                    let new_value = match upsert(
+                        old_value
+                            .as_ref()
+                            .map(|old| unsafe { V::target_from_raw(old) }),
+                        &mut initial,
+                    ) {
+                        ControlFlow::Continue(value) => V::into_raw(value),
+                        ControlFlow::Break(()) => {
+                            return Ok(Upsert::Break {
+                                old: old_value.map(|old_value| unsafe {
+                                    Shared::<K, V, S>::wrap(guard, old_value)
+                                }),
+                                initial,
+                            });
+                        }
+                    };
+
+                    match cursor.create_path(old, new_value) {
+                        // Restore value and fall through to freeze
+                        Err(Frozen) => initial = Some(unsafe { V::from_raw(new_value) }),
+
+                        Ok((new, _)) => match cursor.edge().compare_exchange_packed(
+                            old,
+                            new,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        ) {
+                            Ok(_) => {
+                                return Ok(Upsert::Success(unsafe {
+                                    Upserted::<K, V, S>::wrap(guard, old_value, new_value)
+                                }));
+                            }
+                            Err(_) => {
+                                if let Some(node) = new.as_node() {
+                                    unsafe {
+                                        node.deallocate_recursive(stat::Counter::FreeConflict);
+                                    }
+                                }
+
+                                initial = Some(unsafe { V::from_raw(new_value) });
+                                continue;
+                            }
+                        },
+                    }
+                }
+                cursor::Insert::Replace { old_node, old } if !old.meta().is_frozen() => {
+                    let (smo, new) = unsafe { old_node.replace::<true>(old.meta()) };
+                    match cursor.edge().compare_exchange_packed(
+                        old,
+                        new,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => {
+                            unsafe { guard.retire_node(cursor.len().bits(), old_node) };
+                        }
+                        Err(_) => {
+                            // Does not go through SMR because `new` is still thread-local
+                            if smo.is_allocate() {
+                                let node = new.as_node().expect("Allocating SMO creates node");
+                                unsafe {
+                                    node.deallocate(stat::Counter::FreeConflict);
+                                }
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+
+                // Fall through to freeze
+                cursor::Insert::Replace { .. } => (),
+            }
+
+            match cursor.freeze() {
+                Err(_) => return Err(initial),
+                Ok(None) => (),
+                Ok(Some(node)) => unsafe { guard.retire_node(cursor.len().bits(), node) },
+            }
+        }
+    }
+
+    pub fn all(&self) -> iter::Prefix<'static, '_, K, V, RangeFull, Guard<'_, K, V, S>> {
+        let guard = self.smr.guard(K::Read::default());
+        unsafe { Prefix::new(guard, self.seq.raw.all()) }
+    }
+
+    pub fn prefix<'k>(
+        &self,
+        prefix: impl Into<K::Read<'k>>,
+    ) -> Option<iter::Prefix<'k, '_, K, V, RangeFull, Guard<'_, K, V, S>>> {
+        let prefix = prefix.into();
+        let guard = self.smr.guard(prefix);
+        Some(unsafe { Prefix::new(guard, self.seq.raw.prefix(prefix)?) })
+    }
+
+    pub fn range<'k, R>(
+        &self,
+        range: R,
+    ) -> Option<iter::Prefix<'k, '_, K, V, R, Guard<'_, K, V, S>>>
+    where
+        R: crate::raw::iter::Range<K::Read<'k>>,
+    {
+        let prefix = range.common_prefix();
+        let guard = self.smr.guard(prefix);
+        Some(unsafe { Prefix::new(guard, self.seq.raw.range(range, prefix)?) })
+    }
+}
+
+impl<K, V, S> From<sequential::Map<K, V>> for Map<K, V, S>
+where
+    K: Key,
+    V: Value,
+    S: Smr,
+{
+    #[inline]
+    fn from(seq: sequential::Map<K, V>) -> Self {
+        Self {
+            smr: S::Global::default(),
+            seq,
+        }
+    }
+}
+
+impl<K, V, S> From<Map<K, V, S>> for sequential::Map<K, V>
+where
+    K: Key,
+    V: Value,
+    S: Smr,
+{
+    #[inline]
+    fn from(map: Map<K, V, S>) -> sequential::Map<K, V> {
+        map.seq
+    }
+}
