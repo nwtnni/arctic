@@ -6,7 +6,7 @@ use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
 use crate::sequential;
 
-pub unsafe trait Value: Sized + sequential::Value {
+pub unsafe trait Value: Sized + sequential::Value + Sync {
     type Target;
 
     type Guard<G>: smr::Guard<Self> + From<G>
@@ -18,7 +18,7 @@ pub unsafe trait Value: Sized + sequential::Value {
     unsafe fn target_from_raw(raw: &u64) -> &Self::Target;
 }
 
-unsafe impl<T> Value for Box<T> {
+unsafe impl<T: Sync> Value for Box<T> {
     type Target = T;
 
     type Guard<G>
@@ -38,7 +38,7 @@ unsafe impl<T> Value for Box<T> {
     }
 }
 
-unsafe impl<'v, T: 'v + Sized> Value for &'v T {
+unsafe impl<'v, T: 'v + Sized + Sync> Value for &'v T {
     type Target = Self;
 
     type Guard<G>
