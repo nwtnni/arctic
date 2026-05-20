@@ -1,8 +1,10 @@
+use core::ffi::CStr;
 use core::fmt;
 use core::ops::Add;
 use core::ops::AddAssign;
 use core::ops::Sub;
 use core::ops::SubAssign;
+use std::ffi::CString;
 
 use ribbit::u6;
 
@@ -124,6 +126,28 @@ impl Key for NonPrefixVec {
     }
 }
 
+impl Key for CString {
+    type Read<'k> = Reader<'k, { usize::MAX }>;
+    type Write = Writer;
+    type Borrowed = CStr;
+    type Edge = edge::Le;
+    type Len = Len;
+
+    #[inline]
+    unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
+        if_validate!(CStr::from_bytes_with_nul(&writer.0).unwrap(), unsafe {
+            CStr::from_bytes_with_nul_unchecked(&writer.0)
+        })
+    }
+
+    #[inline]
+    unsafe fn from_writer_unchecked(writer: Self::Write) -> Self {
+        if_validate!(CString::from_vec_with_nul(writer.0).unwrap(), unsafe {
+            CString::from_vec_with_nul_unchecked(writer.0)
+        })
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k, const N: usize>(pub(crate) &'k [u8]);
 
@@ -156,6 +180,20 @@ impl<'k> From<&'k NonPrefixVec> for Reader<'k, { usize::MAX }> {
     #[inline]
     fn from(key: &'k NonPrefixVec) -> Self {
         Self::from(key.as_non_prefix_slice())
+    }
+}
+
+impl<'k> From<&'k CStr> for Reader<'k, { usize::MAX }> {
+    #[inline]
+    fn from(key: &'k CStr) -> Self {
+        Self(key.to_bytes_with_nul())
+    }
+}
+
+impl<'k> From<&'k CString> for Reader<'k, { usize::MAX }> {
+    #[inline]
+    fn from(key: &'k CString) -> Self {
+        Self::from(key.as_c_str())
     }
 }
 

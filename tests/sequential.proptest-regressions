@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 61d9becd4b245e7813d5fd468d1be28ae43a8b5c7f681aed02dbc1cfe99a2d74 # shrinks to (initial_state, transitions, seen_counter) = (Map({}), [Upsert("{", 0), Upsert("{0", 0), Range { descend: false, lower: "{", upper: "{" }], None)

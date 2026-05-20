@@ -1,3 +1,5 @@
+use std::ffi::CString;
+
 use crate::NonNullString;
 use crate::NonPrefixVec;
 use crate::concurrent::smr::hazard;
@@ -16,6 +18,15 @@ pub trait Key: raw::Key {
 type Le = hazard::prefix::Le128;
 
 impl Key for NonPrefixVec {
+    type Prefix = Le;
+
+    #[inline]
+    fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
+        hazard_vec(reader)
+    }
+}
+
+impl Key for CString {
     type Prefix = Le;
 
     #[inline]
