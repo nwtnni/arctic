@@ -92,6 +92,11 @@ impl<I: Int> key::Read for Reader<I> {
     }
 
     #[inline]
+    unsafe fn get_byte_unchecked(&self, index: u6) -> u8 {
+        self.buffer.get_u8(index.value())
+    }
+
+    #[inline]
     fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
         Len((edge.raw() ^ self.buffer.most_significant_u64()).leading_zeros() as u8)
     }

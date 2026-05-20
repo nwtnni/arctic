@@ -45,6 +45,40 @@ pub(crate) enum Insert<E: ribbit::Pack<Packed: edge::Meta>> {
     },
 }
 
+impl<'g, R> Cursor<'g, R, path::Discard>
+where
+    R: key::Read,
+{
+    /// Traverse to the value associated with the key, if it exists.
+    #[inline]
+    pub(crate) fn traverse_get(&mut self) -> Option<u64> {
+        loop {
+            let edge = self.edge().load_packed(Ordering::Acquire);
+
+            match edge.child()? {
+                edge::Child::Node(node) => {
+                    let len = self.reader.match_exact(edge.meta())?;
+                    // SAFETY: prefix precondition implies search key cannot equal node prefix
+                    let byte = unsafe { self.reader.get_byte_unchecked(len) };
+
+                    // Skip `self.push` call since `get` never back-tracks
+                    self.edge = unsafe { node.get(byte) }.map(NonNull::from)?;
+                    self.reader = self.reader.suffix(R::Len::BYTE + len.into());
+                }
+                edge::Child::Value(value) => {
+                    // Prefix precondition implies search key must match
+                    validate!(
+                        self.reader
+                            .match_exact(edge.meta())
+                            .is_some_and(|len| self.reader.len() == len.into())
+                    );
+                    return Some(value);
+                }
+            }
+        }
+    }
+}
+
 impl<'g, R, P> Cursor<'g, R, P>
 where
     R: key::Read,
@@ -83,33 +117,6 @@ where
     #[inline]
     pub(crate) fn len(&self) -> R::Len {
         self.len
-    }
-
-    /// Traverse to the value associated with the key, if it exists.
-    #[inline]
-    pub(crate) fn traverse_get(&mut self) -> Option<u64> {
-        loop {
-            let edge = self.edge().load_packed(Ordering::Acquire);
-
-            match edge.child()? {
-                edge::Child::Node(node) => {
-                    let len = self.reader.match_exact(edge.meta())?;
-                    let byte = if const { R::LEN.is_none() } {
-                        self.reader
-                            .get_byte(len)
-                            .expect("Precondition: no key is prefix of another key")
-                    } else {
-                        unsafe { self.reader.get_byte_unchecked(len) }
-                    };
-
-                    self.edge = unsafe { node.get(byte) }.map(NonNull::from)?;
-                    self.reader = self.reader.suffix(R::Len::BYTE + len.into());
-                }
-                edge::Child::Value(value) => {
-                    return Some(value);
-                }
-            }
-        }
     }
 
     /// Traverse to the root of the subtree prefixed by the key, if it exists.
@@ -154,19 +161,21 @@ where
             match edge.child()? {
                 edge::Child::Node(node) => {
                     let len = self.reader.match_exact(edge.meta())?;
-                    let byte = if const { R::LEN.is_none() } {
-                        self.reader
-                            .get_byte(len)
-                            .expect("Precondition: no key is prefix of another key")
-                    } else {
-                        unsafe { self.reader.get_byte_unchecked(len) }
-                    };
+                    // SAFETY: prefix precondition implies search key cannot equal node prefix
+                    let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
                     let next = unsafe { node.get(byte) }?;
                     self.push(len, node, next);
                     continue;
                 }
                 edge::Child::Value(_) => {
+                    // Prefix precondition implies search key must match
+                    validate!(
+                        self.reader
+                            .match_exact(edge.meta())
+                            .is_some_and(|len| self.reader.len() == len.into())
+                    );
+
                     return Some({
                         if edge.meta().is_frozen() {
                             Err(Frozen)
@@ -187,6 +196,7 @@ where
             let edge = self.edge().load_packed(Ordering::Acquire);
 
             let Some(child) = edge.child() else {
+                // Case: no child, create path
                 return Insert::Value {
                     old_value: None,
                     old: edge,
@@ -194,6 +204,7 @@ where
             };
 
             let Some(len) = self.reader.match_exact(edge.meta()) else {
+                // Case: partial match, expand edge
                 return Insert::Value {
                     old_value: None,
                     old: edge,
@@ -202,28 +213,27 @@ where
 
             match child {
                 edge::Child::Node(node) => {
-                    let byte = if const { R::LEN.is_none() } {
-                        self.reader
-                            .get_byte(len)
-                            .expect("Precondition: no key is prefix of another key")
-                    } else {
-                        unsafe { self.reader.get_byte_unchecked(len) }
+                    // SAFETY: prefix precondition implies search key cannot equal node prefix
+                    let byte = unsafe { self.reader.get_byte_unchecked(len) };
+
+                    let Some(next) = (unsafe { node.get_or_insert(byte) }) else {
+                        // Case: node replacement
+                        return Insert::Replace {
+                            old_node: node,
+                            old: edge,
+                        };
                     };
 
-                    match unsafe { node.get_or_insert(byte) } {
-                        None => {
-                            return Insert::Replace {
-                                old_node: node,
-                                old: edge,
-                            };
-                        }
-                        Some(next) => {
-                            self.push(len, node, next);
-                            continue;
-                        }
-                    }
+                    self.push(len, node, next);
                 }
                 edge::Child::Value(value) => {
+                    // Prefix precondition implies search key must match
+                    validate!(
+                        self.reader
+                            .match_exact(edge.meta())
+                            .is_some_and(|len| self.reader.len() == len.into())
+                    );
+
                     return Insert::Value {
                         old_value: Some(value),
                         old: edge,

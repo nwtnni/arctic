@@ -33,8 +33,14 @@ pub trait Key: Borrow<Self::Borrowed> {
     #[expect(private_bounds)]
     type Len: Len<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
+    /// # Safety
+    ///
+    /// Caller must guarantee that `writer` contains a valid key.
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed;
 
+    /// # Safety
+    ///
+    /// Caller must guarantee that `writer` contains a valid key.
     unsafe fn from_writer_unchecked(writer: Self::Write) -> Self;
 }
 
