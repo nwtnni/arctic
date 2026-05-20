@@ -6,19 +6,46 @@ use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
 use crate::sequential;
 
-pub unsafe trait Value: Sized + sequential::Value + Sync {
+/// Values that can safely be stored in a [`crate::concurrent::Map`].
+///
+/// Values may be either inline or indirect. An inline
+/// value (e.g., u64) is stored directly in an edge and can be freely
+/// copied. An indirect value (e.g., Box<T>) is a pointer to a separate
+/// allocation; the pointer is stored in an edge.
+///
+/// Note: we don't need [`Send`] or [`Sync`] bounds here.
+/// It's fine to create a concurrent map with non-Sync
+/// values; the map instance just won't implement Sync.
+pub unsafe trait Value: sequential::Value {
+    /// We need this extra layer of indirection relative to [`crate::sequential::Map`]
+    /// because edges can be concurrently modified.
+    ///
+    /// For an inline value, the sequential map can return a reference
+    /// to the edge containing the value; the borrow checker ensures
+    /// the edge is immutable. This is not true for the concurrent map,
+    /// which instead needs to copy out the value and return a reference to
+    /// the copy.
+    ///
+    /// For an indirect value, the concurrent map copies out a pointer
+    /// and interprets it as reference.
     type Target;
 
+    /// This is a type-level function that allows inline values to
+    /// discard a [`crate::concurrent::smr::Guard`].
     type Guard<G>: smr::Guard<Self> + From<G>
     where
         G: smr::Guard<Self>;
 
-    fn as_target(&self) -> &Self::Target;
-
+    /// # Safety
+    ///
+    /// Caller must guarantee the following:
+    /// - `raw` was created from [`crate::sequential::Value::into_raw`]
+    /// - There are no calls to [`crate::sequential::Value::from_raw`] while `raw` is live
+    /// - This value is not mutated while `raw` is live
     unsafe fn target_from_raw(raw: &u64) -> &Self::Target;
 }
 
-unsafe impl<T: Sync> Value for Box<T> {
+unsafe impl<T: Sized> Value for Box<T> {
     type Target = T;
 
     type Guard<G>
@@ -27,18 +54,16 @@ unsafe impl<T: Sync> Value for Box<T> {
         G: smr::Guard<Self>;
 
     #[inline]
-    fn as_target(&self) -> &Self::Target {
-        self
-    }
-
-    #[inline]
     unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
         let borrow = unsafe { (*raw as *const T).as_ref() };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
     }
 }
 
-unsafe impl<'v, T: 'v + Sized + Sync> Value for &'v T {
+// Note: references are inline values because a
+// `&T` itself can be freely copied, even if
+// `T` is not `Copy`.
+unsafe impl<'v, T: 'v + Sized> Value for &'v T {
     type Target = Self;
 
     type Guard<G>
@@ -47,17 +72,12 @@ unsafe impl<'v, T: 'v + Sized + Sync> Value for &'v T {
         G: smr::Guard<Self>;
 
     #[inline]
-    fn as_target(&self) -> &Self::Target {
-        self
-    }
-
-    #[inline]
     unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
         unsafe { core::mem::transmute::<&u64, &Self>(raw) }
     }
 }
 
-macro_rules! impl_trivial {
+macro_rules! impl_integer {
     ($($ty:ty),*) => {
         $(
             unsafe impl Value for $ty {
@@ -69,11 +89,6 @@ macro_rules! impl_trivial {
                     G: smr::Guard<Self>;
 
                 #[inline]
-                fn as_target(&self) -> &Self::Target {
-                    self
-                }
-
-                #[inline]
                 unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
                     unsafe { core::mem::transmute::<&u64, &Self>(raw) }
                 }
@@ -82,7 +97,7 @@ macro_rules! impl_trivial {
     };
 }
 
-impl_trivial!(u64, i64);
+impl_integer!(u64, i64);
 
 pub struct Owned<G: smr::Guard<V>, V: Value> {
     guard: V::Guard<G>,

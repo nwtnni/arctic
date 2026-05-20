@@ -1,15 +1,21 @@
+/// Values that can be stored in a [`crate::sequential::Map`].
+///
+/// # Safety
+///
+/// Implementer must guarantee that `Self` has the same memory layout as a `u64`.
 pub unsafe trait Value {
     fn into_raw(self) -> u64;
 
     /// # Safety
     ///
     /// Caller must guarantee that:
-    /// 1. `raw` was created by a previous [`Value::into_raw`] call.
-    /// 2. `from_raw` is called at most once for each [`Value::into_raw`] call.
-    /// 3. There are no live borrows from [`Value::ref_from_raw`] or [`Value::ref_mut_from_raw`] when [`Value::from_raw`] is called.
+    /// - `raw` was created by a previous [`Value::into_raw`] call.
+    /// - `from_raw` is called at most once for each [`Value::into_raw`] call.
+    /// - There are no live borrows when [`Value::from_raw`] is called.
     unsafe fn from_raw(raw: u64) -> Self;
 }
 
+// NOTE: `Sized` is required so that Box<T> is not a fat pointer and fits in 8 bytes
 unsafe impl<T: Sized> Value for Box<T> {
     #[inline]
     unsafe fn from_raw(raw: u64) -> Self {
@@ -22,6 +28,7 @@ unsafe impl<T: Sized> Value for Box<T> {
     }
 }
 
+// NOTE: `Sized` is required so that &T is not a fat pointer and fits in 8 bytes
 unsafe impl<'v, T: 'v + Sized> Value for &'v T {
     #[inline]
     fn into_raw(self) -> u64 {

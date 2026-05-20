@@ -34,7 +34,7 @@ pub trait Global<K: Key, V: Value>: Default {
     fn garbage(&self) -> u32;
 }
 
-pub trait Guard<V: Value> {
+pub trait Guard<V: Value + ?Sized> {
     #[expect(private_bounds)]
     #[expect(private_interfaces)]
     unsafe fn retire_node<M: ribbit::Pack<Packed: edge::Meta>>(
