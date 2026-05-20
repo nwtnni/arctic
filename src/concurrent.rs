@@ -232,14 +232,12 @@ where
                 },
             };
 
-            validate!(old.meta().is_value());
-
             let old_value = unsafe { old.into_value_unchecked() };
             let new_value = match update(unsafe { V::target_from_raw(&old_value) }, &mut initial) {
                 ControlFlow::Continue(new) => V::into_raw(new),
                 ControlFlow::Break(()) => {
                     return Ok(Update::Break {
-                        old: unsafe { Shared::<K, V, S>::wrap(guard, old.into_value_unchecked()) },
+                        old: unsafe { Shared::<K, V, S>::wrap(guard, old_value) },
                         initial,
                     });
                 }
@@ -352,8 +350,6 @@ where
                     },
                 },
             };
-
-            validate!(old.meta().is_value());
 
             let old_value = unsafe { old.into_value_unchecked() };
 
@@ -566,9 +562,9 @@ where
                         ControlFlow::Continue(value) => V::into_raw(value),
                         ControlFlow::Break(()) => {
                             return Ok(Upsert::Break {
-                                old: old
-                                    .into_value()
-                                    .map(|old| unsafe { Shared::<K, V, S>::wrap(guard, old) }),
+                                old: old_value.map(|old_value| unsafe {
+                                    Shared::<K, V, S>::wrap(guard, old_value)
+                                }),
                                 initial,
                             });
                         }

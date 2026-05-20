@@ -147,11 +147,6 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
     }
 
     #[inline]
-    pub(crate) fn into_value(self) -> Option<u64> {
-        self.meta().is_value().then(|| self.child_raw())
-    }
-
-    #[inline]
     pub(crate) fn child(self) -> Option<Child<M>> {
         let raw = self.child_raw();
         if self.meta().is_value() {
