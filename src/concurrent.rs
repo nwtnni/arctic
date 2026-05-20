@@ -477,7 +477,7 @@ where
             Some(_) => ControlFlow::Break(()),
         }) {
             Upsert::Success(upserted) => Ok(upserted
-                .into_inserted()
+                .try_into_inserted()
                 .unwrap_or_else(|_| unreachable!("Continue on `None`"))),
             Upsert::Break { old, initial } => Err((old.expect("Break on `Some`"), initial)),
         }

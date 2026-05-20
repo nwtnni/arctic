@@ -16,7 +16,7 @@ use crate::sequential;
 /// Note: we don't need [`Send`] or [`Sync`] bounds here.
 /// It's fine to create a concurrent map with non-Sync
 /// values; the map instance just won't implement Sync.
-pub unsafe trait Value: sequential::Value {
+pub trait Value: sequential::Value {
     /// We need this extra layer of indirection relative to [`crate::sequential::Map`]
     /// because edges can be concurrently modified.
     ///
@@ -45,7 +45,7 @@ pub unsafe trait Value: sequential::Value {
     unsafe fn target_from_raw(raw: &u64) -> &Self::Target;
 }
 
-unsafe impl<T: Sized> Value for Box<T> {
+impl<T: Sized> Value for Box<T> {
     type Target = T;
 
     type Guard<G>
@@ -63,7 +63,7 @@ unsafe impl<T: Sized> Value for Box<T> {
 // Note: references are inline values because a
 // `&T` itself can be freely copied, even if
 // `T` is not `Copy`.
-unsafe impl<'v, T: 'v + Sized> Value for &'v T {
+impl<'v, T: 'v + Sized> Value for &'v T {
     type Target = Self;
 
     type Guard<G>
@@ -80,7 +80,7 @@ unsafe impl<'v, T: 'v + Sized> Value for &'v T {
 macro_rules! impl_integer {
     ($($ty:ty),*) => {
         $(
-            unsafe impl Value for $ty {
+            impl Value for $ty {
                 type Target = Self;
 
                 type Guard<G>
@@ -99,6 +99,11 @@ macro_rules! impl_integer {
 
 impl_integer!(u64, i64);
 
+/// Guard that provides read-only access to a removed value while
+/// preventing the value from being freed. Retires the value on drop.
+///
+/// Note: this value may still be concurrently accessed by other
+/// threads, so this guard cannot safely provide mutable access.
 pub struct Owned<G: smr::Guard<V>, V: Value> {
     guard: V::Guard<G>,
     raw: u64,
@@ -147,6 +152,8 @@ where
     }
 }
 
+/// Guard that provides read-only access to a value while
+/// preventing the value from being freed.
 pub struct Shared<G: smr::Guard<V>, V: Value> {
     _guard: V::Guard<G>,
     raw: u64,
@@ -189,6 +196,11 @@ where
     }
 }
 
+/// Guard that provides read-only access to both the old
+/// and new values of an atomic update operation,
+/// preventing both from being freed.
+///
+/// Retires the old value on drop.
 pub struct Updated<G: smr::Guard<V>, V: Value> {
     guard: V::Guard<G>,
     old: u64,
@@ -208,12 +220,15 @@ where
         }
     }
 
+    /// Return the old value before updating.
     #[inline]
     pub fn old(&self) -> &V::Target {
         unsafe { V::target_from_raw(&self.old) }
     }
 
+    /// Return the new value after updating.
     #[inline]
+    #[expect(clippy::new_ret_no_self, clippy::wrong_self_convention)]
     pub fn new(&self) -> &V::Target {
         unsafe { V::target_from_raw(&self.new) }
     }
@@ -239,6 +254,11 @@ where
     }
 }
 
+/// Guard that provides read-only access to both the old
+/// and new values of an atomic upsert operation,
+/// preventing both from being freed.
+///
+/// Retires the old value on drop, if it existed.
 pub struct Upserted<G: smr::Guard<V>, V: Value> {
     guard: V::Guard<G>,
     old: Option<u64>,
@@ -258,7 +278,7 @@ where
         }
     }
 
-    pub(crate) fn into_inserted(self) -> Result<Shared<G, V>, Self> {
+    pub(crate) fn try_into_inserted(self) -> Result<Shared<G, V>, Self> {
         // https://internals.rust-lang.org/t/move-out-of-deref-for-manuallydrop/19216
         let upserted = ManuallyDrop::new(self);
 
@@ -272,6 +292,7 @@ where
         }
     }
 
+    /// Return the old value before upserting.
     #[inline]
     pub fn old(&self) -> Option<&V::Target> {
         self.old
@@ -279,7 +300,9 @@ where
             .map(|old| unsafe { V::target_from_raw(old) })
     }
 
+    /// Return the new value after upserting.
     #[inline]
+    #[expect(clippy::new_ret_no_self, clippy::wrong_self_convention)]
     pub fn new(&self) -> &V::Target {
         unsafe { V::target_from_raw(&self.new) }
     }
