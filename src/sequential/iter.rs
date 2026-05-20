@@ -129,8 +129,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.lend()
-            .map(|(key, value)| (K::clone_from_borrow(key), value))
+        self.lend().map(|(key, value)| (key.to_owned(), value))
     }
 }
 
@@ -179,8 +178,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.lend()
-            .map(|(key, value)| (K::clone_from_borrow(key), value))
+        self.lend().map(|(key, value)| (key.to_owned(), value))
     }
 }
 

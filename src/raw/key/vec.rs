@@ -114,11 +114,6 @@ impl Key for NonPrefixVec {
     type Len = Len;
 
     #[inline]
-    fn clone_from_borrow(borrow: &Self::Borrowed) -> Self {
-        borrow.to_non_prefix_vec()
-    }
-
-    #[inline]
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
         unsafe { NonPrefixSlice::new_unchecked(&writer.0) }
     }

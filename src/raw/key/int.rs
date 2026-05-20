@@ -25,11 +25,6 @@ macro_rules! impl_key {
                 type Len = Len;
 
                 #[inline]
-                fn clone_from_borrow(borrow: &Self::Borrowed) -> Self {
-                    *borrow
-                }
-
-                #[inline]
                 unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
                     &writer.0
                 }

@@ -9,6 +9,7 @@ pub(crate) use discard::Discard;
 
 use core::borrow::Borrow;
 use core::fmt;
+use core::fmt::Debug;
 use core::ops::Add;
 use core::ops::AddAssign;
 use core::ops::Sub;
@@ -18,7 +19,7 @@ use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 
 pub trait Key: Borrow<Self::Borrowed> {
-    type Borrowed: 'static + ?Sized + core::fmt::Debug;
+    type Borrowed: 'static + ?Sized + Debug + ToOwned<Owned = Self>;
 
     #[expect(private_bounds)]
     type Read<'k>: Read<Edge = Self::Edge, Len = Self::Len> + From<&'k Self::Borrowed>;
@@ -35,8 +36,6 @@ pub trait Key: Borrow<Self::Borrowed> {
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed;
 
     unsafe fn from_writer_unchecked(writer: Self::Write) -> Self;
-
-    fn clone_from_borrow(borrowed: &Self::Borrowed) -> Self;
 }
 
 pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {

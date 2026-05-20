@@ -159,11 +159,6 @@ impl Key for NonNullString {
     type Len = key::vec::Len;
 
     #[inline]
-    fn clone_from_borrow(borrow: &Self::Borrowed) -> Self {
-        borrow.to_owned()
-    }
-
-    #[inline]
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
         let (last, key) = writer.0.split_last().expect("String has terminator");
         validate_eq!(*last, 0);
