@@ -1,4 +1,5 @@
 use crate::NonNullString;
+use crate::NonPrefixVec;
 use crate::concurrent::smr::hazard;
 use crate::raw;
 use crate::raw::Int;
@@ -14,7 +15,7 @@ pub trait Key: raw::Key {
 
 type Le = hazard::prefix::Le128;
 
-impl Key for Vec<u8> {
+impl Key for NonPrefixVec {
     type Prefix = Le;
 
     #[inline]

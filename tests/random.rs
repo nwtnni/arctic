@@ -113,6 +113,7 @@ mod boxed {
 mod vec {
     use core::hash::Hasher as _;
 
+    use arctic::NonPrefixVec;
     use arctic::raw::Key;
 
     use super::Workload;
@@ -136,7 +137,7 @@ mod vec {
     }
 
     impl Workload for Bytes {
-        type Key = Vec<u8>;
+        type Key = NonPrefixVec;
         type Value = u64;
 
         fn key(&self, index: usize) -> Self::Key {
@@ -148,7 +149,7 @@ mod vec {
                 hasher.write_u64(i);
                 buffer.push(hasher.finish() as u8);
             }
-            buffer
+            unsafe { NonPrefixVec::new_unchecked(buffer) }
         }
 
         fn value(&self, index: usize) -> Self::Value {
@@ -161,7 +162,7 @@ mod vec {
             key: &<Self::Key as Key>::Borrowed,
             value: &<Self::Value as arctic::concurrent::Value>::Target,
         ) {
-            assert_eq!(key, self.key(index));
+            assert_eq!(key, self.key(index).as_non_prefix_slice());
             assert_eq!(*value, index as u64);
         }
     }

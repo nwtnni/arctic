@@ -39,6 +39,7 @@ impl NonNullString {
         }
     }
 
+    /// Get a reference to this string.
     #[inline]
     pub const fn as_non_null_str(&self) -> &NonNullStr {
         // SAFETY: `self.0` does not contain null bytes
@@ -65,8 +66,7 @@ impl core::ops::Deref for NonNullString {
 impl core::borrow::Borrow<NonNullStr> for NonNullString {
     #[inline]
     fn borrow(&self) -> &NonNullStr {
-        // SAFETY: `self.0` does not contain null bytes
-        unsafe { NonNullStr::new_unchecked(self.as_str()) }
+        self.as_non_null_str()
     }
 }
 
@@ -120,6 +120,7 @@ impl NonNullStr {
         Some(unsafe { Self::new_unchecked(str) })
     }
 
+    /// Get an owned copy of this string.
     #[inline]
     pub fn to_non_null_string(&self) -> NonNullString {
         self.to_owned()

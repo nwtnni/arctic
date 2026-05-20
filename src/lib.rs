@@ -53,6 +53,8 @@ pub use concurrent::Key;
 pub use concurrent::Value;
 pub use raw::key::string::NonNullStr;
 pub use raw::key::string::NonNullString;
+pub use raw::key::vec::NonPrefixSlice;
+pub use raw::key::vec::NonPrefixVec;
 
 #[expect(private_bounds)]
 pub trait Order: seal::Seal {}
@@ -100,6 +102,8 @@ mod tests {
     use crate::Ascend;
     use crate::Descend;
     use crate::NonNullString;
+    use crate::NonPrefixSlice;
+    use crate::NonPrefixVec;
     use crate::concurrent::Map;
     use crate::raw::key::Read as _;
     use crate::sequential;
@@ -120,14 +124,19 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let map = Map::<Vec<u8>, _>::default();
-        map.upsert(b"abcd", 1u64);
-        assert_eq!(map.get(b"abcd").as_deref().copied(), Some(1));
+        let map = Map::<NonPrefixVec, _>::default();
+        map.upsert(unsafe { NonPrefixSlice::new_unchecked(b"abcd") }, 1u64);
+        assert_eq!(
+            map.get(unsafe { NonPrefixSlice::new_unchecked(b"abcd") })
+                .as_deref()
+                .copied(),
+            Some(1)
+        );
     }
 
     #[test]
     fn smoke_u64_key() {
-        let map = Map::<Vec<u8>, _>::default();
+        let map = Map::<[u8; 8], _>::default();
         let key = 0xdeadbeefu64.to_be_bytes();
         map.upsert(&key, 1u64);
         assert_eq!(map.get(&key).as_deref().copied(), Some(1));
@@ -299,7 +308,7 @@ mod tests {
                 let mut next = key.clone();
                 next.push(0);
                 key.pop();
-                Some(next)
+                Some(unsafe { NonPrefixVec::new_unchecked(next) })
             }
         }));
     }
@@ -311,7 +320,7 @@ mod tests {
 
     #[test]
     fn short_key() {
-        insert_all(["\n".as_bytes().to_vec()]);
+        insert_all([NonNullString::new("\n".to_string()).unwrap()]);
     }
 
     #[test]
