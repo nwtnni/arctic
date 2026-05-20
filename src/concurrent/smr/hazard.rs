@@ -29,8 +29,8 @@
 //!
 //! Second, note that each trie operation is also associated with
 //! a key prefix. This can be a full key for point operations like
-//! [`crate::concurrent::MapRef::get`], or a key prefix for prefix
-//! operations like [`crate::concurrent::MapRef::prefix`].
+//! [`crate::concurrent::Map::get`], or a key prefix for prefix
+//! operations like [`crate::concurrent::Map::prefix`].
 //!
 //! Then the core insight is that a trie operation will never access
 //! nodes or values whose key prefixes do not overlap with its own.

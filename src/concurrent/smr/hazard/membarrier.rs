@@ -1,5 +1,5 @@
-//! https://pvk.ca/Blog/2020/07/07/flatter-wait-free-hazard-pointers/
-//! https://docs.rs/membarrier/latest/membarrier/
+//! <https://pvk.ca/Blog/2020/07/07/flatter-wait-free-hazard-pointers/>
+//! <https://docs.rs/membarrier/latest/membarrier/>
 
 use core::sync::atomic::Ordering;
 

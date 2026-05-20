@@ -9,8 +9,8 @@ use crate::sequential;
 /// Values that can safely be stored in a [`crate::concurrent::Map`].
 ///
 /// Values may be either inline or indirect. An inline
-/// value (e.g., u64) is stored directly in an edge and can be freely
-/// copied. An indirect value (e.g., Box<T>) is a pointer to a separate
+/// value (e.g., [`u64`]) is stored directly in an edge and can be freely
+/// copied. An indirect value (e.g., [`Box<T>`]) is a pointer to a separate
 /// allocation; the pointer is stored in an edge.
 ///
 /// Note: we don't need [`Send`] or [`Sync`] bounds here.

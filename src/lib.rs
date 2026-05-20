@@ -79,7 +79,7 @@ mod seal {
     }
 }
 
-/// https://users.rust-lang.org/t/compiler-hint-for-unlikely-likely-for-if-branches/62102/4
+/// <https://users.rust-lang.org/t/compiler-hint-for-unlikely-likely-for-if-branches/62102/4>
 #[inline]
 #[cold]
 pub(crate) fn cold() {}

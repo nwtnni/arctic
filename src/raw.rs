@@ -1,3 +1,5 @@
+#![expect(rustdoc::private_intra_doc_links)]
+
 //! This module contains:
 //! - The structure of the tree ([`crate::raw::edge`], [`crate::raw::node`], [`crate::raw::key`])
 //! - Range iteration over the tree ([`crate::raw::iter`])
