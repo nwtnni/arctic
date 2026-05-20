@@ -68,6 +68,7 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
+use crate::concurrent::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
@@ -77,10 +78,10 @@ use crate::stat;
 pub struct Hazard;
 
 impl Smr for Hazard {
-    type Global<P, V>
-        = Box<Global<P, V>>
+    type Global<K, V>
+        = Box<Global<K, V>>
     where
-        P: ribbit::Pack<Packed: Prefix>,
+        K: Key,
         V: Value;
 }
 
@@ -88,27 +89,27 @@ impl Smr for Hazard {
 #[derive(Default)]
 struct Cache<T>(T);
 
-pub struct Global<P: ribbit::Pack<Packed: Prefix>, V: Value> {
+pub struct Global<K: Key, V: Value> {
     garbage: AtomicU64,
 
     // FIXME: jagged/triangular array
-    hazards: [Cache<ribbit::Atomic<P>>; smr::thread::MAX],
-    locals: [UnsafeCell<Local<P, V>>; smr::thread::MAX],
+    hazards: [Cache<ribbit::Atomic<K::Prefix>>; smr::thread::MAX],
+    locals: [UnsafeCell<Local<K::Prefix, V>>; smr::thread::MAX],
     membarrier: AtomicBool,
     reclaim_threshold: usize,
     value: PhantomData<V>,
 }
 
-unsafe impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Send for Global<P, V> {}
-unsafe impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Sync for Global<P, V> {}
+unsafe impl<K: Key, V: Value> Send for Global<K, V> {}
+unsafe impl<K: Key, V: Value> Sync for Global<K, V> {}
 
-impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Default for Global<P, V> {
+impl<K: Key, V: Value> Default for Global<K, V> {
     fn default() -> Self {
         Self {
             garbage: AtomicU64::new(0),
             hazards: core::array::from_fn(|_| {
                 Cache(ribbit::Atomic::new_packed(
-                    <<P as ribbit::Pack>::Packed as Prefix>::HAZARD_NULL,
+                    <<K::Prefix as ribbit::Pack>::Packed as Prefix>::HAZARD_NULL,
                 ))
             }),
             locals: core::array::from_fn(|_| {
@@ -127,7 +128,7 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Default for Global<P, V> {
     }
 }
 
-impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Global<P, V> {
+impl<K: Key, V: Value> Global<K, V> {
     #[inline]
     #[must_use]
     pub fn with_reclaim_threshold(mut self, reclaim_threshold: usize) -> Self {
@@ -148,26 +149,26 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Global<P, V> {
             .map(|local| local.get_mut())
             .flat_map(|local| local.retired.drain(..))
             .for_each(|(prefix, raw)| {
-                deallocate::<P, V>(prefix, raw, stat::Counter::FreeReclaim);
+                deallocate::<K::Prefix, V>(prefix, raw, stat::Counter::FreeReclaim);
             })
     }
 }
 
-impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Drop for Global<P, V> {
+impl<K: Key, V: Value> Drop for Global<K, V> {
     fn drop(&mut self) {
         self.reclaim();
     }
 }
 
-impl<P: ribbit::Pack<Packed: Prefix>, V: Value> smr::Global<P, V> for Box<Global<P, V>> {
+impl<K: Key, V: Value> smr::Global<K, V> for Box<Global<K, V>> {
     type Guard<'g>
-        = Guard<'g, P, V>
+        = Guard<'g, K, V>
     where
         V: 'g,
         Self: 'g;
 
     #[inline]
-    fn guard<'g>(&'g self, prefix: ribbit::Packed<P>) -> Self::Guard<'g>
+    fn guard<'g>(&'g self, key: K::Read<'_>) -> Self::Guard<'g>
     where
         V: 'g,
     {
@@ -177,7 +178,7 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> smr::Global<P, V> for Box<Global
         let local = &self.locals[id];
 
         validate!(!hazard.load_packed(Ordering::Relaxed).is_active());
-        hazard.store_packed(prefix, membarrier::fast_store_ordering(membarrier));
+        hazard.store_packed(K::hazard(key), membarrier::fast_store_ordering(membarrier));
         membarrier::fast_barrier(membarrier);
 
         Guard {
@@ -201,14 +202,14 @@ pub struct Local<P: ribbit::Pack<Packed: Prefix>, V> {
     _value: PhantomData<V>,
 }
 
-impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Global<P, V> {
+impl<K: Key, V: Value> Global<K, V> {
     #[inline]
     pub fn enable_membarrier(&self) {
         self.membarrier.store(true, Ordering::Relaxed)
     }
 
     #[cold]
-    fn flush(global: &Global<P, V>, local: &mut Local<P, V>) {
+    fn flush(global: &Global<K, V>, local: &mut Local<K::Prefix, V>) {
         stat::max(stat::Max::RetireCache, local.retired.len() as u64);
 
         membarrier::slow(global.membarrier.load(Ordering::Relaxed));
@@ -251,7 +252,7 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Global<P, V> {
                 }
             }
 
-            deallocate::<P, V>(*prefix, *raw, stat::Counter::FreeRetire);
+            deallocate::<K::Prefix, V>(*prefix, *raw, stat::Counter::FreeRetire);
             false
         });
 
@@ -278,13 +279,13 @@ impl<P: ribbit::Pack<Packed: Prefix>, V: Value> Global<P, V> {
     }
 }
 
-pub struct Guard<'g, P: ribbit::Pack<Packed: Prefix>, V: Value> {
-    hazard: &'g ribbit::Atomic<P>,
-    local: &'g UnsafeCell<Local<P, V>>,
-    global: &'g Global<P, V>,
+pub struct Guard<'g, K: Key, V: Value> {
+    hazard: &'g ribbit::Atomic<K::Prefix>,
+    local: &'g UnsafeCell<Local<K::Prefix, V>>,
+    global: &'g Global<K, V>,
 }
 
-impl<'g, P: ribbit::Pack<Packed: Prefix>, V: Value> smr::Guard<V> for Guard<'g, P, V> {
+impl<'g, K: Key, V: Value> smr::Guard<V> for Guard<'g, K, V> {
     #[expect(private_bounds)]
     #[expect(private_interfaces)]
     unsafe fn retire_node<M: ribbit::Pack<Packed: crate::raw::edge::Meta>>(
@@ -356,10 +357,10 @@ impl<'g, P: ribbit::Pack<Packed: Prefix>, V: Value> smr::Guard<V> for Guard<'g, 
     }
 }
 
-impl<'g, P: ribbit::Pack<Packed: Prefix>, V: Value> Drop for Guard<'g, P, V> {
+impl<'g, K: Key, V: Value> Drop for Guard<'g, K, V> {
     fn drop(&mut self) {
         self.hazard
-            .store_packed(ribbit::Packed::<P>::HAZARD_NULL, Ordering::Relaxed);
+            .store_packed(ribbit::Packed::<K::Prefix>::HAZARD_NULL, Ordering::Relaxed);
 
         let local = unsafe { &mut *self.local.get() };
         if local.retired.len() < self.global.reclaim_threshold {

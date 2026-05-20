@@ -9,25 +9,25 @@ pub use hazard::Hazard;
 pub use no_op::NoOp;
 pub use seize::Seize;
 
+use crate::concurrent::Key;
 use crate::concurrent::Value;
 use crate::raw::edge;
 use crate::raw::node;
-use hazard::Prefix;
 
 pub trait Smr {
-    type Global<P, V>: Global<P, V>
+    type Global<K, V>: Global<K, V>
     where
-        P: ribbit::Pack<Packed: Prefix>,
+        K: Key,
         V: Value;
 }
 
-pub trait Global<P: ribbit::Pack<Packed: Prefix>, V: Value>: Default {
+pub trait Global<K: Key, V: Value>: Default {
     type Guard<'g>: Guard<V>
     where
         V: 'g,
         Self: 'g;
 
-    fn guard<'g>(&'g self, hazard: ribbit::Packed<P>) -> Self::Guard<'g>
+    fn guard<'g>(&'g self, key: K::Read<'_>) -> Self::Guard<'g>
     where
         V: 'g;
 

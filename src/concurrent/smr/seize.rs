@@ -1,7 +1,7 @@
+use crate::concurrent::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
-use crate::concurrent::smr::Prefix;
 use crate::raw::node;
 use crate::stat;
 
@@ -10,10 +10,10 @@ use seize::Guard as _;
 pub struct Seize;
 
 impl Smr for Seize {
-    type Global<P, V>
+    type Global<K, V>
         = Global
     where
-        P: ribbit::Pack<Packed: smr::hazard::Prefix>,
+        K: Key,
         V: Value;
 }
 
@@ -26,14 +26,14 @@ impl Global {
     }
 }
 
-impl<P: ribbit::Pack<Packed: Prefix>, V: Value> smr::Global<P, V> for Global {
+impl<K: Key, V: Value> smr::Global<K, V> for Global {
     type Guard<'g>
         = seize::LocalGuard<'g>
     where
         V: 'g,
         Self: 'g;
 
-    fn guard<'g>(&'g self, _hazard: ribbit::Packed<P>) -> Self::Guard<'g>
+    fn guard<'g>(&'g self, _: K::Read<'_>) -> Self::Guard<'g>
     where
         V: 'g,
     {

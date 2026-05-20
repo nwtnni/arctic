@@ -3,6 +3,7 @@ use core::sync::atomic::Ordering;
 
 use crossbeam_epoch::LocalHandle;
 
+use crate::concurrent::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
@@ -12,10 +13,10 @@ use crate::stat;
 pub struct Epoch;
 
 impl Smr for Epoch {
-    type Global<P, V>
+    type Global<K, V>
         = Box<Global>
     where
-        P: ribbit::Pack<Packed: smr::hazard::Prefix>,
+        K: Key,
         V: Value;
 }
 
@@ -59,14 +60,14 @@ impl Global {
     }
 }
 
-impl<P: ribbit::Pack<Packed: smr::hazard::Prefix>, V: Value> smr::Global<P, V> for Box<Global> {
+impl<K: Key, V: Value> smr::Global<K, V> for Box<Global> {
     type Guard<'g>
         = crossbeam_epoch::Guard
     where
         V: 'g,
         Self: 'g;
 
-    fn guard<'g>(&'g self, _hazard: ribbit::Packed<P>) -> Self::Guard<'g>
+    fn guard<'g>(&'g self, _: K::Read<'_>) -> Self::Guard<'g>
     where
         V: 'g,
     {

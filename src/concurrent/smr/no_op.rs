@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
+use crate::concurrent::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
@@ -20,21 +21,21 @@ const GARBAGE_THRESHOLD: u32 = 256;
 pub struct NoOp;
 
 impl Smr for NoOp {
-    type Global<P, V>
+    type Global<K, V>
         = Self
     where
-        P: ribbit::Pack<Packed: smr::hazard::Prefix>,
+        K: Key,
         V: Value;
 }
 
-impl<P: ribbit::Pack<Packed: smr::hazard::Prefix>, V: Value> smr::Global<P, V> for NoOp {
+impl<K: Key, V: Value> smr::Global<K, V> for NoOp {
     type Guard<'g>
         = Guard<(), V>
     where
         V: 'g,
         Self: 'g;
 
-    fn guard<'g>(&'g self, _hazard: ribbit::Packed<P>) -> Self::Guard<'g>
+    fn guard<'g>(&'g self, _: K::Read<'_>) -> Self::Guard<'g>
     where
         V: 'g,
     {
