@@ -30,10 +30,13 @@ smr-seize = []
 
 validate = []
 
+proptest = ["dep:proptest"]
+
 [dependencies]
 base64 = { version = "0.22.1", optional = true }
 hdrhistogram = { version = "7.5.4", optional = true, default-features = false, features = ["serialization"] }
 libc = { version = "0.2.176", optional = true }
+proptest = { version = "1.9.0", optional = true }
 ribbit = { git = "https://github.com/nwtnni/ribbit.git", features = ["atomic-u128"] }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 
@@ -53,7 +56,6 @@ features = ["libc"]
 [dev-dependencies]
 criterion = { version = "0.8.2", default-features = false }
 mimalloc = "0.1.50"
-proptest = "1.9.0"
 proptest-state-machine = "0.6.0"
 rand = "0.9"
 rapidhash = "4.0.0"

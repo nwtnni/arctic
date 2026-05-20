@@ -18,7 +18,7 @@ use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 
 pub trait Key: Borrow<Self::Borrowed> {
-    type Borrowed: 'static + ?Sized;
+    type Borrowed: 'static + ?Sized + core::fmt::Debug;
 
     #[expect(private_bounds)]
     type Read<'k>: Read<Edge = Self::Edge, Len = Self::Len> + From<&'k Self::Borrowed>;

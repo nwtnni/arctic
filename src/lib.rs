@@ -51,6 +51,8 @@ pub mod stat;
 
 pub use concurrent::Key;
 pub use concurrent::Value;
+pub use raw::key::string::NonNullStr;
+pub use raw::key::string::NonNullString;
 
 #[expect(private_bounds)]
 pub trait Order: seal::Seal {}
@@ -97,6 +99,7 @@ fn assert_unique(keys: &[u8]) {
 mod tests {
     use crate::Ascend;
     use crate::Descend;
+    use crate::NonNullString;
     use crate::concurrent::Map;
     use crate::raw::key::Read as _;
     use crate::sequential;
@@ -303,7 +306,7 @@ mod tests {
 
     #[test]
     fn one_long_key() {
-        insert_all(["a".repeat(1000)]);
+        insert_all([NonNullString::new("a".repeat(1000)).unwrap()]);
     }
 
     #[test]
@@ -313,20 +316,10 @@ mod tests {
 
     #[test]
     fn two_long_keys() {
-        insert_all(["a".repeat(1000), "b".repeat(1000)]);
-    }
-
-    #[test]
-    fn range_empty() {
-        // assert!("" < " ");
-        // assert!(vec![0] < vec![b' ', 0]);
-        let map = crate::concurrent::Map::<String, u64>::new();
-        map.upsert("", 1u64);
-        map.upsert("\0", 0u64);
-        let range = map.range(""..="A").unwrap();
-        // assert_eq!(range.entries::<crate::Ascend>().count(), 2);
-
-        // insert_all([b"A".to_vec()]);
+        insert_all([
+            NonNullString::new("a".repeat(1000)).unwrap(),
+            NonNullString::new("b".repeat(1000)).unwrap(),
+        ]);
     }
 
     fn insert_all<I, K>(iter: I) -> Map<K, u64>

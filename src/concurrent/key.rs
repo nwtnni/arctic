@@ -1,3 +1,4 @@
+use crate::NonNullString;
 use crate::concurrent::smr::hazard;
 use crate::raw;
 use crate::raw::Int;
@@ -22,7 +23,7 @@ impl Key for Vec<u8> {
     }
 }
 
-impl Key for String {
+impl Key for NonNullString {
     type Prefix = Le;
 
     #[inline]

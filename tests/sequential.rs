@@ -2,6 +2,7 @@ use core::fmt::Debug;
 use core::ops::ControlFlow;
 use std::collections::BTreeMap;
 
+use arctic::NonNullString;
 use proptest::arbitrary::Arbitrary;
 use proptest::prelude::Just;
 use proptest::prelude::Strategy as _;
@@ -47,9 +48,9 @@ prop_state_machine! {
     #[test]
     fn string_u64(
         sequential
-        1000
+        10000
         =>
-        Arctic<String, u64>
+        Arctic<NonNullString, u64>
     );
 }
 
