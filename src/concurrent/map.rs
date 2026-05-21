@@ -3,7 +3,7 @@ use core::ops::RangeFull;
 use core::sync::atomic::Ordering;
 
 use crate::concurrent::Key;
-use crate::concurrent::Prefix;
+use crate::concurrent::Shard;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::iter;
@@ -630,30 +630,27 @@ where
         }
     }
 
-    pub fn all(&self) -> iter::Prefix<'static, '_, K, V, RangeFull, Guard<'_, K, V, S>> {
+    pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
         let guard = self.smr.guard(K::Read::default());
-        unsafe { Prefix::new(guard, self.seq.raw.all()) }
+        unsafe { Shard::new(guard, self.seq.raw.all()) }
     }
 
     pub fn prefix<'k>(
         &self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<iter::Prefix<'k, '_, K, V, RangeFull, Guard<'_, K, V, S>>> {
+    ) -> Option<iter::Shard<'_, 'k, K, V, RangeFull, Guard<'_, K, V, S>>> {
         let prefix = prefix.into();
         let guard = self.smr.guard(prefix);
-        Some(unsafe { Prefix::new(guard, self.seq.raw.prefix(prefix)?) })
+        Some(unsafe { Shard::new(guard, self.seq.raw.prefix(prefix)?) })
     }
 
-    pub fn range<'k, R>(
-        &self,
-        range: R,
-    ) -> Option<iter::Prefix<'k, '_, K, V, R, Guard<'_, K, V, S>>>
+    pub fn range<'k, R>(&self, range: R) -> Option<iter::Shard<'_, 'k, K, V, R, Guard<'_, K, V, S>>>
     where
         R: crate::raw::iter::Range<K::Read<'k>>,
     {
         let prefix = range.common_prefix();
         let guard = self.smr.guard(prefix);
-        Some(unsafe { Prefix::new(guard, self.seq.raw.range(range, prefix)?) })
+        Some(unsafe { Shard::new(guard, self.seq.raw.range(range, prefix)?) })
     }
 }
 

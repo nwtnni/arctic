@@ -24,11 +24,13 @@ pub(crate) mod iter;
 pub mod key;
 pub(crate) mod map;
 pub(crate) mod node;
+pub(crate) mod shard;
 
 pub(crate) use cursor::Cursor;
 pub(crate) use edge::Edge;
 pub use key::Key;
 pub(crate) use map::Map;
+pub(crate) use shard::Shard;
 
 pub(crate) use int::Int;
 

@@ -2,11 +2,11 @@ use core::ops::RangeFull;
 
 use ribbit::Atomic;
 
+use crate::raw;
 use crate::raw::Cursor;
 use crate::raw::Edge;
 use crate::raw::Key;
 use crate::raw::cursor;
-use crate::raw::iter;
 use crate::raw::iter::PostorderIter;
 
 #[repr(transparent)]
@@ -26,24 +26,28 @@ impl<K: Key> Map<K> {
     }
 
     #[inline]
-    pub unsafe fn all(&self) -> iter::Prefix<'static, '_, K, RangeFull> {
-        unsafe { iter::Prefix::<K>::new_all(self.root()) }
+    pub(crate) unsafe fn all(&self) -> raw::Shard<'_, 'static, K, RangeFull> {
+        unsafe { raw::Shard::<K>::new_all(self.root()) }
     }
 
     #[inline]
-    pub unsafe fn prefix<'k>(
+    pub(crate) unsafe fn prefix<'k>(
         &self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<iter::Prefix<'k, '_, K, RangeFull>> {
-        unsafe { iter::Prefix::<K>::new_prefix(self.root(), prefix.into()) }
+    ) -> Option<raw::Shard<'_, 'k, K, RangeFull>> {
+        unsafe { raw::Shard::<K>::new_prefix(self.root(), prefix.into()) }
     }
 
     #[inline]
-    pub fn range<'k, R>(&self, range: R, prefix: K::Read<'k>) -> Option<iter::Prefix<'k, '_, K, R>>
+    pub(crate) unsafe fn range<'k, R>(
+        &self,
+        range: R,
+        prefix: K::Read<'k>,
+    ) -> Option<raw::Shard<'_, 'k, K, R>>
     where
-        R: iter::Range<K::Read<'k>>,
+        R: raw::iter::Range<K::Read<'k>>,
     {
-        unsafe { iter::Prefix::new_range(self.root(), range, prefix) }
+        unsafe { raw::Shard::new_range(self.root(), range, prefix) }
     }
 
     #[inline]

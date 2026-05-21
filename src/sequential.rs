@@ -6,8 +6,8 @@ mod value;
 
 pub use iter::EntryIter;
 pub use iter::EntryIterMut;
-pub use iter::Prefix;
-pub use iter::PrefixMut;
+pub use iter::Shard;
+pub use iter::ShardMut;
 pub use iter::ValueIter;
 pub use iter::ValueIterMut;
 pub use map::Map;

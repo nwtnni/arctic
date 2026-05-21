@@ -8,19 +8,19 @@ use crate::raw::Edge;
 use crate::raw::Key;
 use crate::sequential::Value;
 
-pub struct Prefix<'k, 'g, K: Key, V, R> {
-    inner: raw::iter::Prefix<'k, 'g, K, R>,
+pub struct Shard<'g, 'k, K: Key, V, R> {
+    inner: raw::Shard<'g, 'k, K, R>,
     _value: PhantomData<&'g V>,
 }
 
-impl<'k, 'g, K, V, R> Prefix<'k, 'g, K, V, R>
+impl<'g, 'k, K, V, R> Shard<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
 {
     #[inline]
-    pub(crate) unsafe fn new(prefix: raw::iter::Prefix<'k, 'g, K, R>) -> Self {
+    pub(crate) unsafe fn new(prefix: raw::Shard<'g, 'k, K, R>) -> Self {
         Self {
             inner: prefix,
             _value: PhantomData,
@@ -28,7 +28,7 @@ where
     }
 
     #[inline]
-    pub fn entries<O: Order>(&self) -> EntryIter<'k, 'g, K, V, R, O> {
+    pub fn entries<O: Order>(&self) -> EntryIter<'g, 'k, K, V, R, O> {
         EntryIter {
             inner: self.inner.entries::<O>(),
             _value: PhantomData,
@@ -36,7 +36,7 @@ where
     }
 
     #[inline]
-    pub fn values<O: Order>(&self) -> ValueIter<'k, 'g, K, V, R, O> {
+    pub fn values<O: Order>(&self) -> ValueIter<'g, 'k, K, V, R, O> {
         ValueIter {
             inner: self.inner.values::<O>(),
             _value: PhantomData,
@@ -44,21 +44,21 @@ where
     }
 }
 
-pub struct PrefixMut<'k, 'g, K: Key, V, R>(Prefix<'k, 'g, K, V, R>);
+pub struct ShardMut<'g, 'k, K: Key, V, R>(Shard<'g, 'k, K, V, R>);
 
-impl<'k, 'g, K, V, R> PrefixMut<'k, 'g, K, V, R>
+impl<'g, 'k, K, V, R> ShardMut<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
 {
     #[inline]
-    pub(crate) unsafe fn new(prefix: Prefix<'k, 'g, K, V, R>) -> Self {
+    pub(crate) unsafe fn new(prefix: Shard<'g, 'k, K, V, R>) -> Self {
         Self(prefix)
     }
 
     #[inline]
-    pub fn entries_mut<O: Order>(&mut self) -> EntryIterMut<'k, 'g, K, V, R, O> {
+    pub fn entries_mut<O: Order>(&mut self) -> EntryIterMut<'g, 'k, K, V, R, O> {
         EntryIterMut {
             inner: self.0.inner.entries::<O>(),
             _value: PhantomData,
@@ -66,7 +66,7 @@ where
     }
 
     #[inline]
-    pub fn values_mut<O: Order>(&mut self) -> ValueIterMut<'k, 'g, K, V, R, O> {
+    pub fn values_mut<O: Order>(&mut self) -> ValueIterMut<'g, 'k, K, V, R, O> {
         ValueIterMut {
             inner: self.0.inner.values::<O>(),
             _value: PhantomData,
@@ -74,22 +74,22 @@ where
     }
 }
 
-impl<'k, 'g, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>> Deref
-    for PrefixMut<'k, 'g, K, V, R>
+impl<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>> Deref
+    for ShardMut<'g, 'k, K, V, R>
 {
-    type Target = Prefix<'k, 'g, K, V, R>;
+    type Target = Shard<'g, 'k, K, V, R>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 /// Iterator over keys and values
-pub struct EntryIter<'k, 'g, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::EntryIter<'k, 'g, K, R, O>,
+pub struct EntryIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
+    inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g V>,
 }
 
-impl<'k, 'g, K, V, R, O> EntryIter<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> EntryIter<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,
@@ -118,7 +118,7 @@ where
     }
 }
 
-impl<'k, 'g, K, V, R, O> Iterator for EntryIter<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> Iterator for EntryIter<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,
@@ -133,12 +133,12 @@ where
     }
 }
 
-pub struct EntryIterMut<'k, 'g, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::EntryIter<'k, 'g, K, R, O>,
+pub struct EntryIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
+    inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g mut V>,
 }
 
-impl<'k, 'g, K, V, R, O> EntryIterMut<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> EntryIterMut<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,
@@ -167,7 +167,7 @@ where
     }
 }
 
-impl<'k, 'g, K, V, R, O> Iterator for EntryIterMut<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> Iterator for EntryIterMut<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,
@@ -182,12 +182,12 @@ where
     }
 }
 
-pub struct ValueIter<'k, 'g, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::ValueIter<'k, 'g, K, R, O>,
+pub struct ValueIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
+    inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g V>,
 }
 
-impl<'k, 'g, K, V, R, O> ValueIter<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> ValueIter<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,
@@ -202,7 +202,7 @@ where
     }
 }
 
-impl<'k, 'g, K, V, R, O> Iterator for ValueIter<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> Iterator for ValueIter<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,
@@ -219,12 +219,12 @@ where
     }
 }
 
-pub struct ValueIterMut<'k, 'g, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::ValueIter<'k, 'g, K, R, O>,
+pub struct ValueIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
+    inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g mut V>,
 }
 
-impl<'k, 'g, K, V, R, O> ValueIterMut<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> ValueIterMut<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,
@@ -239,7 +239,7 @@ where
     }
 }
 
-impl<'k, 'g, K, V, R, O> Iterator for ValueIterMut<'k, 'g, K, V, R, O>
+impl<'g, 'k, K, V, R, O> Iterator for ValueIterMut<'g, 'k, K, V, R, O>
 where
     K: Key,
     V: Value,

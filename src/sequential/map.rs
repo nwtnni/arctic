@@ -12,8 +12,8 @@ use crate::raw::Key;
 use crate::raw::cursor::path;
 use crate::sequential::EntryIter;
 use crate::sequential::EntryIterMut;
-use crate::sequential::Prefix;
-use crate::sequential::PrefixMut;
+use crate::sequential::Shard;
+use crate::sequential::ShardMut;
 use crate::sequential::Value;
 use crate::stat;
 
@@ -116,46 +116,46 @@ where
     }
 
     #[inline]
-    pub fn all(&self) -> Prefix<'static, '_, K, V, RangeFull> {
-        unsafe { Prefix::new(self.raw.all()) }
+    pub fn all(&self) -> Shard<'_, 'static, K, V, RangeFull> {
+        unsafe { Shard::new(self.raw.all()) }
     }
 
     #[inline]
     pub fn prefix<'k>(
         &self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<Prefix<'k, '_, K, V, RangeFull>> {
-        Some(unsafe { Prefix::new(self.raw.prefix(prefix)?) })
+    ) -> Option<Shard<'_, 'k, K, V, RangeFull>> {
+        Some(unsafe { Shard::new(self.raw.prefix(prefix)?) })
     }
 
     #[inline]
-    pub fn range<'k, R>(&self, range: R) -> Option<Prefix<'k, '_, K, V, R>>
+    pub fn range<'k, R>(&self, range: R) -> Option<Shard<'_, 'k, K, V, R>>
     where
         R: raw::iter::Range<K::Read<'k>>,
     {
         let prefix = range.common_prefix();
-        Some(unsafe { Prefix::new(self.raw.range(range, prefix)?) })
+        Some(unsafe { Shard::new(self.raw.range(range, prefix)?) })
     }
 
     #[inline]
-    pub fn all_mut(&mut self) -> PrefixMut<'static, '_, K, V, RangeFull> {
-        unsafe { PrefixMut::new(self.all()) }
+    pub fn all_mut(&mut self) -> ShardMut<'_, 'static, K, V, RangeFull> {
+        unsafe { ShardMut::new(self.all()) }
     }
 
     #[inline]
     pub fn prefix_mut<'k>(
         &mut self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<PrefixMut<'k, '_, K, V, RangeFull>> {
-        Some(unsafe { PrefixMut::new(self.prefix(prefix)?) })
+    ) -> Option<ShardMut<'_, 'k, K, V, RangeFull>> {
+        Some(unsafe { ShardMut::new(self.prefix(prefix)?) })
     }
 
     #[inline]
-    pub fn range_mut<'k, R>(&mut self, range: R) -> Option<PrefixMut<'k, '_, K, V, R>>
+    pub fn range_mut<'k, R>(&mut self, range: R) -> Option<ShardMut<'_, 'k, K, V, R>>
     where
         R: raw::iter::Range<K::Read<'k>>,
     {
-        Some(unsafe { PrefixMut::new(self.range(range)?) })
+        Some(unsafe { ShardMut::new(self.range(range)?) })
     }
 }
 
@@ -179,7 +179,7 @@ where
     V: Value,
 {
     type Item = (K, &'g V);
-    type IntoIter = EntryIter<'static, 'g, K, V, RangeFull, Ascend>;
+    type IntoIter = EntryIter<'g, 'static, K, V, RangeFull, Ascend>;
     fn into_iter(self) -> Self::IntoIter {
         self.all().entries::<Ascend>()
     }
@@ -191,7 +191,7 @@ where
     V: Value,
 {
     type Item = (K, &'g mut V);
-    type IntoIter = EntryIterMut<'static, 'g, K, V, RangeFull, Ascend>;
+    type IntoIter = EntryIterMut<'g, 'static, K, V, RangeFull, Ascend>;
     fn into_iter(self) -> Self::IntoIter {
         self.all_mut().entries_mut::<Ascend>()
     }

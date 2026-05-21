@@ -7,7 +7,7 @@ pub mod smr;
 mod value;
 
 pub use iter::EntryIter;
-pub use iter::Prefix;
+pub use iter::Shard;
 pub use iter::ValueIter;
 pub use key::Key;
 pub use map::Map;

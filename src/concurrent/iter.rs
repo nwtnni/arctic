@@ -7,13 +7,13 @@ use crate::concurrent::Value;
 use crate::concurrent::smr;
 use crate::raw;
 
-pub struct Prefix<'k, 'g, K: Key, V, R, G> {
+pub struct Shard<'g, 'k, K: Key, V, R, G> {
     _guard: G,
-    inner: raw::iter::Prefix<'k, 'g, K, R>,
+    inner: raw::Shard<'g, 'k, K, R>,
     _value: PhantomData<V>,
 }
 
-impl<'k, 'g, K, V, R, G> Prefix<'k, 'g, K, V, R, G>
+impl<'g, 'k, K, V, R, G> Shard<'g, 'k, K, V, R, G>
 where
     K: Key,
     V: Value,
@@ -23,9 +23,9 @@ where
     #[inline]
     pub(super) unsafe fn new(
         guard: G,
-        prefix: raw::iter::Prefix<'k, 'g, K, R>,
-    ) -> Prefix<'k, 'g, K, V, R, G> {
-        Prefix {
+        prefix: raw::Shard<'g, 'k, K, R>,
+    ) -> Shard<'g, 'k, K, V, R, G> {
+        Shard {
             _guard: guard,
             inner: prefix,
             _value: PhantomData,
@@ -33,7 +33,7 @@ where
     }
 }
 
-impl<'k, 'g, K, V, R, G> Prefix<'k, 'g, K, V, R, G>
+impl<'g, 'k, K, V, R, G> Shard<'g, 'k, K, V, R, G>
 where
     K: Key,
     V: Value,
@@ -41,7 +41,7 @@ where
     G: smr::Guard<V>,
 {
     #[inline]
-    pub fn entries<O: Order>(&self) -> EntryIter<'k, '_, K, V, R, O, G> {
+    pub fn entries<O: Order>(&self) -> EntryIter<'_, 'k, K, V, R, O, G> {
         EntryIter {
             inner: self.inner.entries::<O>(),
             value: 0,
@@ -51,7 +51,7 @@ where
     }
 
     #[inline]
-    pub fn values<O: Order>(&self) -> ValueIter<'k, '_, K, V, R, O, G> {
+    pub fn values<O: Order>(&self) -> ValueIter<'_, 'k, K, V, R, O, G> {
         ValueIter {
             inner: self.inner.values::<O>(),
             value: 0,
@@ -62,14 +62,14 @@ where
 }
 
 /// Iterator over keys and values
-pub struct EntryIter<'k, 'l, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
-    inner: raw::iter::EntryIter<'k, 'l, K, R, O>,
+pub struct EntryIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
+    inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
     value: u64,
-    _guard: PhantomData<&'l G>,
+    _guard: PhantomData<&'g G>,
     _value: PhantomData<V>,
 }
 
-impl<'k, 'l, K, V, R, O, G> EntryIter<'k, 'l, K, V, R, O, G>
+impl<'g, 'k, K, V, R, O, G> EntryIter<'g, 'k, K, V, R, O, G>
 where
     K: Key,
     V: Value,
@@ -97,7 +97,7 @@ where
     }
 }
 
-impl<'k, 'l, K, V, R, O, G> Iterator for EntryIter<'k, 'l, K, V, R, O, G>
+impl<'g, 'k, K, V, R, O, G> Iterator for EntryIter<'g, 'k, K, V, R, O, G>
 where
     K: Key,
     V: Value,
@@ -115,14 +115,14 @@ where
 }
 
 /// Iterator over values only
-pub struct ValueIter<'k, 'l, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
-    inner: raw::iter::ValueIter<'k, 'l, K, R, O>,
+pub struct ValueIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
+    inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
     value: u64,
-    _guard: PhantomData<&'l G>,
+    _guard: PhantomData<&'g G>,
     _value: PhantomData<V>,
 }
 
-impl<'k, 'l, K, V, R, O, G> ValueIter<'k, 'l, K, V, R, O, G>
+impl<'g, 'k, K, V, R, O, G> ValueIter<'g, 'k, K, V, R, O, G>
 where
     K: Key,
     V: Value,
@@ -147,7 +147,7 @@ where
     }
 }
 
-impl<'k, 'l, K, V, R, O, G> Iterator for ValueIter<'k, 'l, K, V, R, O, G>
+impl<'g, 'k, K, V, R, O, G> Iterator for ValueIter<'g, 'k, K, V, R, O, G>
 where
     K: Key,
     V: Value,
