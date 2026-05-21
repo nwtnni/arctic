@@ -1,19 +1,21 @@
 #![expect(rustdoc::private_intra_doc_links)]
 
-//! This module contains:
-//! - The structure of the tree ([`crate::raw::edge`], [`crate::raw::node`], [`crate::raw::key`])
-//! - Range iteration over the tree ([`crate::raw::iter`])
-//! - Point traversal over the tree ([`crate::raw::cursor`])
-//!
-//! This module is "raw" with respect to:
-//! - Safe memory reclamation ([`crate::concurrent::smr`])
-//! - Mutable vs. immutable access
-//! - Value types ([`crate::sequential::Value`], [`crate::concurrent::Value`])
+//! Weakly typed implementation of adaptive radix tree.
 //!
 //! The purpose of this module is to re-use as much code as possible between the
 //! sequential ([`crate::sequential::Map`]) and concurrent ([`crate::concurrent::Map`])
 //! tree implementations, and between instantiations of these trees with different
 //! value types.
+//!
+//! This module contains:
+//! - Structural types ([`crate::raw::edge`], [`crate::raw::node`], [`crate::raw::key`])
+//! - Traversal for point operations ([`crate::raw::cursor`])
+//! - Iteration for range operations ([`crate::raw::iter`])
+//!
+//! This module is "raw" with respect to:
+//! - Safe memory reclamation ([`crate::concurrent::smr`])
+//! - Mutable vs. immutable access
+//! - Value types ([`crate::sequential::Value`], [`crate::concurrent::Value`])
 
 pub(crate) mod cursor;
 pub(crate) mod edge;

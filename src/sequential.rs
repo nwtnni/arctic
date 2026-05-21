@@ -1,3 +1,5 @@
+//! Single-threaded implementation of adaptive radix tree.
+
 mod iter;
 pub mod map;
 mod value;

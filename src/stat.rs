@@ -1,3 +1,5 @@
+//! Record implementation-specific counters and histograms.
+
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 

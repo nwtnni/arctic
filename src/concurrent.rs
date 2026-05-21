@@ -1,3 +1,5 @@
+//! Thread-safe, lock-free implementation of adaptive radix tree.
+
 mod iter;
 mod key;
 pub mod map;

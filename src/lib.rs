@@ -56,16 +56,30 @@ pub use raw::key::string::NonNullString;
 pub use raw::key::vec::NonPrefixSlice;
 pub use raw::key::vec::NonPrefixVec;
 
+/// Key order for range and prefix operations (e.g., [`concurrent::Prefix::entries`]).
+///
+/// We take a compile-time argument rather than implementing [`core::iter::DoubleEndedIterator`]
+/// because the latter would require maintaining two stacks at runtime (for the lower and
+/// upper bound).
 #[expect(private_bounds)]
 pub trait Order: seal::Seal {}
 
+/// Ascending [lexicographic order](https://en.wikipedia.org/wiki/Lexicographic_order).
+///
+/// Also see [`Order`].
 pub struct Ascend;
+
+/// Descending [lexicographic order](https://en.wikipedia.org/wiki/Lexicographic_order).
+///
+/// Also see [`Order`].
 pub struct Descend;
 
 impl Order for Ascend {}
 impl Order for Descend {}
 
 mod seal {
+    //! [Seal](https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/) for [`crate::Order`].
+
     pub(crate) trait Seal {
         const ASCEND: bool;
     }
