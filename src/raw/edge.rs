@@ -7,7 +7,6 @@ use ribbit::u6;
 
 use core::fmt::Debug;
 use core::ops::Add;
-use core::ops::ControlFlow;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
@@ -66,7 +65,9 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
         R: key::Read<Edge = M>,
     {
         let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
+
         let Some(byte) = reader.get_byte(edge.len()) else {
+            // Fast path: remaining bytes fit in one edge
             return (Self::new_value(edge, value), None);
         };
 
@@ -85,17 +86,8 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
             crate::cold();
         }
 
-        let (head, tail) = Node3::new_path(edge, byte, || {
-            let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
-            match reader.get_byte(edge.len()) {
-                None => ControlFlow::Break((edge, value)),
-                Some(byte) => {
-                    reader = reader.suffix(R::Len::BYTE + edge.len().into());
-                    ControlFlow::Continue((edge, byte))
-                }
-            }
-        });
-
+        // Slow path: allocate recursive path of Node3s
+        let (head, tail) = Node3::new_path(edge, byte, reader, value);
         (head, Some(tail))
     }
 

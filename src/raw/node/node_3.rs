@@ -1,4 +1,3 @@
-use core::ops::ControlFlow;
 use core::ptr::NonNull;
 
 use ribbit::u2;
@@ -6,6 +5,10 @@ use ribbit::u48;
 
 use crate::raw::Edge;
 use crate::raw::edge;
+use crate::raw::edge::Len as _;
+use crate::raw::edge::Meta as _;
+use crate::raw::key;
+use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Linear;
 use crate::raw::node::linear;
@@ -123,14 +126,12 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
         (head, tail)
     }
 
-    pub(crate) fn new_path<F>(
+    pub(crate) fn new_path<R: key::Read<Edge = M>>(
         meta: ribbit::Packed<M>,
         byte: u8,
-        mut next: F,
-    ) -> (ribbit::Packed<Edge<M>>, NonNull<ribbit::Atomic<Edge<M>>>)
-    where
-        F: FnMut() -> ControlFlow<(ribbit::Packed<M>, u64), (ribbit::Packed<M>, u8)>,
-    {
+        mut reader: R,
+        value: u64,
+    ) -> (ribbit::Packed<Edge<M>>, NonNull<ribbit::Atomic<Edge<M>>>) {
         let mut head = Box::new(Self::default());
         head.header.set_packed(ribbit::Packed::<Header>::new(
             u48::new(byte as u64),
@@ -141,26 +142,26 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
         let mut tail = NonNull::from(&head.edges[0]);
 
         loop {
-            match next() {
-                ControlFlow::Continue((key, byte)) => {
-                    let mut node = Box::new(Self::default());
-                    node.header.set_packed(ribbit::Packed::<Header>::new(
-                        u48::new(byte as u64),
-                        false,
-                        const { u2::new(1) },
-                    ));
+            let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
 
-                    let next = NonNull::from(&node.edges[0]);
+            let Some(byte) = reader.get_byte(edge.len()) else {
+                unsafe { tail.as_mut() }.set_packed(Edge::<M>::new_value(edge, value));
+                break;
+            };
 
-                    unsafe { tail.as_mut() }
-                        .set_packed(Edge::<M>::new_node(key, node::Ptr::new_node_3(node)));
-                    tail = next;
-                }
-                ControlFlow::Break((key, value)) => {
-                    unsafe { tail.as_mut() }.set_packed(Edge::<M>::new_value(key, value));
-                    break;
-                }
-            }
+            reader = reader.suffix(R::Len::BYTE + edge.len().into());
+
+            let mut node = Box::new(Self::default());
+            node.header.set_packed(ribbit::Packed::<Header>::new(
+                u48::new(byte as u64),
+                false,
+                const { u2::new(1) },
+            ));
+
+            let next = NonNull::from(&node.edges[0]);
+            unsafe { tail.as_mut() }
+                .set_packed(Edge::<M>::new_node(edge, node::Ptr::new_node_3(node)));
+            tail = next;
         }
 
         let head = Edge::<M>::new_node(meta, node::Ptr::new_node_3(head));
