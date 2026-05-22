@@ -1,3 +1,4 @@
+use core::borrow::Borrow as _;
 use core::fmt;
 
 use ribbit::u6;
@@ -155,8 +156,14 @@ impl Key for NonNullString {
     type Read<'k> = Reader<'k>;
     type Write = Writer;
     type Borrowed = NonNullStr;
+    type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
     type Len = key::vec::Len;
+
+    #[inline]
+    fn borrow_insert(&self) -> Self::Insert<'_> {
+        self.borrow()
+    }
 
     #[inline]
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {

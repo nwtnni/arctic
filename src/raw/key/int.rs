@@ -20,9 +20,15 @@ macro_rules! impl_key {
                 type Read<'k> = Reader<$ty>;
                 type Write = Writer<$ty>;
                 type Borrowed = Self;
+                type Insert<'k> = &'k Self;
 
                 type Edge = edge::Be;
                 type Len = Len;
+
+                #[inline]
+                fn borrow_insert(&self) -> Self::Insert<'_> {
+                    self
+                }
 
                 #[inline]
                 unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {

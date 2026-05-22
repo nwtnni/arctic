@@ -1,3 +1,4 @@
+use core::borrow::Borrow as _;
 use core::ffi::CStr;
 use core::fmt;
 use core::ops::Add;
@@ -112,8 +113,14 @@ impl Key for NonPrefixVec {
     type Read<'k> = Reader<'k, { usize::MAX }>;
     type Write = Writer;
     type Borrowed = NonPrefixSlice;
+    type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
     type Len = Len;
+
+    #[inline]
+    fn borrow_insert(&self) -> Self::Insert<'_> {
+        self.borrow()
+    }
 
     #[inline]
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
@@ -130,8 +137,14 @@ impl Key for CString {
     type Read<'k> = Reader<'k, { usize::MAX }>;
     type Write = Writer;
     type Borrowed = CStr;
+    type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
     type Len = Len;
+
+    #[inline]
+    fn borrow_insert(&self) -> Self::Insert<'_> {
+        self.borrow()
+    }
 
     #[inline]
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {

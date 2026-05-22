@@ -359,7 +359,7 @@ mod tests {
         let mut map = Map::default();
 
         for (key, value) in &keys {
-            map.upsert(key.borrow(), *value);
+            map.upsert(key.borrow_insert(), *value);
             assert_eq!(map.get(key.borrow()).as_deref().copied(), Some(*value));
         }
 

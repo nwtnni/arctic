@@ -60,7 +60,7 @@ where
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_mut() })
     }
 
-    pub fn upsert(&mut self, key: &K::Borrowed, value: V) -> Result<&mut V, (V, &mut V)> {
+    pub fn upsert<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<&mut V, (V, &mut V)> {
         match self.entry(key) {
             Entry::Vacant(entry) => Ok(entry.insert(value)),
             Entry::Occupied(mut entry) => {
@@ -70,14 +70,14 @@ where
         }
     }
 
-    pub fn insert(&mut self, key: &K::Borrowed, value: V) -> Result<&mut V, (&mut V, V)> {
+    pub fn insert<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<&mut V, (&mut V, V)> {
         match self.entry(key) {
             Entry::Vacant(entry) => Ok(entry.insert(value)),
             Entry::Occupied(entry) => Err((entry.into_mut(), value)),
         }
     }
 
-    pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
+    pub fn update<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<(V, &mut V), V> {
         match self.entry(key) {
             Entry::Vacant(_) => Err(value),
             Entry::Occupied(mut entry) => {
@@ -87,7 +87,7 @@ where
         }
     }
 
-    pub fn entry<'k>(&mut self, key: &'k K::Borrowed) -> Entry<'_, 'k, K, V> {
+    pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(key) };
 
         match cursor.traverse_insert() {
@@ -160,12 +160,12 @@ where
     }
 }
 
-impl<'k, K, V> FromIterator<(&'k K::Borrowed, V)> for Map<K, V>
+impl<'k, K, V> FromIterator<(K::Insert<'k>, V)> for Map<K, V>
 where
     K: Key,
     V: Value,
 {
-    fn from_iter<T: IntoIterator<Item = (&'k K::Borrowed, V)>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = (K::Insert<'k>, V)>>(iter: T) -> Self {
         let mut map = Map::default();
         for (key, value) in iter {
             let _ = map.upsert(key, value);

@@ -21,8 +21,12 @@ use crate::raw::edge::Meta as _;
 pub trait Key: Borrow<Self::Borrowed> {
     type Borrowed: 'static + ?Sized + Debug + ToOwned<Owned = Self>;
 
+    type Insert<'k>: Copy;
+
     #[expect(private_bounds)]
-    type Read<'k>: Read<Edge = Self::Edge, Len = Self::Len> + From<&'k Self::Borrowed>;
+    type Read<'k>: Read<Edge = Self::Edge, Len = Self::Len>
+        + From<&'k Self::Borrowed>
+        + From<Self::Insert<'k>>;
 
     #[expect(private_bounds)]
     type Write: for<'k> Write<Self::Read<'k>>;
@@ -32,6 +36,8 @@ pub trait Key: Borrow<Self::Borrowed> {
 
     #[expect(private_bounds)]
     type Len: Len<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
+
+    fn borrow_insert(&self) -> Self::Insert<'_>;
 
     /// # Safety
     ///
