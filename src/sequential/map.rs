@@ -10,6 +10,7 @@ use crate::raw::Edge;
 use crate::raw::Frozen;
 use crate::raw::Key;
 use crate::raw::cursor::path;
+use crate::raw::edge;
 use crate::sequential::EntryIter;
 use crate::sequential::EntryIterMut;
 use crate::sequential::Shard;
@@ -203,8 +204,18 @@ where
     V: Value,
 {
     fn drop(&mut self) {
-        self.raw.postorder().for_each_internal(|edge, _| unsafe {
-            edge.deallocate(|value| drop(V::from_raw(value)), stat::Counter::FreeDrop);
+        self.raw.postorder().for_each_internal(|edge, _| {
+            let Some(child) = edge.child() else { return };
+
+            stat::increment(stat::Counter::FreeDrop);
+
+            // SAFETY: we have exclusive access to nodes and values in destructor
+            match child {
+                edge::Child::Value(value) => drop(unsafe { V::from_raw(value) }),
+                edge::Child::Node(node) => unsafe {
+                    node.deallocate(stat::Counter::FreeDrop);
+                },
+            }
         })
     }
 }

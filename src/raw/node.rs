@@ -7,7 +7,6 @@ use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
 use ribbit::OptionExt as _;
-use ribbit::Pack as _;
 
 mod iter;
 mod linear;
@@ -301,39 +300,14 @@ where
         let len = keys.len();
         let len = if grow { len + 1 } else { len };
 
-        let (r#type, ptr) = if len < 4 {
-            let ptr = NonNull::from(Box::leak(unsafe { Node3::new_unchecked(keys, edges) })).addr();
-            (Type::Node3, ptr)
+        if len < 4 {
+            Self::new(unsafe { Node3::new_unchecked(keys, edges) })
         } else if len < 16 {
-            let ptr =
-                NonNull::from(Box::leak(unsafe { Node15::new_unchecked(keys, edges) })).addr();
-            (Type::Node15, ptr)
+            Self::new(unsafe { Node15::new_unchecked(keys, edges) })
         } else if len < 48 {
-            let ptr =
-                NonNull::from(Box::leak(unsafe { Node47::new_unchecked(keys, edges) })).addr();
-            (Type::Node47, ptr)
+            Self::new(unsafe { Node47::new_unchecked(keys, edges) })
         } else {
-            let ptr =
-                NonNull::from(Box::leak(unsafe { Node256::new_unchecked(keys, edges) })).addr();
-            (Type::Node256, ptr)
-        };
-
-        validate_eq!(ptr.get() as u64 & Self::MASK_TAG, 0);
-
-        unsafe {
-            ribbit::Packed::<Self>::new_unchecked(NonZeroU64::new_unchecked(
-                r#type as u64 | ptr.get() as u64,
-            ))
-        }
-    }
-
-    #[inline]
-    pub(super) fn new_node_3(node: Box<Node3<M>>) -> ribbit::Packed<Self> {
-        let ptr = NonNull::from(Box::leak(node));
-        unsafe {
-            ribbit::Packed::<Self>::new_unchecked(NonZeroU64::new_unchecked(
-                Node3::<M>::TYPE as u64 | ptr.addr().get() as u64,
-            ))
+            Self::new(unsafe { Node256::new_unchecked(keys, edges) })
         }
     }
 
@@ -341,6 +315,25 @@ where
     pub(crate) unsafe fn from_raw_unchecked(raw: u64) -> ribbit::Packed<Self> {
         let node = unsafe { ribbit::Packed::<Option<Ptr<M>>>::new_unchecked(raw) };
         if_validate!(node.unwrap(), unsafe { node.unwrap_unchecked() })
+    }
+
+    // The only way a larger node can be created is through node replacement.
+    #[inline]
+    pub(crate) fn new_node_3(node: Box<Node3<M>>) -> ribbit::Packed<Self> {
+        Self::new(node)
+    }
+
+    fn new<N: Node<M>>(node: Box<N>) -> ribbit::Packed<Self> {
+        // NOTE: we rely on address (usize) <-> u64 conversions here
+        const _: () = assert!(size_of::<usize>() == size_of::<u64>());
+
+        let ptr = NonNull::from(Box::leak(node)).as_ptr().expose_provenance() as u64;
+
+        validate_eq!(ptr & Self::MASK_TAG, 0);
+
+        unsafe {
+            ribbit::Packed::<Self>::new_unchecked(NonZeroU64::new_unchecked(N::TYPE as u64 | ptr))
+        }
     }
 }
 
@@ -410,7 +403,7 @@ where
         )
     }
 
-    /// # SAFETY
+    /// # Safety
     ///
     /// Caller must ensure there are no other references to this node.
     pub(crate) unsafe fn deallocate(self, counter: stat::Counter) {
@@ -423,23 +416,44 @@ where
         )
     }
 
-    /// # SAFETY
+    /// Deallocate recursive `Node3`s created by [`crate::raw::Edge::new_path`].
+    /// Does not deallocate the final value.
     ///
-    /// Caller must ensure there are no other references to this node.
+    /// # Safety
+    ///
+    /// Caller must ensure:
+    /// - There are no other references to this node.
+    /// - This is a Node3 created by [`crate::raw::Edge::new_path`].
     pub(crate) unsafe fn deallocate_recursive(self, counter: stat::Counter) {
         stat::increment(counter);
 
-        validate_eq!(self.r#type(), Type::Node3.pack());
+        let mut prev: Option<NonNull<Node3<_>>> = None;
+        let mut next = self;
+        let mut done = false;
 
-        let ptr = self.value.get() & Ptr::<M>::MASK_PTR;
-        let mut node = unsafe { Box::from_raw(Self::as_ptr::<Node3<M>>(ptr).as_ptr()) };
-        unsafe {
-            node.edges_mut()[0]
-                .get_packed()
-                .deallocate_recursive_unchecked(counter);
+        while !done {
+            next.dispatch(
+                |mut node_3| match unsafe { node_3.as_mut() }.edges_mut()[0]
+                    .get_packed()
+                    .child()
+                {
+                    None => unreachable!(),
+                    Some(edge::Child::Value(_)) => {
+                        if let Some(node_3) = prev {
+                            drop(unsafe { Box::from_raw(node_3.as_ptr()) });
+                        }
+                        done = true;
+                    }
+                    Some(edge::Child::Node(node)) => {
+                        prev = Some(node_3);
+                        next = node;
+                    }
+                },
+                |_| unreachable!(),
+                |_| unreachable!(),
+                |_| unreachable!(),
+            );
         }
-
-        drop(node);
     }
 
     #[inline(always)]
@@ -456,23 +470,18 @@ where
         N47: FnOnce(NonNull<Node47<M>>) -> T,
         N256: FnOnce(NonNull<Node256<M>>) -> T,
     {
-        let ptr = self.value.get() & Ptr::<M>::MASK_PTR;
+        let ptr = NonNull::<u8>::new(core::ptr::with_exposed_provenance_mut(
+            (self.value.get() & Ptr::<M>::MASK_PTR) as usize,
+        ));
+        let ptr = if_validate!(ptr.unwrap(), unsafe { ptr.unwrap_unchecked() });
+
         dispatch!(
             self.r#type(),
-            node_3(unsafe { Self::as_ptr(ptr) }),
-            node_15(unsafe { Self::as_ptr(ptr) }),
-            node_47(unsafe { Self::as_ptr(ptr) }),
-            node_256(unsafe { Self::as_ptr(ptr) }),
+            node_3(ptr.cast()),
+            node_15(ptr.cast()),
+            node_47(ptr.cast()),
+            node_256(ptr.cast()),
         )
-    }
-
-    #[inline(always)]
-    unsafe fn as_ptr<N>(ptr: u64) -> NonNull<N>
-    where
-        N: Node<M>,
-    {
-        let node = NonNull::new(ptr as *mut N);
-        if_validate!(node.unwrap(), unsafe { node.unwrap_unchecked() })
     }
 }
 

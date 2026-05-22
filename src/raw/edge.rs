@@ -19,7 +19,6 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Node3;
-use crate::stat;
 
 /// A fat pointer to a value or a node.
 #[derive(Copy, Clone, Default, ribbit::Pack)]
@@ -177,43 +176,6 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
     #[inline]
     pub(super) fn unfreeze(self) -> Self {
         self.with_meta(self.meta().with_frozen(false))
-    }
-
-    #[inline]
-    pub(crate) unsafe fn deallocate<F>(self, deallocate_value: F, counter: stat::Counter)
-    where
-        F: FnOnce(u64),
-    {
-        if self.is_null() {
-            return;
-        }
-
-        unsafe { self.deallocate_unchecked(deallocate_value, counter) }
-    }
-
-    #[inline]
-    pub(crate) unsafe fn deallocate_unchecked<F>(self, deallocate_value: F, counter: stat::Counter)
-    where
-        F: FnOnce(u64),
-    {
-        match self.child() {
-            None => if_validate!(unreachable!(), unsafe {
-                core::hint::unreachable_unchecked()
-            }),
-            Some(Child::Node(node)) => unsafe { node.deallocate(counter) },
-            Some(Child::Value(value)) => deallocate_value(value),
-        }
-    }
-
-    #[inline]
-    pub(crate) unsafe fn deallocate_recursive_unchecked(self, counter: stat::Counter) {
-        match self.child() {
-            None => if_validate!(unreachable!(), unsafe {
-                core::hint::unreachable_unchecked()
-            }),
-            Some(Child::Node(node)) => unsafe { node.deallocate_recursive(counter) },
-            Some(Child::Value(_)) => (),
-        }
     }
 }
 
