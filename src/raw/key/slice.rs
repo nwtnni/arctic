@@ -29,7 +29,7 @@ impl NonPrefixSlice {
 
     #[inline]
     pub fn to_non_prefix_vec(&self) -> NonPrefixVec {
-        self.to_owned()
+        unsafe { NonPrefixVec::new_unchecked(self.0.to_owned()) }
     }
 }
 
