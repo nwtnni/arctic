@@ -1,6 +1,7 @@
 pub mod array;
 mod discard;
 pub mod int;
+pub mod slice;
 pub mod slow;
 pub mod string;
 pub mod vec;
@@ -19,7 +20,7 @@ use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 
 pub trait Key: Borrow<Self::Borrowed> {
-    type Borrowed: 'static + ?Sized + Debug + ToOwned<Owned = Self>;
+    type Borrowed: 'static + ?Sized + Debug;
 
     type Insert<'k>: Copy;
 
@@ -34,8 +35,7 @@ pub trait Key: Borrow<Self::Borrowed> {
     #[expect(private_bounds)]
     type Edge: ribbit::Pack<Packed: edge::Meta>;
 
-    #[expect(private_bounds)]
-    type Len: Len<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
+    type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
     fn borrow_insert(&self) -> Self::Insert<'_>;
 
@@ -55,7 +55,7 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     const LEN: Option<Self::Len>;
 
     type Edge: ribbit::Pack<Packed: edge::Meta>;
-    type Len: Len<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
+    type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
     fn len(&self) -> Self::Len;
 
@@ -118,7 +118,7 @@ pub(crate) trait Write<R: Read>: fmt::Debug + Default {
 }
 
 #[expect(private_bounds)]
-pub trait Len<L: edge::Len>:
+pub trait Len:
     Sized
     + Copy
     + AddAssign
@@ -126,7 +126,6 @@ pub trait Len<L: edge::Len>:
     + SubAssign
     + Sub<Output = Self>
     + PartialOrd
-    + From<L>
     + fmt::Debug
 {
     const ZERO: Self;

@@ -345,7 +345,7 @@ impl fmt::Debug for Writer {
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Len(pub(super) usize);
 
-impl key::Len<u6> for Len {
+impl key::Len for Len {
     const ZERO: Self = Self(0);
     const BYTE: Self = Self(1);
 

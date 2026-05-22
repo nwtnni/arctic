@@ -53,6 +53,26 @@ impl<const N: usize> Key for [u8; N] {
     }
 }
 
+impl<'a> Key for &'a crate::raw::key::slice::NonPrefixSlice {
+    type Prefix = Le;
+
+    #[inline]
+    fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
+        let reader = unsafe { reader.as_ref() };
+
+        // let mut buffer = [0u8; 8];
+        // let len = reader.len().min(7);
+
+        let mut buffer = [0u8; 16];
+        let len = reader.len().min(15);
+
+        buffer[..len].copy_from_slice(&reader[..len]);
+
+        // hazard::prefix::Le::new_hazard(u64::from_le_bytes(buffer), len << 3)
+        Le::new_hazard(u128::from_le_bytes(buffer), len << 3)
+    }
+}
+
 macro_rules! impl_integer {
     ($($integer:ty),* $(,)?) => {
         $(

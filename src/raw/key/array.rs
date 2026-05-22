@@ -11,7 +11,7 @@ impl<const N: usize> Key for [u8; N] {
     type Read<'k> = key::vec::Reader<'k, N>;
     type Write = Writer<N>;
     type Borrowed = [u8; N];
-    type Insert<'k> = &'k Self::Borrowed;
+    type Insert<'k> = &'k Self;
     type Edge = edge::Le;
     type Len = key::vec::Len;
 

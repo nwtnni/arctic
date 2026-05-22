@@ -228,7 +228,7 @@ impl From<u6> for Len {
     }
 }
 
-impl key::Len<u6> for Len {
+impl key::Len for Len {
     const ZERO: Self = Self(0);
     const BYTE: Self = Self(8);
 
