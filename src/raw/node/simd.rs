@@ -1,3 +1,5 @@
+//! SIMD acceleration for node operations.
+
 use core::sync::atomic::Ordering;
 
 #[cfg(target_feature = "avx2")]

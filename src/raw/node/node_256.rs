@@ -1,3 +1,8 @@
+//! [`Node256`] provides a **total** mapping of 256 key-edge pairs.
+//!
+//! This is the simplest node representation, and requires the most memory.
+//! It is not linear because it has no header metadata at all.
+
 use core::fmt::Debug;
 
 use ribbit::Atomic;
@@ -7,6 +12,7 @@ use crate::raw::node;
 use crate::raw::node::Edge;
 use crate::raw::node::Node;
 
+/// [`Node`] representation that contains exactly 256 key-edge pairs.
 #[repr(C, align(4096))]
 pub(crate) struct Node256<M: ribbit::Pack>([Atomic<Edge<M>>; 256]);
 

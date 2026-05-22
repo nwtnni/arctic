@@ -1,3 +1,15 @@
+//! A node is a partial map from key byte ([`u8`]) to edge ([`crate::raw::Edge`]).
+//!
+//! Adaptive radix trees use different node representations
+//! depending on occupancy to reduce memory overhead. Roughly speaking,
+//! each node representation consists of some header metadata and an
+//! array of edges. This module implements the various node representations
+//! (e.g., [`Node3`], [`Node256`]) and the shared interface they implement ([`Node`]).
+//!
+//! At runtime, we use [`Type`] to distinguish between representations, and
+//! [`Ptr`] as a more performant alternative relative to an enum or
+//! `&dyn Node` that fits in 8 bytes (and hence within a [`crate::raw::Edge`]).
+
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::num::NonZeroU32;
@@ -16,9 +28,9 @@ mod node_3;
 mod node_47;
 pub(super) mod simd;
 
+pub(crate) use iter::EntryIter;
 pub(crate) use iter::KeyIter;
 pub(crate) use iter::Lower;
-pub(crate) use iter::NodeIter;
 pub(crate) use iter::Upper;
 pub(crate) use node_3::Node3;
 pub(crate) use node_15::Node15;
@@ -72,8 +84,8 @@ where
     fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> KeyIter;
 
     /// Returns a sorted iterator over this node's keys and edges.
-    fn entries<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> NodeIter<M> {
-        unsafe { NodeIter::new(self.keys(lower, upper), self.edges()) }
+    fn entries<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> EntryIter<M> {
+        unsafe { EntryIter::new(self.keys(lower, upper), self.edges()) }
     }
 
     fn edges(&self) -> &[Atomic<Edge<M>>];
@@ -210,6 +222,7 @@ fn replace<M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
     (Smo::ReplaceNode, edge)
 }
 
+/// Node type discriminant.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ribbit::Pack)]
 #[ribbit(size = 2, eq, debug, packed(rename = "TypePacked"))]
 pub(crate) enum Type {
@@ -219,21 +232,17 @@ pub(crate) enum Type {
     Node256 = 3,
 }
 
-impl Default for Type {
-    fn default() -> Self {
-        Self::Node3
-    }
-}
-
-// We use a manual if-else chain instead of a match here because LLVM generates
-// a jump table for the latter. In our experiments, we observe that a jump table
-// in hot loops causes significant slowdowns: the jump table causes more branch
-// mispredictions, and the mispredicted branches cause excess cache coherence
-// traffic for cache lines that would otherwise be untouched.
-//
-// We use a macro instead of a function because there is no way to express mutually
-// exclusive closures as parameters. We sometimes need $node3, $node15, $node47, and
-// $node256 to borrow the same data mutably.
+/// Optimization for branching on node type.
+///
+/// We use a manual if-else chain instead of a match here because LLVM generates
+/// a jump table for the latter. In our experiments, we observe that a jump table
+/// in hot loops causes significant slowdowns: the jump table causes more branch
+/// mispredictions, and the mispredicted branches cause excess cache coherence
+/// traffic for cache lines that would otherwise be untouched.
+///
+/// We use a macro instead of a function because there is no way to express mutually
+/// exclusive closures as parameters. We sometimes need $node3, $node15, $node47, and
+/// $node256 to borrow the same data mutably.
 macro_rules! dispatch {
     ($type:expr, $node3:expr, $node15:expr, $node47:expr, $node256:expr $(,)?) => {{
         if cfg!(feature = "opt-no-dispatch") {
@@ -262,6 +271,21 @@ macro_rules! dispatch {
 }
 pub(super) use dispatch;
 
+/// Pointer to a node representation.
+///
+/// Conceptually the same as the following type:
+///
+/// ```ignore
+/// enum Ptr<M> {
+///     Node3(NonNull<Node3<M>>),
+///     Node15(NonNull<Node15<M>>),
+///     Node47(NonNull<Node47<M>>),
+///     Node256(NonNull<Node256<M>>),
+/// }
+/// ```
+///
+/// But takes up 8 bytes, is compatible with `ribbit`, and avoids
+/// jump tables when dispatching (see [`crate::raw::node::dispatch`]).
 #[derive(ribbit::Pack)]
 #[ribbit(size = 64, packed(rename = PtrPacked), eq, nonzero)]
 pub(crate) struct Ptr<M> {
@@ -282,8 +306,8 @@ impl<M> Clone for Ptr<M> {
 }
 
 impl<M> Ptr<M> {
-    const MASK_TAG: u64 = 0b111;
-    const MASK_PTR: u64 = !Self::MASK_TAG;
+    const MASK_TYPE: u64 = 0b111;
+    const MASK_PTR: u64 = !Self::MASK_TYPE;
 }
 
 impl<M> Ptr<M>
@@ -329,7 +353,7 @@ where
 
         let ptr = NonNull::from(Box::leak(node)).as_ptr().expose_provenance() as u64;
 
-        validate_eq!(ptr & Self::MASK_TAG, 0);
+        validate_eq!(ptr & Self::MASK_TYPE, 0);
 
         unsafe {
             ribbit::Packed::<Self>::new_unchecked(NonZeroU64::new_unchecked(N::TYPE as u64 | ptr))
@@ -394,7 +418,7 @@ where
         self,
         lower: L,
         upper: U,
-    ) -> NodeIter<'g, M> {
+    ) -> EntryIter<'g, M> {
         self.dispatch(
             |node| unsafe { node.as_ref() }.entries(lower, upper),
             |node| unsafe { node.as_ref() }.entries(lower, upper),

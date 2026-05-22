@@ -56,7 +56,7 @@ pub use raw::key::string::NonNullString;
 pub use raw::key::vec::NonPrefixSlice;
 pub use raw::key::vec::NonPrefixVec;
 
-/// Key order for range and prefix operations (e.g., [`concurrent::Prefix::entries`]).
+/// Key order for range and prefix operations (e.g., [`concurrent::Shard::entries`]).
 ///
 /// We take a compile-time argument rather than implementing [`core::iter::DoubleEndedIterator`]
 /// because the latter would require maintaining two stacks at runtime (for the lower and

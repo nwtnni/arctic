@@ -1,3 +1,8 @@
+//! A linear node is a node whose header can be atomically updated.
+//!
+//! Primarily an implementation detail to factor out some common
+//! logic between [`crate::raw::node::Node3`] and [`crate::raw::node::Node15`].
+
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 

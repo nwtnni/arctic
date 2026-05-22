@@ -1,10 +1,15 @@
+//! [`Node15`] is linear and can contain at most 15 key-edge pairs.
+
 use ribbit::u4;
 use ribbit::u120;
 
 use crate::raw::node;
 use crate::raw::node::Linear;
+#[cfg_attr(not(doc), expect(unused_imports))]
+use crate::raw::node::Node;
 use crate::raw::node::linear;
 
+/// [`Node`] representation that contains at most 15 key-edge pairs.
 pub(crate) type Node15<M> = Linear<15, Header, M>;
 
 const_assert_size_align!(Node15::<()>, 256, 64);

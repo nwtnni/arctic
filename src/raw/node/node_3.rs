@@ -1,3 +1,5 @@
+//! [`Node3`] is linear and can contain at most 3 key-edge pairs.
+
 use core::ptr::NonNull;
 
 use ribbit::u2;
@@ -11,9 +13,12 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Linear;
+#[cfg_attr(not(doc), expect(unused_imports))]
+use crate::raw::node::Node;
 use crate::raw::node::linear;
 use crate::raw::node::simd;
 
+/// [`Node`] representation that contains at most 3 key-edge pairs.
 pub(crate) type Node3<M> = Linear<3, Header, M>;
 
 const_assert_size_align!(Node3::<()>, 64, 64);

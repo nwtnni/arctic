@@ -1,3 +1,9 @@
+//! [`Node47`] can contain at most 47 key-edge pairs.
+//!
+//! Note that, unlike [`crate::raw::node::Node3`] and [`crate::raw::node::Node15`],
+//! [`crate::raw::node::Node47`]'s header **cannot** be updated in a single
+//! atomic operation, and requires more careful reasoning.
+
 use core::fmt::Debug;
 use core::ops::Shr;
 use core::sync::atomic::AtomicU64;
@@ -15,6 +21,7 @@ use crate::raw::node::iter::KeyIndex;
 use crate::raw::node::linear;
 use crate::stat;
 
+/// [`Node`] representation that contains at most 47 key-edge pairs.
 #[repr(C, align(1024))]
 pub(crate) struct Node47<M: ribbit::Pack> {
     header: Header,

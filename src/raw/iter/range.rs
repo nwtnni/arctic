@@ -139,7 +139,7 @@ where
         W::Len,
         <R::Lower as Lower<K::Edge>>::Bound,
         <R::Upper as Upper<K::Edge>>::Bound,
-        raw::node::NodeIter<'g, K::Edge>,
+        raw::node::EntryIter<'g, K::Edge>,
     )>,
     _order: PhantomData<O>,
 }

@@ -22,7 +22,7 @@ where
         // so we can use an arbitrary byte.
         Self {
             stack: vec![RepeatIter::new(unsafe {
-                node::NodeIter::new(node::KeyIter::ROOT, core::slice::from_ref(root))
+                node::EntryIter::new(node::KeyIter::ROOT, core::slice::from_ref(root))
             })],
         }
     }
@@ -73,7 +73,7 @@ where
 struct RepeatIter<'g, M: ribbit::Pack> {
     first: bool,
     edge: ribbit::Packed<Edge<M>>,
-    iter: node::NodeIter<'g, M>,
+    iter: node::EntryIter<'g, M>,
 }
 
 impl<'g, M> RepeatIter<'g, M>
@@ -81,7 +81,7 @@ where
     M: ribbit::Pack<Packed: edge::Meta> + 'g,
 {
     #[inline]
-    fn new(iter: node::NodeIter<'g, M>) -> Self {
+    fn new(iter: node::EntryIter<'g, M>) -> Self {
         Self {
             first: true,
             edge: Edge::DEFAULT,

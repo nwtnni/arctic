@@ -1,3 +1,5 @@
+//! Iteration over keys and key-edge pairs of a single node.
+
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
@@ -16,7 +18,8 @@ use crate::raw::node;
 use crate::raw::node::linear;
 use crate::raw::node::node_256;
 
-pub(crate) struct NodeIter<'g, M: ribbit::Pack> {
+/// Iterator over key-edge pairs.
+pub(crate) struct EntryIter<'g, M: ribbit::Pack> {
     keys: KeyIter,
     edges: NonNull<Atomic<Edge<M>>>,
 
@@ -26,7 +29,7 @@ pub(crate) struct NodeIter<'g, M: ribbit::Pack> {
     _slice: PhantomData<&'g [Atomic<Edge<M>>]>,
 }
 
-impl<'g, M: ribbit::Pack> NodeIter<'g, M> {
+impl<'g, M: ribbit::Pack> EntryIter<'g, M> {
     /// # SAFETY
     ///
     /// Caller must guarantee all indices produced by `keys` are < `edges.len()`.
@@ -44,7 +47,7 @@ impl<'g, M: ribbit::Pack> NodeIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> NodeIter<'g, M> {
+impl<'g, M: ribbit::Pack> EntryIter<'g, M> {
     #[inline]
     pub(crate) fn try_into_single(mut self) -> Result<(u8, NonNull<Atomic<Edge<M>>>), Self> {
         if self.size_hint().0 == 1 {
@@ -55,7 +58,7 @@ impl<'g, M: ribbit::Pack> NodeIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> Iterator for NodeIter<'g, M> {
+impl<'g, M: ribbit::Pack> Iterator for EntryIter<'g, M> {
     type Item = (u8, NonNull<Atomic<Edge<M>>>);
 
     #[inline]
@@ -80,7 +83,7 @@ impl<'g, M: ribbit::Pack> Iterator for NodeIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> DoubleEndedIterator for NodeIter<'g, M> {
+impl<'g, M: ribbit::Pack> DoubleEndedIterator for EntryIter<'g, M> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         let KeyIndex { key, index } = self.keys.next_back()?;
@@ -98,7 +101,7 @@ impl<'g, M: ribbit::Pack> DoubleEndedIterator for NodeIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> ExactSizeIterator for NodeIter<'g, M> {
+impl<'g, M: ribbit::Pack> ExactSizeIterator for EntryIter<'g, M> {
     #[inline]
     fn len(&self) -> usize {
         let (lower, upper) = self.size_hint();
@@ -424,12 +427,14 @@ impl Debug for KeyIndex {
     }
 }
 
+/// Byte lower bound for range iteration.
 pub(crate) trait Lower: Copy + Default + Debug {
     const UNBOUND: bool = false;
     fn get(self) -> u8;
     fn check(self, byte: u8) -> bool;
 }
 
+/// Byte upper bound for range iteration.
 pub(crate) trait Upper: Copy + Default + Debug {
     const UNBOUND: bool = false;
     fn get(self) -> u8;
