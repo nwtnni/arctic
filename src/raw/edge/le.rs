@@ -1,3 +1,5 @@
+//! [`Le`] stores edge metadata for little-endian systems.
+
 use core::cmp;
 use core::ops::BitOr as _;
 
@@ -8,6 +10,9 @@ use ribbit::u56;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 
+/// Edge metadata storing compressed edge bytes starting at least significant byte.
+///
+/// Optimized for slice keys on little-endian systems.
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, debug)]
 pub struct Le {
@@ -54,7 +59,7 @@ impl IntoIterator for LePacked {
 }
 
 impl edge::Meta for LePacked {
-    const DEFAULT: Self = Self::new(u56::new(0), false, false, false, u3::new(0));
+    const NULL: Self = Self::new(u56::new(0), false, false, false, u3::new(0));
 
     type Len = u6;
 

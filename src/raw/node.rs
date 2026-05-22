@@ -156,7 +156,7 @@ where
         validate!(!meta.is_value());
 
         let mut keys = [0u8; LEN];
-        let mut edges = [Edge::DEFAULT; LEN];
+        let mut edges = [Edge::NULL; LEN];
 
         if FREEZE {
             let len = self.freeze_header();
@@ -207,7 +207,7 @@ fn replace<M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
     let len = keys.len();
 
     if len == 0 {
-        return (Smo::DeleteNode, Edge::DEFAULT);
+        return (Smo::DeleteNode, Edge::NULL);
     } else if len == 1 {
         let key = keys[0];
         let edge = edges[0];

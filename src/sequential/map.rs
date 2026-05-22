@@ -92,16 +92,16 @@ where
 
         match cursor.traverse_insert() {
             raw::cursor::Insert::Value {
-                old_value: Some(_),
-                old: _,
+                value: Some(_),
+                edge: _,
             } => Entry::Occupied(Occupied {
                 value: unsafe { cursor.as_value_unchecked().cast::<V>() },
                 _value: PhantomData,
             }),
 
             raw::cursor::Insert::Value {
-                old_value: None,
-                old: _,
+                value: None,
+                edge: _,
             } => Entry::Vacant(Vacant {
                 cursor,
                 replace: false,
@@ -300,13 +300,13 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
 
         match self.cursor.traverse_insert() {
             crate::raw::cursor::Insert::Value {
-                old_value: Some(_),
-                old: _,
+                value: Some(_),
+                edge: _,
             }
             | crate::raw::cursor::Insert::Replace { .. } => unreachable!(),
             crate::raw::cursor::Insert::Value {
-                old_value: None,
-                old,
+                value: None,
+                edge: old,
             } => match self.cursor.create_path(old, new_value) {
                 Err(Frozen) => unreachable!(),
                 Ok((head, tail)) => unsafe {

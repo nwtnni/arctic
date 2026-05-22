@@ -84,7 +84,7 @@ where
     fn new(iter: node::EntryIter<'g, M>) -> Self {
         Self {
             first: true,
-            edge: Edge::DEFAULT,
+            edge: Edge::NULL,
             iter,
         }
     }

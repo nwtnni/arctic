@@ -62,6 +62,6 @@ where
 {
     #[inline]
     fn default() -> Self {
-        Self(Atomic::new_packed(Edge::DEFAULT))
+        Self(Atomic::new_packed(Edge::NULL))
     }
 }

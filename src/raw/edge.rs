@@ -1,3 +1,5 @@
+//! An edge is a fat pointer comprising edge compression metadata and child pointer.
+
 mod be;
 mod le;
 
@@ -20,8 +22,10 @@ use crate::raw::node;
 use crate::raw::node::Node3;
 
 /// A fat pointer to a value or a node.
+///
+/// Generic over [`Meta`] to support different byte orderings depending on key type.
 #[derive(Copy, Clone, Default, ribbit::Pack)]
-#[ribbit(size = 128, packed(rename = EdgePacked))]
+#[ribbit(size = 128, packed(rename = EdgePacked), eq)]
 pub(crate) struct Edge<M> {
     #[ribbit(size = 64)]
     pub(crate) meta: M,
@@ -31,9 +35,30 @@ pub(crate) struct Edge<M> {
 }
 
 impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
-    pub(crate) const DEFAULT: ribbit::Packed<Self> =
-        ribbit::Packed::<Self>::new(<M::Packed as Meta>::DEFAULT, 0);
+    pub(crate) const NULL: ribbit::Packed<Self> =
+        ribbit::Packed::<Self>::new(<M::Packed as Meta>::NULL, 0);
 
+    /// Create an edge with the given metadata and node.
+    #[inline]
+    pub(super) fn new_node(
+        meta: ribbit::Packed<M>,
+        node: ribbit::Packed<node::Ptr<M>>,
+    ) -> ribbit::Packed<Self> {
+        ribbit::Packed::<Self>::new(meta.with_value(false), node.raw().get())
+    }
+
+    /// Create an edge with the given metadata and value.
+    #[inline]
+    pub(crate) fn new_value(meta: ribbit::Packed<M>, value: u64) -> ribbit::Packed<Self> {
+        ribbit::Packed::<Self>::new(meta.with_value(true), value)
+    }
+
+    /// Given a pointer to an edge, get a pointer to that edge's value.
+    ///
+    /// # Safety
+    ///
+    /// - Caller must ensure `edge` points to an edge with a value child
+    /// - Caller must ensure `edge` is not modified while holding the returned pointer
     #[inline]
     pub(crate) unsafe fn as_value_unchecked(edge: NonNull<Atomic<Self>>) -> NonNull<u64> {
         unsafe {
@@ -53,6 +78,18 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
         }
     }
 
+    /// Create a new edge mapping `reader` to `value`, recursively
+    /// creating intermediate nodes if necessary.
+    ///
+    /// Returns the head of the path--the root edge--and the tail--either
+    /// `None` if the root edge itself contains the value,
+    /// or `Some(tail)` where `tail` is the stable heap-allocated
+    /// address of the edge containing the value.
+    ///
+    /// The tail is currently only used by the sequential map, to
+    /// return a direct pointer to newly inserted values without
+    /// re-traversing the new path. (The concurrent map never
+    /// returns direct pointers.)
     #[inline]
     pub(crate) fn new_path<R>(
         mut reader: R,
@@ -91,19 +128,7 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
         (head, Some(tail))
     }
 
-    #[inline]
-    pub(super) fn new_node(
-        meta: ribbit::Packed<M>,
-        node: ribbit::Packed<node::Ptr<M>>,
-    ) -> ribbit::Packed<Self> {
-        ribbit::Packed::<Self>::new(meta.with_value(false), node.raw().get())
-    }
-
-    #[inline]
-    pub(crate) fn new_value(meta: ribbit::Packed<M>, value: u64) -> ribbit::Packed<Self> {
-        ribbit::Packed::<Self>::new(meta.with_value(true), value)
-    }
-
+    /// Freeze `edge` by atomically setting its frozen bit.
     #[inline]
     pub(crate) fn freeze(edge: &Atomic<Self>) {
         let mut old = edge.load_packed(Ordering::Relaxed);
@@ -123,11 +148,15 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
 }
 
 impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
+    /// Return `true` if this edge has no child.
     #[inline]
     pub(crate) fn is_null(self) -> bool {
-        !self.meta().is_value() && self.child_raw() == 0
+        let null = !self.meta().is_value() && self.child_raw() == 0;
+        validate!(!null || self.unfreeze() == Edge::NULL);
+        null
     }
 
+    /// Return `Some(node)` if this edge has a node child.
     #[inline]
     pub(crate) fn as_node(self) -> Option<ribbit::Packed<node::Ptr<M>>> {
         if self.meta().is_value() {
@@ -137,6 +166,7 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
         unsafe { ribbit::Packed::<Option<node::Ptr<M>>>::new_unchecked(self.child_raw()) }
     }
 
+    /// Return `Some(child)` if this edge has a child.
     #[inline]
     pub(crate) fn child(self) -> Option<Child<M>> {
         let raw = self.child_raw();
@@ -147,24 +177,7 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
         }
     }
 
-    /// # Safety
-    ///
-    /// Caller must ensure that child is a value.
-    #[inline]
-    pub(crate) unsafe fn into_value_unchecked(self) -> u64 {
-        validate!(self.meta().is_value());
-        self.child_raw()
-    }
-
-    /// # Safety
-    ///
-    /// Caller must ensure that child is a value.
-    #[inline]
-    pub(crate) unsafe fn with_value_unchecked(self, value: u64) -> Self {
-        validate!(self.meta().is_value());
-        self.with_child(value)
-    }
-
+    /// Clear the frozen bit from this edge.
     #[inline]
     pub(super) fn unfreeze(self) -> Self {
         self.with_meta(self.meta().with_frozen(false))
@@ -185,27 +198,46 @@ where
     }
 }
 
+/// Edge compression and child pointer metadata.
 pub(crate) trait Meta:
     ribbit::Unpack + core::fmt::Debug + Ord + IntoIterator<Item = u8>
 {
-    const DEFAULT: Self;
+    /// Null edge with no compressed edge bytes or child
+    const NULL: Self;
 
+    /// Representation of compressed edge byte length.
     type Len: Len;
 
+    /// Whether the child pointer is a value.
+    fn is_value(self) -> bool;
+
+    /// Whether this edge is frozen.
+    fn is_frozen(self) -> bool;
+
+    /// The length of compressed edge bytes.
+    fn len(self) -> Self::Len;
+
+    /// Indicate whether this is a value.
     fn with_value(self, value: bool) -> Self;
+
+    /// Indicate whether this edge is frozen.
     fn with_frozen(self, frozen: bool) -> Self;
+
+    /// Update with compressed edge bytes from `key`.
     fn with_key(self, key: Self) -> Self;
+
+    /// TODO: Reserved for now.
     #[expect(unused)]
     fn with_inline(self, inline: bool) -> Self;
 
-    fn len(self) -> Self::Len;
-
-    fn is_value(self) -> bool;
-    fn is_frozen(self) -> bool;
-
+    /// Try to merge consecutive edges into one.
     fn compress(self, byte: u8, child: Self) -> Option<Self>;
 }
 
+/// Length of compressed bytes along an edge.
+///
+/// Currently only implemented by `u6`, but hoping
+/// to support longer edges for borrowed keys eventually.
 pub(crate) trait Len: Copy + Eq + Add<Output = Self> {
     const MAX: Self;
 
@@ -226,6 +258,7 @@ impl Len for u6 {
     }
 }
 
+/// Non-null child of an edge.
 pub(crate) enum Child<M> {
     Node(ribbit::Packed<node::Ptr<M>>),
     Value(u64),

@@ -23,7 +23,7 @@ where
     M: ribbit::Pack<Packed: edge::Meta>,
 {
     fn default() -> Self {
-        Self(core::array::from_fn(|_| Atomic::new_packed(Edge::DEFAULT)))
+        Self(core::array::from_fn(|_| Atomic::new_packed(Edge::NULL)))
     }
 }
 

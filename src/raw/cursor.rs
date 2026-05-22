@@ -33,16 +33,37 @@ pub(crate) struct Cursor<'g, R: key::Read, P> {
     _global: PhantomData<&'g Atomic<Edge<R::Edge>>>,
 }
 
-pub(crate) enum Insert<E: ribbit::Pack<Packed: edge::Meta>> {
+/// Outcome of [`Cursor::traverse_insert`] indicating if
+/// traversal terminated at a value, or if an SMO is
+/// required to continue traversal.
+pub(crate) enum Insert<M: ribbit::Pack<Packed: edge::Meta>> {
+    /// Either a value was found, or there is no
+    /// value for this key.
+    ///
+    /// NOTE: unlike [`Update`], it is possible for
+    /// `value.map(Child::Value) != edge.child()`, in the
+    /// case that an edge expansion is required at
+    /// an edge that has a value child.
     Value {
-        old_value: Option<u64>,
-        old: ribbit::Packed<Edge<E>>,
+        value: Option<u64>,
+        edge: ribbit::Packed<Edge<M>>,
     },
 
+    /// Node replacement is required to continue traversal.
+    ///
+    /// Guaranteed that `Some(Child::Node(node)) == edge.child()`.
     Replace {
-        old_node: ribbit::Packed<node::Ptr<E>>,
-        old: ribbit::Packed<Edge<E>>,
+        node: ribbit::Packed<node::Ptr<M>>,
+        edge: ribbit::Packed<Edge<M>>,
     },
+}
+
+/// Outcome of [`Cursor::traverse_update`].
+///
+/// Guaranteed that `Some(Child::Value(value)) == edge.child()`.
+pub(crate) struct Update<M: ribbit::Pack<Packed: edge::Meta>> {
+    pub(crate) value: u64,
+    pub(crate) edge: ribbit::Packed<Edge<M>>,
 }
 
 impl<'g, R> Cursor<'g, R, path::Discard>
@@ -151,10 +172,8 @@ where
     ///
     /// Returns `None` if there is no such edge,
     /// `Some(Err(Frozen))` if this edge is frozen,
-    /// or `Some(Ok(edge))` otherwise.
-    pub(crate) fn traverse_update(
-        &mut self,
-    ) -> Option<Result<ribbit::Packed<Edge<R::Edge>>, Frozen>> {
+    /// or `Some(Ok(updated))` otherwise.
+    pub(crate) fn traverse_update(&mut self) -> Option<Result<Update<R::Edge>, Frozen>> {
         loop {
             let edge = self.edge().load_packed(Ordering::Acquire);
 
@@ -168,7 +187,7 @@ where
                     self.push(len, node, next);
                     continue;
                 }
-                edge::Child::Value(_) => {
+                edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
                     validate!(
                         self.reader
@@ -180,7 +199,7 @@ where
                         if edge.meta().is_frozen() {
                             Err(Frozen)
                         } else {
-                            Ok(edge)
+                            Ok(Update { value, edge })
                         }
                     });
                 }
@@ -197,18 +216,12 @@ where
 
             let Some(child) = edge.child() else {
                 // Case: no child, create path
-                return Insert::Value {
-                    old_value: None,
-                    old: edge,
-                };
+                return Insert::Value { value: None, edge };
             };
 
             let Some(len) = self.reader.match_exact(edge.meta()) else {
                 // Case: partial match, expand edge
-                return Insert::Value {
-                    old_value: None,
-                    old: edge,
-                };
+                return Insert::Value { value: None, edge };
             };
 
             match child {
@@ -218,10 +231,7 @@ where
 
                     let Some(next) = (unsafe { node.get_or_insert(byte) }) else {
                         // Case: node replacement
-                        return Insert::Replace {
-                            old_node: node,
-                            old: edge,
-                        };
+                        return Insert::Replace { node, edge };
                     };
 
                     self.push(len, node, next);
@@ -235,8 +245,8 @@ where
                     );
 
                     return Insert::Value {
-                        old_value: Some(value),
-                        old: edge,
+                        value: Some(value),
+                        edge,
                     };
                 }
             }

@@ -1,3 +1,5 @@
+//! [`Be`] stores edge metadata for integers and big-endian systems.
+
 use core::cmp;
 use core::ops::BitOr as _;
 
@@ -9,6 +11,9 @@ use crate::raw::Int;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 
+/// Edge metadata storing compressed edge bytes starting at most significant byte.
+///
+/// Optimized for integer keys, or slice keys on big-endian systems.
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, debug)]
 pub struct Be {
@@ -54,7 +59,7 @@ impl IntoIterator for BePacked {
 }
 
 impl edge::Meta for BePacked {
-    const DEFAULT: Self = Self::new(false, false, false, u3::new(0), u56::new(0));
+    const NULL: Self = Self::new(false, false, false, u3::new(0), u56::new(0));
 
     type Len = u6;
 

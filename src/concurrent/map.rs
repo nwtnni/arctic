@@ -212,7 +212,7 @@ where
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
         loop {
-            let old = match cursor.traverse_update() {
+            let updated = match cursor.traverse_update() {
                 None => return Ok(Update::Absent { initial }),
                 Some(Ok(old)) => old,
                 Some(Err(Frozen)) => match cursor.freeze() {
@@ -225,26 +225,26 @@ where
                 },
             };
 
-            let old_value = unsafe { old.into_value_unchecked() };
-            let new_value = match update(unsafe { V::target_from_raw(&old_value) }, &mut initial) {
-                ControlFlow::Continue(new) => V::into_raw(new),
-                ControlFlow::Break(()) => {
-                    return Ok(Update::Break {
-                        old: unsafe { Shared::<K, V, S>::wrap(guard, old_value) },
-                        initial,
-                    });
-                }
-            };
+            let new_value =
+                match update(unsafe { V::target_from_raw(&updated.value) }, &mut initial) {
+                    ControlFlow::Continue(new) => V::into_raw(new),
+                    ControlFlow::Break(()) => {
+                        return Ok(Update::Break {
+                            old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
+                            initial,
+                        });
+                    }
+                };
 
             match cursor.edge().compare_exchange_packed(
-                old,
-                unsafe { old.with_value_unchecked(new_value) },
+                updated.edge,
+                Edge::new_value(updated.edge.meta(), new_value),
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
                     return Ok(Update::Success(unsafe {
-                        Updated::<K, V, S>::wrap(guard, old_value, new_value)
+                        Updated::<K, V, S>::wrap(guard, updated.value, new_value)
                     }));
                 }
                 Err(_) => {
@@ -331,8 +331,8 @@ where
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
-        let old = loop {
-            let old = match cursor.traverse_update() {
+        let updated = loop {
+            let updated = match cursor.traverse_update() {
                 None => return Ok(Remove::Absent),
                 Some(Ok(old)) => old,
                 Some(Err(Frozen)) => match cursor.freeze()? {
@@ -344,28 +344,31 @@ where
                 },
             };
 
-            let old_value = unsafe { old.into_value_unchecked() };
-
-            match remove(unsafe { V::target_from_raw(&old_value) }) {
+            match remove(unsafe { V::target_from_raw(&updated.value) }) {
                 ControlFlow::Continue(()) => (),
                 ControlFlow::Break(()) => {
                     return Ok(Remove::Break {
-                        old: unsafe { Shared::<K, V, S>::wrap(guard, old_value) },
+                        old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
                     });
                 }
             }
 
             if cursor
                 .edge()
-                .compare_exchange_packed(old, Edge::DEFAULT, Ordering::AcqRel, Ordering::Acquire)
+                .compare_exchange_packed(
+                    updated.edge,
+                    Edge::NULL,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
                 .is_ok()
             {
-                break old;
+                break updated;
             }
         };
 
         if RECURSIVE {
-            let mut trim = old.meta().len();
+            let mut trim = updated.edge.meta().len();
 
             'outer: while let Some(target) = cursor
                 .pop()
@@ -425,7 +428,7 @@ where
         }
 
         Ok(Remove::Success {
-            old: unsafe { Owned::<K, V, S>::wrap(guard, old.into_value_unchecked()) },
+            old: unsafe { Owned::<K, V, S>::wrap(guard, updated.value) },
         })
     }
 
@@ -547,7 +550,10 @@ where
 
         loop {
             match cursor.traverse_insert() {
-                cursor::Insert::Value { old_value, old } => {
+                cursor::Insert::Value {
+                    value: old_value,
+                    edge: old,
+                } => {
                     let new_value = match upsert(
                         old_value
                             .as_ref()
@@ -593,7 +599,10 @@ where
                         },
                     }
                 }
-                cursor::Insert::Replace { old_node, old } if !old.meta().is_frozen() => {
+                cursor::Insert::Replace {
+                    node: old_node,
+                    edge: old,
+                } if !old.meta().is_frozen() => {
                     let (smo, new) = unsafe { old_node.replace::<true>(old.meta()) };
                     match cursor.edge().compare_exchange_packed(
                         old,

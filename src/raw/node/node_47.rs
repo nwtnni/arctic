@@ -37,7 +37,7 @@ where
     fn default() -> Self {
         Self {
             header: Header::default(),
-            edges: core::array::from_fn(|_| Atomic::new_packed(Edge::DEFAULT)),
+            edges: core::array::from_fn(|_| Atomic::new_packed(Edge::NULL)),
         }
     }
 }
