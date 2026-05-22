@@ -28,11 +28,11 @@ mod u64 {
     struct U64;
 
     impl Workload for U64 {
-        type Key = u64;
+        type Key<'k> = u64;
 
         type Value = u64;
 
-        fn key(&self, index: usize) -> Self::Key {
+        fn key(&self, index: usize) -> Self::Key<'_> {
             index as u64
         }
 
@@ -43,7 +43,7 @@ mod u64 {
         fn validate(
             &self,
             index: usize,
-            key: &<Self::Key as Key>::Borrowed,
+            key: &<Self::Key<'_> as Key>::Borrowed,
             value: &<Self::Value as arctic::concurrent::Value>::Target,
         ) {
             assert_eq!(index as u64, *key);
@@ -91,11 +91,11 @@ mod boxed {
     }
 
     impl Workload for Boxed {
-        type Key = u32;
+        type Key<'k> = u32;
 
         type Value = Box<Entry>;
 
-        fn key(&self, index: usize) -> Self::Key {
+        fn key(&self, index: usize) -> Self::Key<'_> {
             index as u32
         }
 
@@ -103,7 +103,7 @@ mod boxed {
             Box::new(Entry::new(index))
         }
 
-        fn validate(&self, index: usize, key: &<Self::Key as Key>::Borrowed, value: &Entry) {
+        fn validate(&self, index: usize, key: &<Self::Key<'_> as Key>::Borrowed, value: &Entry) {
             assert_eq!(*key, index as u32);
             assert_eq!(*value, Entry::new(index));
         }
@@ -137,10 +137,10 @@ mod vec {
     }
 
     impl Workload for Bytes {
-        type Key = NonPrefixVec;
+        type Key<'k> = NonPrefixVec;
         type Value = u64;
 
-        fn key(&self, index: usize) -> Self::Key {
+        fn key(&self, index: usize) -> Self::Key<'_> {
             let mut hasher = rapidhash::fast::RapidHasher::default_const();
             hasher.write_usize(index);
             let len = hasher.finish() % 16 + 16;
@@ -159,10 +159,78 @@ mod vec {
         fn validate(
             &self,
             index: usize,
-            key: &<Self::Key as Key>::Borrowed,
+            key: &<Self::Key<'_> as Key>::Borrowed,
             value: &<Self::Value as arctic::concurrent::Value>::Target,
         ) {
             assert_eq!(key, self.key(index).as_non_prefix_slice());
+            assert_eq!(*value, index as u64);
+        }
+    }
+}
+
+mod slice {
+    use core::hash::Hasher as _;
+
+    use arctic::NonPrefixSlice;
+    use arctic::raw::Key;
+
+    use super::Workload;
+    use super::test_map;
+
+    struct Slice(Vec<Vec<u8>>);
+
+    #[test]
+    fn many() {
+        test_map(&Slice::new(10_000_000), 16, 10_000_000, false);
+    }
+
+    #[test]
+    fn two() {
+        test_map(&Slice::new(1_000_000), 2, 1_000_000, false);
+    }
+
+    #[test]
+    fn one() {
+        test_map(&Slice::new(1_000_000), 1, 1_000_000, false);
+    }
+
+    impl Slice {
+        fn new(key_count: usize) -> Self {
+            let mut outer = Vec::new();
+            for index in 0..key_count {
+                let mut hasher = rapidhash::fast::RapidHasher::default_const();
+                hasher.write_usize(index);
+                let len = hasher.finish() % 16 + 16;
+                let mut inner = Vec::new();
+                for i in 0..len {
+                    hasher.write_u64(i);
+                    inner.push(hasher.finish() as u8);
+                }
+                outer.push(inner);
+            }
+            Self(outer)
+        }
+    }
+
+    impl Workload for Slice {
+        type Key<'k> = &'k NonPrefixSlice;
+        type Value = u64;
+
+        fn key(&self, index: usize) -> Self::Key<'_> {
+            unsafe { NonPrefixSlice::new_unchecked(self.0[index].as_slice()) }
+        }
+
+        fn value(&self, index: usize) -> Self::Value {
+            index as u64
+        }
+
+        fn validate(
+            &self,
+            index: usize,
+            key: &<Self::Key<'_> as Key>::Borrowed,
+            value: &<Self::Value as arctic::concurrent::Value>::Target,
+        ) {
+            assert!(core::ptr::eq(key, self.key(index)));
             assert_eq!(*value, index as u64);
         }
     }
@@ -194,10 +262,10 @@ mod array {
     }
 
     impl<const N: usize> Workload for Array<N> {
-        type Key = [u8; N];
+        type Key<'k> = [u8; N];
         type Value = u64;
 
-        fn key(&self, index: usize) -> Self::Key {
+        fn key(&self, index: usize) -> Self::Key<'_> {
             let mut hasher = rapidhash::fast::RapidHasher::default_const();
             hasher.write_usize(index);
             let mut buffer = [0u8; N];
@@ -215,7 +283,7 @@ mod array {
         fn validate(
             &self,
             index: usize,
-            key: &<Self::Key as Key>::Borrowed,
+            key: &<Self::Key<'_> as Key>::Borrowed,
             value: &<Self::Value as arctic::concurrent::Value>::Target,
         ) {
             assert_eq!(*key, self.key(index));
@@ -225,26 +293,29 @@ mod array {
 }
 
 trait Workload: Sized + Sync {
-    type Key: arctic::concurrent::Key + Sync;
+    type Key<'k>: arctic::concurrent::Key + Sync
+    where
+        Self: 'k;
 
     type Value: arctic::Value + Send + Sync;
 
-    fn key(&self, index: usize) -> Self::Key;
+    fn key(&self, index: usize) -> Self::Key<'_>;
 
     fn value(&self, index: usize) -> Self::Value;
 
-    fn validate(
-        &self,
+    fn validate<'k>(
+        &'k self,
         index: usize,
-        key: &<Self::Key as Key>::Borrowed,
+        key: &<Self::Key<'k> as Key>::Borrowed,
         value: &<Self::Value as arctic::concurrent::Value>::Target,
     );
 }
 
 fn test_map<'k, K: Workload>(key_set: &'k K, thread_count: usize, key_count: usize, hash: bool)
 where
-    for<'a> &'a <K::Key as Key>::Borrowed: Sync + core::fmt::Debug,
+    for<'a> &'a <K::Key<'k> as Key>::Borrowed: Sync + core::fmt::Debug,
     <K::Value as arctic::concurrent::Value>::Target: core::fmt::Debug,
+    K::Key<'k>: Clone + Ord,
 {
     assert_eq!(key_count % thread_count, 0);
 
@@ -269,7 +340,7 @@ where
             .collect::<Vec<_>>()
     };
 
-    let map = &arctic::concurrent::Map::<K::Key, _>::default();
+    let map = &arctic::concurrent::Map::<K::Key<'_>, _>::default();
 
     std::thread::scope(|scope| {
         for chunk in items.chunks_exact(key_count / thread_count) {
