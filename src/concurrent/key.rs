@@ -1,6 +1,7 @@
 use std::ffi::CString;
 
 use crate::NonNullString;
+use crate::NonPrefixSlice;
 use crate::NonPrefixVec;
 use crate::concurrent::smr::hazard;
 use crate::raw;
@@ -53,7 +54,7 @@ impl<const N: usize> Key for [u8; N] {
     }
 }
 
-impl<'a> Key for &'a crate::raw::key::vec::NonPrefixSlice {
+impl<'a> Key for &'a NonPrefixSlice {
     type Prefix = Le;
 
     #[inline]

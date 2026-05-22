@@ -9,6 +9,7 @@ use std::ffi::CString;
 
 use ribbit::u6;
 
+use crate::NonPrefixSlice;
 use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -59,53 +60,6 @@ impl core::borrow::Borrow<NonPrefixSlice> for NonPrefixVec {
     #[inline]
     fn borrow(&self) -> &NonPrefixSlice {
         self.as_non_prefix_slice()
-    }
-}
-
-/// Newtype guaranteeing this slice is not a prefix of
-/// any other [`NonPrefixVec`] or [`NonPrefixSlice`].
-#[repr(transparent)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NonPrefixSlice([u8]);
-
-impl NonPrefixSlice {
-    /// # Safety
-    ///
-    /// Caller must guarantee that `slice` is not a prefix of any
-    /// other [`NonPrefixVec`] or [`NonPrefixSlice`].
-    #[inline]
-    pub const unsafe fn new_unchecked(slice: &[u8]) -> &Self {
-        // SAFETY: `NonPrefixSlice` is `repr(transparent)`
-        unsafe { core::mem::transmute(slice) }
-    }
-
-    #[inline]
-    pub fn to_non_prefix_vec(&self) -> NonPrefixVec {
-        self.to_owned()
-    }
-}
-
-impl std::borrow::ToOwned for NonPrefixSlice {
-    type Owned = NonPrefixVec;
-    #[inline]
-    fn to_owned(&self) -> Self::Owned {
-        NonPrefixVec(self.0.to_vec())
-    }
-}
-
-impl core::ops::Deref for NonPrefixSlice {
-    type Target = [u8];
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'a> From<&'a NonPrefixSlice> for &'a [u8] {
-    #[inline]
-    fn from(str: &'a NonPrefixSlice) -> Self {
-        // SAFETY: `NonPrefixSlice` is `repr(transparent)`
-        unsafe { core::mem::transmute(str) }
     }
 }
 
