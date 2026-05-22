@@ -35,6 +35,7 @@ pub trait Key: Borrow<Self::Borrowed> {
     #[expect(private_bounds)]
     type Edge: ribbit::Pack<Packed: edge::Meta>;
 
+    #[expect(private_bounds)]
     type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
     fn as_insert(&self) -> Self::Insert<'_>;
@@ -122,7 +123,6 @@ pub(crate) trait Write<R: Read>: fmt::Debug + Default {
     fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<R::Edge>) -> Self::Len;
 }
 
-#[expect(private_bounds)]
 pub trait Len:
     Sized
     + Copy

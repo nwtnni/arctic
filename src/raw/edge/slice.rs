@@ -2,6 +2,7 @@ use ribbit::u14;
 use ribbit::u48;
 
 use crate::raw::edge;
+use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
@@ -15,11 +16,12 @@ pub struct Slice {
 
 impl Slice {
     const MASK_META: u64 = 0b11u64 << 62;
-    const MASK_KEY: u64 = !Self::MASK_META;
 
     #[inline]
-    pub(crate) fn new(slice: &[u8], len: u14) -> ribbit::Packed<Self> {
-        let ptr = slice.as_ptr() as u64;
+    pub(crate) fn new(slice: &[u8]) -> ribbit::Packed<Self> {
+        validate!(slice.len() < u16::MAX as usize);
+        let len = u14::new(slice.len() as u16);
+        let ptr = slice.as_ptr().expose_provenance() as u64;
         validate!(ptr < (1 << 48));
         ribbit::Packed::<Self>::new(u48::new(ptr), len, false, false)
     }
@@ -66,40 +68,19 @@ impl edge::Meta for SlicePacked {
         self.with_frozen(frozen)
     }
 
-    // #[inline]
-    // fn expand(self, new: Self::Key) -> Result<(Self, u8, Self), ()> {
-    //     let old = unsafe { self.as_slice() };
-    //     let new = unsafe { new.as_slice() };
-    //     let min = old.len().min(new.len());
-    //
-    //     let prefix = core::iter::zip(old, new)
-    //         .position(|(l, r)| l != r)
-    //         .unwrap_or(min);
-    //
-    //     if prefix == min {
-    //         return Err(());
-    //     }
-    //
-    //     let parent = Slice::new(old, u14::new(prefix as u16)).with_value(false);
-    //     let middle = old[prefix];
-    //     let child = Slice::new(
-    //         &old[prefix + 1..],
-    //         u14::new((old.len() - prefix - 1) as u16),
-    //     )
-    //     .with_meta(self);
-    //     Ok((parent, middle, child))
-    // }
-
     #[inline]
-    fn compress(self, byte: u8, child: Self) -> Option<Self> {
-        validate!(self.frozen());
-        todo!()
-        //
-        // let parent = unsafe { self.as_slice() };
-        // let child = unsafe { child.as_slice() };
-        // let len = u16::try_from(parent.len() + 1 + child.len())
-        //     .ok()
-        //     .and_then(|len| u14::try_from(len).ok())?;
+    fn compress(self, _: u8, child: Self) -> Option<Self> {
+        validate!(!self.frozen());
+
+        let parent = unsafe { self.as_slice() };
+        let child = unsafe { child.as_slice() };
+        let len = u16::try_from(parent.len() + 1 + child.len())
+            .ok()
+            .and_then(|len| u14::try_new(len).ok())?;
+
+        Some(Slice::new(unsafe {
+            core::slice::from_raw_parts(child.as_ptr().byte_sub(parent.len() + 1), len.bytes())
+        }))
     }
 
     fn len(self) -> Self::Len {
@@ -114,7 +95,7 @@ impl edge::Meta for SlicePacked {
         unsafe { Self::new_unchecked(self.value & Slice::MASK_META | key.value) }
     }
 
-    fn with_inline(self, inline: bool) -> Self {
+    fn with_inline(self, _: bool) -> Self {
         todo!()
     }
 }
@@ -141,10 +122,6 @@ impl PartialOrd for SlicePacked {
 
 impl edge::Len for u14 {
     const MAX: Self = u14::new((1u16 << 14) - 1);
-
-    // fn new(bits: usize) -> Self {
-    //     u14::new((bits >> 3) as u16)
-    // }
 
     fn bits(self) -> usize {
         (self.value() as usize) << 3

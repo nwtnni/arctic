@@ -45,7 +45,14 @@ impl Key for &'_ NonPrefixSlice {
     where
         Self: 'k,
     {
-        todo!()
+        let len = writer.len.bytes();
+        let suffix = unsafe { writer.last.as_slice() };
+        unsafe {
+            NonPrefixSlice::new_unchecked(core::slice::from_raw_parts(
+                suffix.as_ptr().byte_sub(len - suffix.len()),
+                len,
+            ))
+        }
     }
 }
 
@@ -73,8 +80,8 @@ impl key::Read for Reader<'_> {
         &self,
         len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
     ) -> ribbit::Packed<Self::Edge> {
-        let len = len.bytes().min(self.len().bytes()) as u16;
-        Slice::new(self.0, u14::new(len))
+        let len = len.bytes().min(self.len().bytes());
+        Slice::new(&self.0[..len])
     }
 
     fn get_byte(&self, index: <ribbit::Packed<Self::Edge> as edge::Meta>::Len) -> Option<u8> {
@@ -90,10 +97,9 @@ impl key::Read for Reader<'_> {
     }
 
     #[inline]
-    fn prefix(self, bits: key::vec::Len) -> Self {
-        todo!()
-        // validate!(self.bits() >= bits);
-        // Reader(NonNull::from(unsafe { &self.0.as_ref()[..bits >> 3] }))
+    fn prefix(self, len: key::vec::Len) -> Self {
+        validate!(self.len() >= len);
+        Reader(&self.0[..len.bytes()])
     }
 
     #[inline]
@@ -126,20 +132,15 @@ impl key::Read for Reader<'_> {
         if len_match >= edge.len().into() {
             return Err(());
         }
+        let edge = unsafe { edge.as_slice() };
 
         let len_start = u14::new(len_match.0 as u16);
         let len_middle = len_start + u14::new(1);
 
-        let start = edge::Slice::new(
-            unsafe { edge.as_slice() },
-            u14::new(len_start.bytes() as u16),
-        );
-        let old_middle = unsafe { edge.as_slice()[len_start.bytes()] };
+        let start = edge::Slice::new(&edge[..len_start.bytes()]);
+        let old_middle = edge[len_start.bytes()];
         let new_middle = self.0[len_start.bytes()];
-        let end = edge::Slice::new(
-            unsafe { &edge.as_slice()[len_middle.bytes()..] },
-            edge.len() - len_middle,
-        );
+        let end = edge::Slice::new(&edge[len_middle.bytes()..][..edge.len() - len_middle.bytes()]);
 
         Ok((start, old_middle, new_middle, end))
     }
