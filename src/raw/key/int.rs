@@ -60,6 +60,10 @@ impl_key!(u16, u32, u128);
 #[cfg(not(feature = "opt-no-int"))]
 impl_key!(u64);
 
+/// NOTE: `buffer` is allowed to contain arbitrary bytes beyond
+/// the most significant `len` bytes, but must clear them to
+/// zero when (a) creating an edge to insert into the tree,
+/// or (b) when creating a writer.
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Reader<I> {
     pub(crate) buffer: I,
@@ -126,7 +130,7 @@ impl<I: Int> key::Read for Reader<I> {
         let max = self.len.min(other.len).0;
         let len = Len((self.buffer ^ other.buffer).leading_zeros().min(max) & !0b111);
         Self {
-            buffer: self.buffer.most_significant(len.0),
+            buffer: self.buffer,
             len,
         }
     }
@@ -184,7 +188,8 @@ impl<I: Int> key::Write<Reader<I>> for Writer<I> {
         validate!(len.0 <= I::BITS);
 
         let writer = Self(
-            prefix.buffer | I::from_most_significant_u64(edge.raw()).unbounded_shr(prefix.len.0),
+            prefix.buffer.most_significant(prefix.len.0)
+                | I::from_most_significant_u64(edge.raw()).unbounded_shr(prefix.len.0),
         );
 
         (writer, len)
