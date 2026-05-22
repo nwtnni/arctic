@@ -76,7 +76,7 @@ pub(super) fn get_15(array: u128, key: u8) -> u8 {
 }
 
 #[inline]
-pub(super) fn compress_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     keys: u64,
     len: u2,
     lower: L,
@@ -108,7 +108,7 @@ pub(super) fn compress_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>
 // https://stackoverflow.com/questions/72098296/how-to-create-a-left-packed-vector-of-indices-of-the-0s-in-one-simd-vector
 // http://const.me/articles/simd/simd.pdf
 #[inline]
-pub(super) fn compress_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn keys_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     keys: u128,
     len: u4,
     lower: L,
@@ -179,7 +179,7 @@ pub(super) fn compress_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper
 }
 
 #[inline]
-pub(super) fn compress_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     indices: &[Atomic<u128>; 16],
     lower: L,
     upper: U,
@@ -575,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn compress_3() {
+    fn keys_3() {
         const COUNT: usize = 100_000;
 
         let mut hasher = rapidhash::fast::RapidHasher::default_const();
@@ -592,14 +592,14 @@ mod tests {
                 core::mem::swap(&mut low, &mut high);
             }
 
-            let mut simd = super::compress_3(keys, len, Some(low), Some(high));
+            let mut simd = super::keys_3(keys, len, Some(low), Some(high));
             for (index, entry) in simd.0.entries.iter_mut().enumerate() {
                 if entry.key == 0xFF && entry.index == 0xFF {
                     assert!(index >= simd.0.tail as usize);
                 }
             }
 
-            let fallback = simd::compress_3_fallback(keys, len, Some(low), Some(high));
+            let fallback = simd::keys_3_fallback(keys, len, Some(low), Some(high));
 
             assert_eq!(
                 simd, fallback,
@@ -609,7 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn compress_15() {
+    fn keys_15() {
         const COUNT: usize = 100_000;
 
         let mut hasher = rapidhash::fast::RapidHasher::default_const();
@@ -633,7 +633,7 @@ mod tests {
             }
 
             let mut simd = KeyIter15::default();
-            super::compress_15(keys, len, Some(low), Some(high), &mut simd);
+            super::keys_15(keys, len, Some(low), Some(high), &mut simd);
             for (index, entry) in simd.0.entries.iter_mut().enumerate() {
                 if entry.key == 0xFF && entry.index == 0xFF {
                     assert!(index >= simd.0.tail as usize);
@@ -643,7 +643,7 @@ mod tests {
             }
 
             let mut fallback = KeyIter15::default();
-            simd::compress_15_fallback(keys, len, Some(low), Some(high), &mut fallback);
+            simd::keys_15_fallback(keys, len, Some(low), Some(high), &mut fallback);
 
             assert_eq!(
                 simd, fallback,

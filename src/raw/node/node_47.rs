@@ -243,7 +243,7 @@ impl Header {
     ) -> node::KeyIter {
         let len = self.meta_consistent().len().value();
         let mut iter = Box::new(linear::KeyIter63::default());
-        node::simd::compress_47(&self.data, lower, upper, len, &mut iter);
+        node::simd::keys_47(&self.data, lower, upper, len, &mut iter);
         node::KeyIter::new_47(iter)
     }
 

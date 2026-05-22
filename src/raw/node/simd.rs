@@ -55,21 +55,21 @@ fn get_15_fallback(array: u128, key: u8) -> u8 {
 }
 
 #[inline]
-pub(super) fn compress_3<L: node::Lower, U: node::Upper>(
+pub(super) fn keys_3<L: node::Lower, U: node::Upper>(
     keys: u64,
     len: u2,
     lower: L,
     upper: U,
 ) -> KeyIter3 {
     simd!(
-        "opt-no-node3-compress",
-        avx2::compress_3(keys, len, lower, upper),
-        compress_3_fallback(keys, len, lower, upper),
+        "opt-no-node3-keys",
+        avx2::keys_3(keys, len, lower, upper),
+        keys_3_fallback(keys, len, lower, upper),
     )
 }
 
 #[inline]
-fn compress_3_fallback<L: node::Lower, U: node::Upper>(
+fn keys_3_fallback<L: node::Lower, U: node::Upper>(
     keys: u64,
     len: u2,
     lower: L,
@@ -100,7 +100,7 @@ fn compress_3_fallback<L: node::Lower, U: node::Upper>(
 }
 
 #[inline]
-pub(super) fn compress_15<L: node::Lower, U: node::Upper>(
+pub(super) fn keys_15<L: node::Lower, U: node::Upper>(
     keys: u128,
     len: u4,
     lower: L,
@@ -108,14 +108,14 @@ pub(super) fn compress_15<L: node::Lower, U: node::Upper>(
     out: &mut KeyIter15,
 ) {
     simd!(
-        "opt-no-node15-compress",
-        avx2::compress_15(keys, len, lower, upper, out),
-        compress_15_fallback(keys, len, lower, upper, out),
+        "opt-no-node15-keys",
+        avx2::keys_15(keys, len, lower, upper, out),
+        keys_15_fallback(keys, len, lower, upper, out),
     )
 }
 
 #[inline]
-pub(super) fn compress_15_fallback<L: node::Lower, U: node::Upper>(
+pub(super) fn keys_15_fallback<L: node::Lower, U: node::Upper>(
     keys: u128,
     len: u4,
     lower: L,
@@ -141,7 +141,7 @@ pub(super) fn compress_15_fallback<L: node::Lower, U: node::Upper>(
 }
 
 #[inline]
-pub(super) fn compress_47<L: node::Lower, U: node::Upper>(
+pub(super) fn keys_47<L: node::Lower, U: node::Upper>(
     indices: &[Atomic<u128>; 16],
     lower: L,
     upper: U,
@@ -149,14 +149,14 @@ pub(super) fn compress_47<L: node::Lower, U: node::Upper>(
     out: &mut KeyIter63,
 ) {
     simd!(
-        "opt-no-node47-compress",
-        avx2::compress_47(indices, lower, upper, len, out),
-        compress_47_fallback(indices, lower, upper, len, out),
+        "opt-no-node47-keys",
+        avx2::keys_47(indices, lower, upper, len, out),
+        keys_47_fallback(indices, lower, upper, len, out),
     )
 }
 
 #[inline]
-pub(super) fn compress_47_fallback<L: node::Lower, U: node::Upper>(
+pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
     indices: &[Atomic<u128>; 16],
     lower: L,
     upper: U,
