@@ -20,20 +20,12 @@ impl Slice {
     #[inline]
     pub(crate) fn new(slice: &[u8], len: u14) -> ribbit::Packed<Self> {
         let ptr = slice.as_ptr() as u64;
+        validate!(ptr < (1 << 48));
         ribbit::Packed::<Self>::new(u48::new(ptr), len, false, false)
-    }
-
-    #[inline]
-    pub(crate) fn min_len(edge: u14, reader: usize) -> u14 {
-        u14::new((edge.value() as usize).min(reader) as u16)
     }
 }
 
 impl SlicePacked {
-    fn with_meta(self, meta: Self) -> Self {
-        unsafe { Self::new_unchecked(self.value | (meta.value & Slice::MASK_META)) }
-    }
-
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
         let ptr = self.ptr().value() as *const u8;
         let len = self.len().value() as usize;
@@ -111,15 +103,15 @@ impl edge::Meta for SlicePacked {
     }
 
     fn len(self) -> Self::Len {
-        todo!()
+        Self::len(self)
     }
 
     fn with_value(self, value: bool) -> Self {
-        todo!()
+        self.with_value(value)
     }
 
     fn with_key(self, key: Self) -> Self {
-        todo!()
+        unsafe { Self::new_unchecked(self.value & Slice::MASK_META | key.value) }
     }
 
     fn with_inline(self, inline: bool) -> Self {

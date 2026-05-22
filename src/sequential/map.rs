@@ -1,3 +1,4 @@
+use core::borrow::Borrow as _;
 use core::cell::Cell;
 use core::marker::PhantomData;
 use core::ops::RangeFull;
@@ -88,7 +89,7 @@ where
     }
 
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(key) };
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(K::borrow_insert(key)) };
 
         match cursor.traverse_insert() {
             raw::cursor::Insert::Value {

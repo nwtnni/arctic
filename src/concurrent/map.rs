@@ -207,7 +207,7 @@ where
         P: Path<K::Read<'k>>,
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
-        let reader = K::Read::from(key);
+        let reader = K::borrow_insert(key);
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
@@ -544,7 +544,7 @@ where
         P: Path<K::Read<'k>>,
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
-        let reader = K::Read::from(key);
+        let reader = K::borrow_insert(key);
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 

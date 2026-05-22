@@ -26,8 +26,16 @@ macro_rules! impl_key {
                 type Len = Len;
 
                 #[inline]
-                fn borrow_insert(&self) -> Self::Insert<'_> {
+                fn as_insert(&self) -> Self::Insert<'_> {
                     self
+                }
+
+                #[inline]
+                fn borrow_insert<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
+                where
+                    Self: 'k,
+                {
+                    Reader::from(insert)
                 }
 
                 #[inline]

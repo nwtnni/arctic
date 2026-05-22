@@ -16,8 +16,16 @@ impl<const N: usize> Key for [u8; N] {
     type Len = key::vec::Len;
 
     #[inline]
-    fn borrow_insert(&self) -> Self::Insert<'_> {
+    fn as_insert(&self) -> Self::Insert<'_> {
         self
+    }
+
+    #[inline]
+    fn borrow_insert<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
+    where
+        Self: 'k,
+    {
+        key::vec::Reader::from(insert)
     }
 
     #[inline]

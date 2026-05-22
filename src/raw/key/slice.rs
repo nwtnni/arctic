@@ -1,60 +1,37 @@
-use core::ptr::NonNull;
-
 use ribbit::u14;
 
 use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
+use crate::raw::edge::Slice;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
+use crate::raw::key::vec::NonPrefixSlice;
 
-/// Newtype guaranteeing this slice is not a prefix of
-/// any other [`NonPrefixVec`] or [`NonPrefixSlice`].
-#[repr(transparent)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NonPrefixSlice([u8]);
-
-impl NonPrefixSlice {
-    /// # Safety
-    ///
-    /// Caller must guarantee that `slice` is not a prefix of any
-    /// other [`NonPrefixVec`] or [`NonPrefixSlice`].
-    #[inline]
-    pub const unsafe fn new_unchecked(slice: &[u8]) -> &Self {
-        // SAFETY: `NonPrefixSlice` is `repr(transparent)`
-        unsafe { core::mem::transmute(slice) }
-    }
-}
-
-impl core::ops::Deref for NonPrefixSlice {
-    type Target = [u8];
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'a> From<&'a NonPrefixSlice> for &'a [u8] {
-    #[inline]
-    fn from(str: &'a NonPrefixSlice) -> Self {
-        // SAFETY: `NonPrefixSlice` is `repr(transparent)`
-        unsafe { core::mem::transmute(str) }
-    }
-}
-
-impl<'a> Key for &'a NonPrefixSlice {
+impl Key for &'_ NonPrefixSlice {
     type Borrowed = NonPrefixSlice;
-    type Insert<'k> = Self;
-    type Read<'k> = Reader;
+    type Insert<'k>
+        = Self
+    where
+        Self: 'k;
+    type Read<'k> = Reader<'k>;
     type Write = Writer;
     type Edge = edge::Slice;
     type Len = key::vec::Len;
 
     #[inline]
-    fn borrow_insert(&self) -> Self::Insert<'_> {
+    fn as_insert(&self) -> Self::Insert<'_> {
         *self
+    }
+
+    #[inline]
+    fn borrow_insert<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
+    where
+        Self: 'k,
+    {
+        Reader::from(insert)
     }
 
     unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
@@ -66,83 +43,46 @@ impl<'a> Key for &'a NonPrefixSlice {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Reader(NonNull<[u8]>);
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Reader<'k>(pub(crate) &'k [u8]);
 
-impl Reader {
-    pub(crate) unsafe fn as_ref(&self) -> &[u8] {
-        unsafe { self.0.as_ref() }
-    }
-}
-
-impl<'k> From<&'k NonPrefixSlice> for Reader {
+impl<'k> From<&'k NonPrefixSlice> for Reader<'k> {
     #[inline]
     fn from(key: &'k NonPrefixSlice) -> Self {
-        todo!()
+        Self(key)
     }
 }
 
-impl Default for Reader {
-    #[inline]
-    fn default() -> Self {
-        Self(NonNull::from(&[]))
-    }
-}
-
-impl key::Read for Reader {
+impl key::Read for Reader<'_> {
     const LEN: Option<key::vec::Len> = None;
 
     type Edge = edge::Slice;
     type Len = key::vec::Len;
 
-    // #[inline]
-    // fn bits(&self) -> usize {
-    //     unsafe { self.0.as_ref() }.len() << 3
-    // }
-    //
-    // #[inline]
-    // fn next(&mut self) -> Option<u8> {
-    //     let reader = unsafe { self.0.as_ref() };
-    //     let (head, tail) = reader.split_first()?;
-    //     self.0 = NonNull::from(tail);
-    //     Some(*head)
-    // }
-    //
-    // #[inline]
-    // fn read(
-    //     &mut self,
-    //     len: <<<Self::Edge as ribbit::Pack>::Packed as edge::Meta>::Key as edge::Key>::Len,
-    // ) -> ribbit::Packed<edge::Slice> {
-    //     if len == u14::new(0) {
-    //         return ribbit::Packed::<edge::Slice>::DEFAULT;
-    //     }
-    //
-    //     let reader = unsafe { self.0.as_ref() };
-    //     let len = edge::Slice::min_len(len, reader.len());
-    //     let edge = edge::Slice::new(reader, len);
-    //
-    //     self.0 = NonNull::from(&reader[len.value() as usize..]);
-    //     edge
-    // }
-
     fn len(&self) -> Self::Len {
-        todo!()
+        key::vec::Len(self.0.len())
     }
 
     fn get_edge(
         &self,
         len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
     ) -> ribbit::Packed<Self::Edge> {
-        todo!()
+        let len = len.bytes().min(self.len().bytes()) as u16;
+        Slice::new(self.0, u14::new(len))
     }
 
     fn get_byte(&self, index: <ribbit::Packed<Self::Edge> as edge::Meta>::Len) -> Option<u8> {
-        todo!()
+        self.0.get(index.bytes()).copied()
     }
 
     fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        todo!()
+        key::vec::Len(
+            core::iter::zip(self.0, unsafe { meta.as_slice() })
+                .position(|(l, r)| l != r)
+                .unwrap_or_else(|| unsafe { self.0.len().min(meta.as_slice().len()) }),
+        )
     }
+
     #[inline]
     fn prefix(self, bits: key::vec::Len) -> Self {
         todo!()
@@ -151,23 +91,22 @@ impl key::Read for Reader {
     }
 
     #[inline]
-    fn suffix(self, bits: key::vec::Len) -> Self {
-        todo!()
-        // validate!(self.bits() >= bits);
-        // Reader(NonNull::from(unsafe { &self.0.as_ref()[bits >> 3..] }))
+    fn suffix(self, len: key::vec::Len) -> Self {
+        validate!(self.len() >= len);
+        Reader(&self.0[len.bytes()..])
     }
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        let index = core::iter::zip(unsafe { self.0.as_ref() }, unsafe { other.0.as_ref() })
+        let index = core::iter::zip(self.0, other.0)
             .position(|(l, r)| l != r)
             .unwrap_or_else(|| self.0.len().min(other.0.len()));
-        Self(NonNull::from(unsafe { &self.0.as_ref()[..index] }))
+        Self(&self.0[..index])
     }
 
     fn expand(
         &self,
-        key: ribbit::Packed<Self::Edge>,
+        edge: ribbit::Packed<Self::Edge>,
     ) -> Result<
         (
             ribbit::Packed<Self::Edge>,
@@ -177,7 +116,26 @@ impl key::Read for Reader {
         ),
         (),
     > {
-        todo!()
+        let len_match = self.match_prefix(edge);
+        if len_match >= edge.len().into() {
+            return Err(());
+        }
+
+        let len_start = u14::new(len_match.0 as u16);
+        let len_middle = len_start + u14::new(1);
+
+        let start = edge::Slice::new(
+            unsafe { edge.as_slice() },
+            u14::new(len_start.bytes() as u16),
+        );
+        let old_middle = unsafe { edge.as_slice()[len_start.bytes()] };
+        let new_middle = self.0[len_start.bytes()];
+        let end = edge::Slice::new(
+            unsafe { &edge.as_slice()[len_middle.bytes()..] },
+            edge.len() - len_middle,
+        );
+
+        Ok((start, old_middle, new_middle, end))
     }
 }
 
@@ -187,7 +145,7 @@ pub struct Writer {
     len: key::vec::Len,
 }
 
-impl key::Write<Reader> for Writer {
+impl key::Write<Reader<'_>> for Writer {
     type Len = key::vec::Len;
 
     fn new(prefix: Reader, key: ribbit::Packed<edge::Slice>) -> (Self, Self::Len) {
@@ -205,6 +163,6 @@ impl key::Write<Reader> for Writer {
 
 impl From<u14> for key::vec::Len {
     fn from(value: u14) -> Self {
-        todo!()
+        Self(value.value() as usize)
     }
 }

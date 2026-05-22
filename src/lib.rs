@@ -348,27 +348,27 @@ mod tests {
     #[test]
     fn smoke_key_slice() {
         let keys = [b"ad".as_slice(), b"abc".as_slice()];
-        let map = crate::concurrent::Map::<&crate::raw::key::slice::NonPrefixSlice, u64>::new();
+        let map = crate::concurrent::Map::<&crate::raw::key::vec::NonPrefixSlice, u64>::new();
         map.insert(
-            unsafe { crate::raw::key::slice::NonPrefixSlice::new_unchecked(keys[0]) },
+            unsafe { crate::raw::key::vec::NonPrefixSlice::new_unchecked(keys[0]) },
             0,
         )
         .unwrap_or_else(|(_, _)| panic!());
         map.insert(
-            unsafe { crate::raw::key::slice::NonPrefixSlice::new_unchecked(keys[1]) },
+            unsafe { crate::raw::key::vec::NonPrefixSlice::new_unchecked(keys[1]) },
             1,
         )
         .unwrap_or_else(|(_, _)| panic!());
 
         let temp = b"adabc".to_vec();
         assert_eq!(
-            map.get(unsafe { crate::raw::key::slice::NonPrefixSlice::new_unchecked(&temp[..2]) })
+            map.get(unsafe { crate::raw::key::vec::NonPrefixSlice::new_unchecked(&temp[..2]) })
                 .as_deref()
                 .copied(),
             Some(0)
         );
         assert_eq!(
-            map.get(unsafe { crate::raw::key::slice::NonPrefixSlice::new_unchecked(&temp[2..]) })
+            map.get(unsafe { crate::raw::key::vec::NonPrefixSlice::new_unchecked(&temp[2..]) })
                 .as_deref()
                 .copied(),
             Some(1)
@@ -380,10 +380,10 @@ mod tests {
         let keys = (0..10)
             .map(|i| "a".repeat(100) + &i.to_string())
             .collect::<Vec<_>>();
-        let map = crate::concurrent::Map::<&crate::raw::key::slice::NonPrefixSlice, u64>::new();
+        let map = crate::concurrent::Map::<&crate::raw::key::vec::NonPrefixSlice, u64>::new();
         for (i, key) in keys.iter().enumerate() {
             map.insert(
-                unsafe { crate::raw::key::slice::NonPrefixSlice::new_unchecked(key.as_bytes()) },
+                unsafe { crate::raw::key::vec::NonPrefixSlice::new_unchecked(key.as_bytes()) },
                 i as u64,
             )
             .unwrap();
@@ -391,7 +391,7 @@ mod tests {
         for (i, key) in keys.iter().enumerate() {
             assert_eq!(
                 map.get(unsafe {
-                    crate::raw::key::slice::NonPrefixSlice::new_unchecked(key.as_bytes())
+                    crate::raw::key::vec::NonPrefixSlice::new_unchecked(key.as_bytes())
                 },)
                     .as_deref()
                     .copied(),
@@ -414,7 +414,7 @@ mod tests {
         let mut map = Map::default();
 
         for (key, value) in &keys {
-            map.upsert(key.borrow_insert(), *value);
+            map.upsert(key.as_insert(), *value);
             assert_eq!(map.get(key.borrow()).as_deref().copied(), Some(*value));
         }
 
