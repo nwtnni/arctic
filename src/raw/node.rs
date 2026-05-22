@@ -15,7 +15,7 @@ mod node_15;
 mod node_256;
 mod node_3;
 mod node_47;
-mod simd;
+pub(super) mod simd;
 
 pub(crate) use iter::KeyIter;
 pub(crate) use iter::Lower;

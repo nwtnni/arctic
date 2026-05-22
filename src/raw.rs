@@ -24,12 +24,15 @@ pub(crate) mod iter;
 pub mod key;
 pub(crate) mod map;
 pub(crate) mod node;
+pub(crate) mod set;
 pub(crate) mod shard;
 
 pub(crate) use cursor::Cursor;
 pub(crate) use edge::Edge;
 pub use key::Key;
 pub(crate) use map::Map;
+#[cfg_attr(not(test), expect(unused_imports))]
+pub(crate) use set::Set;
 pub(crate) use shard::Shard;
 
 pub(crate) use int::Int;

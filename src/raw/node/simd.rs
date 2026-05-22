@@ -32,7 +32,7 @@ fn get_3_fallback(array: u64, key: u8) -> u8 {
 }
 
 #[inline]
-pub(super) fn get_15(array: u128, key: u8) -> u8 {
+pub(crate) fn get_15(array: u128, key: u8) -> u8 {
     simd!(
         "opt-no-node15-get",
         avx2::get_15(array, key),
