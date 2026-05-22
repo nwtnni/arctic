@@ -34,11 +34,17 @@ impl Key for &'_ NonPrefixSlice {
         Reader::from(insert)
     }
 
-    unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
-        todo!()
+    fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+    where
+        Self: 'k,
+    {
+        insert
     }
 
-    unsafe fn from_writer_unchecked(writer: Self::Write) -> Self {
+    unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
+    where
+        Self: 'k,
+    {
         todo!()
     }
 }

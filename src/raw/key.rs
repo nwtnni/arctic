@@ -22,7 +22,7 @@ use crate::raw::edge::Meta as _;
 pub trait Key: Borrow<Self::Borrowed> {
     type Borrowed: 'static + ?Sized + Debug;
 
-    type Insert<'k>: Copy
+    type Insert<'k>: Copy + Borrow<Self::Borrowed>
     where
         Self: 'k;
 
@@ -43,15 +43,16 @@ pub trait Key: Borrow<Self::Borrowed> {
     where
         Self: 'k;
 
-    /// # Safety
-    ///
-    /// Caller must guarantee that `writer` contains a valid key.
-    unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed;
+    fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+    where
+        Self: 'k;
 
     /// # Safety
     ///
     /// Caller must guarantee that `writer` contains a valid key.
-    unsafe fn from_writer_unchecked(writer: Self::Write) -> Self;
+    unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
+    where
+        Self: 'k;
 }
 
 pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {

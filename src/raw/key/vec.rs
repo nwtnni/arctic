@@ -131,13 +131,19 @@ impl Key for NonPrefixVec {
     }
 
     #[inline]
-    unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
-        unsafe { NonPrefixSlice::new_unchecked(&writer.0) }
+    fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+    where
+        Self: 'k,
+    {
+        insert.to_non_prefix_vec()
     }
 
     #[inline]
-    unsafe fn from_writer_unchecked(writer: Self::Write) -> Self {
-        unsafe { NonPrefixVec::new_unchecked(writer.0) }
+    unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
+    where
+        Self: 'k,
+    {
+        unsafe { NonPrefixSlice::new_unchecked(&writer.0) }
     }
 }
 
@@ -163,16 +169,20 @@ impl Key for CString {
     }
 
     #[inline]
-    unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
-        if_validate!(CStr::from_bytes_with_nul(&writer.0).unwrap(), unsafe {
-            CStr::from_bytes_with_nul_unchecked(&writer.0)
-        })
+    fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+    where
+        Self: 'k,
+    {
+        insert.to_owned()
     }
 
     #[inline]
-    unsafe fn from_writer_unchecked(writer: Self::Write) -> Self {
-        if_validate!(CString::from_vec_with_nul(writer.0).unwrap(), unsafe {
-            CString::from_vec_with_nul_unchecked(writer.0)
+    unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
+    where
+        Self: 'k,
+    {
+        if_validate!(CStr::from_bytes_with_nul(&writer.0).unwrap(), unsafe {
+            CStr::from_bytes_with_nul_unchecked(&writer.0)
         })
     }
 }

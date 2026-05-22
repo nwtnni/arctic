@@ -38,14 +38,16 @@ macro_rules! impl_key {
                     Reader::from(insert)
                 }
 
-                #[inline]
-                unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
-                    &writer.0
+                fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+                where
+                    Self: 'k,
+                {
+                    *insert
                 }
 
                 #[inline]
-                unsafe fn from_writer_unchecked(writer: Self::Write) -> Self {
-                    writer.0
+                unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k> where Self: 'k{
+                    &writer.0
                 }
             }
 

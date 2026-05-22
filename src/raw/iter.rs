@@ -27,7 +27,7 @@ where
     O: Order,
 {
     #[inline]
-    pub(crate) fn lend(&mut self) -> Option<(&K::Borrowed, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
+    pub(crate) fn lend(&mut self) -> Option<(K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
         self.0.lend().map(|(writer, value, edge)| {
             (unsafe { K::borrow_writer_unchecked(writer) }, value, edge)
         })
@@ -35,7 +35,7 @@ where
 
     #[inline]
     pub(crate) fn for_each_internal<
-        F: FnMut((&K::Borrowed, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>,
+        F: FnMut((K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>,
     >(
         self,
         mut apply: F,

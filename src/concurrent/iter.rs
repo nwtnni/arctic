@@ -78,7 +78,7 @@ where
     G: smr::Guard<V>,
 {
     #[inline]
-    pub fn lend(&mut self) -> Option<(&K::Borrowed, &V::Target)> {
+    pub fn lend(&mut self) -> Option<(K::Insert<'_>, &V::Target)> {
         self.inner.lend().map(|(key, value, _)| {
             self.value = value;
             (key, unsafe { V::target_from_raw(&self.value) })
@@ -86,7 +86,7 @@ where
     }
 
     #[inline]
-    pub fn for_each_internal<F: FnMut((&K::Borrowed, &V::Target)) -> ControlFlow<()>>(
+    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &V::Target)) -> ControlFlow<()>>(
         mut self,
         mut apply: F,
     ) {
@@ -109,9 +109,8 @@ where
     type Item = (K, V::Target);
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-        // self.lend()
-        //     .map(|(key, value)| (key.to_owned(), value.clone()))
+        self.lend()
+            .map(|(key, value)| (K::clone_insert(key), value.clone()))
     }
 }
 

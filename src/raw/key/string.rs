@@ -174,7 +174,18 @@ impl Key for NonNullString {
     }
 
     #[inline]
-    unsafe fn borrow_writer_unchecked(writer: &Self::Write) -> &Self::Borrowed {
+    fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+    where
+        Self: 'k,
+    {
+        insert.to_owned()
+    }
+
+    #[inline]
+    unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
+    where
+        Self: 'k,
+    {
         let (last, key) = writer.0.split_last().expect("String has terminator");
         validate_eq!(*last, 0);
 
@@ -184,20 +195,6 @@ impl Key for NonNullString {
                 .and_then(NonNullStr::new)
                 .unwrap(),
             unsafe { NonNullStr::new_unchecked(str::from_utf8_unchecked(key)) }
-        )
-    }
-
-    #[inline]
-    unsafe fn from_writer_unchecked(mut writer: Self::Write) -> Self {
-        let last = writer.0.pop().expect("String has terminator");
-        validate_eq!(last, 0);
-
-        if_validate!(
-            String::from_utf8(writer.0)
-                .ok()
-                .and_then(|string| NonNullString::new(string).ok())
-                .unwrap(),
-            unsafe { NonNullString::new_unchecked(String::from_utf8_unchecked(writer.0)) }
         )
     }
 }

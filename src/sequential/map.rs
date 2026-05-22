@@ -1,4 +1,3 @@
-use core::borrow::Borrow as _;
 use core::cell::Cell;
 use core::marker::PhantomData;
 use core::ops::RangeFull;
@@ -12,7 +11,6 @@ use crate::raw::Frozen;
 use crate::raw::Key;
 use crate::raw::cursor::path;
 use crate::raw::edge;
-use crate::raw::key;
 use crate::sequential::EntryIter;
 use crate::sequential::EntryIterMut;
 use crate::sequential::Shard;

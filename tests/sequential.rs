@@ -1,3 +1,4 @@
+use core::borrow::Borrow as _;
 use core::fmt::Debug;
 use core::ops::ControlFlow;
 use std::collections::BTreeMap;
@@ -138,7 +139,6 @@ struct Arctic<K: arctic::Key, V: arctic::Value>(arctic::concurrent::Map<K, V>);
 impl<K, V> StateMachineTest for Arctic<K, V>
 where
     K: arctic::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
-    for<'k> K::Read<'k>: From<&'k K>,
     K::Borrowed: Ord + core::fmt::Debug,
     V: arctic::Value + Arbitrary + Clone + Debug + Send + Sync + 'static,
     V::Target: Debug + PartialEq + PartialEq<V>,
@@ -168,7 +168,7 @@ where
                 lower,
                 upper,
             } => {
-                if let Some(prefix) = state.0.range(&lower..=&upper) {
+                if let Some(prefix) = state.0.range(lower.borrow()..=upper.borrow()) {
                     let expected = expected.0.range::<K, _>(lower.clone()..=upper.clone());
                     let mut expected = if descend {
                         Box::new(expected.rev())
@@ -179,6 +179,7 @@ where
                     macro_rules! compare {
                         () => {
                             |(key_actual, value_actual)| {
+                                let key_actual: &K::Borrowed = key_actual.borrow();
                                 let (key_expected, value_expected) = expected.next().unwrap();
                                 assert_eq!(
                                     key_actual,

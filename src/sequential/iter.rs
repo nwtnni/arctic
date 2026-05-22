@@ -97,7 +97,7 @@ where
     O: Order,
 {
     #[inline]
-    pub fn lend(&mut self) -> Option<(&K::Borrowed, &'g V)> {
+    pub fn lend(&mut self) -> Option<(K::Insert<'_>, &'g V)> {
         self.inner.lend().map(|(key, _, edge)| {
             (key, unsafe {
                 Edge::as_value_unchecked(edge).cast::<V>().as_ref()
@@ -106,7 +106,7 @@ where
     }
 
     #[inline]
-    pub fn for_each_internal<F: FnMut((&K::Borrowed, &'g V)) -> ControlFlow<()>>(
+    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &'g V)) -> ControlFlow<()>>(
         self,
         mut apply: F,
     ) {
@@ -129,8 +129,8 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-        // self.lend().map(|(key, value)| (key.to_owned(), value))
+        self.lend()
+            .map(|(key, value)| (K::clone_insert(key), value))
     }
 }
 
@@ -147,7 +147,7 @@ where
     O: Order,
 {
     #[inline]
-    pub fn lend(&mut self) -> Option<(&K::Borrowed, &'g mut V)> {
+    pub fn lend(&mut self) -> Option<(K::Insert<'_>, &'g mut V)> {
         self.inner.lend().map(|(key, _, edge)| {
             (key, unsafe {
                 Edge::as_value_unchecked(edge).cast::<V>().as_mut()
@@ -156,7 +156,7 @@ where
     }
 
     #[inline]
-    pub fn for_each_internal<F: FnMut((&K::Borrowed, &'g mut V)) -> ControlFlow<()>>(
+    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &'g mut V)) -> ControlFlow<()>>(
         self,
         mut apply: F,
     ) {
@@ -179,8 +179,8 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-        // self.lend().map(|(key, value)| (key.to_owned(), value))
+        self.lend()
+            .map(|(key, value)| (K::clone_insert(key), value))
     }
 }
 
