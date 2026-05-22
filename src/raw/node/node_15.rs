@@ -89,7 +89,7 @@ impl linear::Header for ribbit::Packed<Header> {
         upper: U,
     ) -> node::KeyIter {
         let len = self.len();
-        let mut iter = Box::new(linear::KeyIter::default());
+        let mut iter = Box::new(linear::KeyIter15::default());
         node::simd::compress_15(self.value, len, lower, upper, &mut iter);
         node::KeyIter::new_15(iter)
     }

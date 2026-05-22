@@ -7,9 +7,11 @@ use ribbit::Atomic;
 use ribbit::u2;
 use ribbit::u4;
 
+use crate::raw::node;
 use crate::raw::node::iter::KeyIndex;
-use crate::raw::node::linear::KeyIter;
 use crate::raw::node::linear::KeyIter3;
+use crate::raw::node::linear::KeyIter15;
+use crate::raw::node::linear::KeyIter63;
 
 #[inline]
 pub(super) fn get_3(array: u64, key: u8) -> u8 {
@@ -51,7 +53,7 @@ fn get_15_fallback(array: u128, key: u8) -> u8 {
 }
 
 #[inline]
-pub(super) fn compress_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn compress_3<L: node::Lower, U: node::Upper>(
     keys: u64,
     len: u2,
     lower: L,
@@ -65,7 +67,7 @@ pub(super) fn compress_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>
 }
 
 #[inline]
-fn compress_3_fallback<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+fn compress_3_fallback<L: node::Lower, U: node::Upper>(
     keys: u64,
     len: u2,
     lower: L,
@@ -96,12 +98,12 @@ fn compress_3_fallback<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
 }
 
 #[inline]
-pub(super) fn compress_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn compress_15<L: node::Lower, U: node::Upper>(
     keys: u128,
     len: u4,
     lower: L,
     upper: U,
-    out: &mut crate::raw::node::linear::KeyIter<15>,
+    out: &mut KeyIter15,
 ) {
     simd!(
         "opt-no-node15-compress",
@@ -111,12 +113,12 @@ pub(super) fn compress_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper
 }
 
 #[inline]
-pub(super) fn compress_15_fallback<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn compress_15_fallback<L: node::Lower, U: node::Upper>(
     keys: u128,
     len: u4,
     lower: L,
     upper: U,
-    out: &mut crate::raw::node::linear::KeyIter<15>,
+    out: &mut KeyIter15,
 ) {
     let len = keys
         .to_le_bytes()
@@ -124,25 +126,25 @@ pub(super) fn compress_15_fallback<L: crate::raw::node::Lower, U: crate::raw::no
         .take(len.value() as usize)
         .enumerate()
         .filter(|(_, key)| *key >= lower.get() && *key <= upper.get())
-        .zip(&mut out.entries)
+        .zip(&mut out.0.entries)
         .map(|((index, key), out)| {
             out.key = key;
             out.index = index as u8;
         })
         .count();
 
-    out.entries[..len].sort_unstable();
-    out.head = 0;
-    out.tail = len as u8;
+    out.0.entries[..len].sort_unstable();
+    out.0.head = 0;
+    out.0.tail = len as u8;
 }
 
 #[inline]
-pub(super) fn compress_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn compress_47<L: node::Lower, U: node::Upper>(
     indices: &[Atomic<u128>; 16],
     lower: L,
     upper: U,
     len: u8,
-    out: &mut KeyIter<63>,
+    out: &mut KeyIter63,
 ) {
     simd!(
         "opt-no-node47-compress",
@@ -152,12 +154,12 @@ pub(super) fn compress_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper
 }
 
 #[inline]
-pub(super) fn compress_47_fallback<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
+pub(super) fn compress_47_fallback<L: node::Lower, U: node::Upper>(
     indices: &[Atomic<u128>; 16],
     lower: L,
     upper: U,
     len: u8,
-    out: &mut KeyIter<63>,
+    out: &mut KeyIter63,
 ) {
     let i = lower.get() / 16;
     let j = upper.get() / 16;
@@ -170,13 +172,13 @@ pub(super) fn compress_47_fallback<L: crate::raw::node::Lower, U: crate::raw::no
         .zip((i as u16 * 16)..)
         .map(|(index, key)| (index, key as u8))
         .filter(|(index, key)| (*index < len && *key >= lower.get() && *key <= upper.get()))
-        .zip(&mut out.entries)
+        .zip(&mut out.0.entries)
         .map(|((index, key), out)| {
             out.index = index;
             out.key = key;
         })
         .count();
 
-    out.head = 0;
-    out.tail = len as u8;
+    out.0.head = 0;
+    out.0.tail = len as u8;
 }

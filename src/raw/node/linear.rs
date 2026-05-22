@@ -186,17 +186,10 @@ pub(super) trait Header: ribbit::Unpack + core::fmt::Debug {
     ) -> node::KeyIter;
 }
 
+/// NOTE: We order `head` and `tail` fields at the end
+/// to allow `entries` to be filled in with a single
+/// aligned SIMD write.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) struct KeyIter3 {
-    head: u8,
-    pub(super) entries: [node::iter::KeyIndex; 3],
-    pub(super) tail: u8,
-}
-
-const _: [(); 8] = [(); core::mem::size_of::<KeyIter3>()];
-
-#[repr(C, align(32))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) struct KeyIter<const N: usize> {
     pub(super) entries: [node::iter::KeyIndex; N],
@@ -207,15 +200,28 @@ pub(super) struct KeyIter<const N: usize> {
 impl<const N: usize> Default for KeyIter<N> {
     fn default() -> Self {
         Self {
+            entries: [node::iter::KeyIndex { key: 0, index: 0 }; N],
             head: 0,
             tail: 0,
-            entries: [node::iter::KeyIndex { key: 0, index: 0 }; N],
         }
     }
 }
 
-const _: [(); 32] = [(); core::mem::size_of::<KeyIter<15>>()];
-const _: [(); 128] = [(); core::mem::size_of::<KeyIter<63>>()];
+#[repr(C, align(8))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct KeyIter3(pub(super) KeyIter<3>);
+
+#[repr(C, align(32))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct KeyIter15(pub(super) KeyIter<15>);
+
+#[repr(C, align(32))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct KeyIter63(pub(super) KeyIter<63>);
+
+const_assert_size_align!(KeyIter3, 8, 8);
+const_assert_size_align!(KeyIter15, 32, 32);
+const_assert_size_align!(KeyIter63, 128, 32);
 
 macro_rules! impl_key_iter {
     ($ty:ty, $len:expr $(, $new:ident)?) => {
@@ -224,11 +230,11 @@ macro_rules! impl_key_iter {
                 #[inline]
                 pub(super) const fn $new(entries: [node::iter::KeyIndex; $len], len: u8) -> Self {
                     validate!(len as usize <= entries.len());
-                    Self {
+                    Self(KeyIter {
                         head: 0,
                         tail: len,
                         entries,
-                    }
+                    })
                 }
             }
         )?
@@ -237,18 +243,18 @@ macro_rules! impl_key_iter {
             type Item = node::iter::KeyIndex;
             #[inline]
             fn next(&mut self) -> Option<Self::Item> {
-                if self.head == self.tail {
+                if self.0.head == self.0.tail {
                     return None;
                 }
 
-                let next = self.entries.get(self.head as usize).copied()?;
-                self.head += 1;
+                let next = self.0.entries.get(self.0.head as usize).copied()?;
+                self.0.head += 1;
                 Some(next)
             }
 
             #[inline]
             fn size_hint(&self) -> (usize, Option<usize>) {
-                let len = (self.tail - self.head) as usize;
+                let len = (self.0.tail - self.0.head) as usize;
                 (len, Some(len))
             }
         }
@@ -256,12 +262,12 @@ macro_rules! impl_key_iter {
         impl DoubleEndedIterator for $ty {
             #[inline]
             fn next_back(&mut self) -> Option<Self::Item> {
-                if self.head == self.tail {
+                if self.0.head == self.0.tail {
                     return None;
                 }
 
-                self.tail -= 1;
-                self.entries.get(self.tail as usize).copied()
+                self.0.tail -= 1;
+                self.0.entries.get(self.0.tail as usize).copied()
             }
         }
 
@@ -277,5 +283,5 @@ macro_rules! impl_key_iter {
 }
 
 impl_key_iter!(KeyIter3, 3, new_3);
-impl_key_iter!(KeyIter<15>, 15);
-impl_key_iter!(KeyIter<63>, 63);
+impl_key_iter!(KeyIter15, 15);
+impl_key_iter!(KeyIter63, 63);

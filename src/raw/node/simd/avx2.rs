@@ -40,8 +40,9 @@ use ribbit::Atomic;
 use ribbit::u2;
 use ribbit::u4;
 
-use crate::raw::node::linear::KeyIter;
 use crate::raw::node::linear::KeyIter3;
+use crate::raw::node::linear::KeyIter15;
+use crate::raw::node::linear::KeyIter63;
 
 /// https://richardstartin.github.io/posts/finding-bytes
 /// https://orlp.net/blog/extracting-depositing-bits/
@@ -97,8 +98,9 @@ pub(super) fn compress_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>
 
     let entries = entries | (u64::MAX << bits);
     let entries = bitonic_sort_4(entries, bits);
-    let mut iter = unsafe { core::mem::transmute::<u64, KeyIter3>(entries << 8) };
-    iter.tail = bits >> 4;
+    let mut iter = unsafe { core::mem::transmute::<u64, KeyIter3>(entries) };
+    iter.0.head = 0;
+    iter.0.tail = bits >> 4;
     iter
 }
 
@@ -111,7 +113,7 @@ pub(super) fn compress_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper
     len: u4,
     lower: L,
     upper: U,
-    out: &mut crate::raw::node::linear::KeyIter<15>,
+    out: &mut KeyIter15,
 ) {
     let mask_len = mask_len(len.value());
 
@@ -171,8 +173,8 @@ pub(super) fn compress_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper
         );
 
         _mm256_store_si256(out as *mut _ as _, sorted);
-        out.head = 0;
-        out.tail = (bits >> 3) as u8;
+        out.0.head = 0;
+        out.0.tail = (bits >> 3) as u8;
     };
 }
 
@@ -182,7 +184,7 @@ pub(super) fn compress_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper
     lower: L,
     upper: U,
     len: u8,
-    out: &mut KeyIter<63>,
+    out: &mut KeyIter63,
 ) {
     let i = lower.get() / 16;
     let j = upper.get() / 16;
@@ -212,7 +214,7 @@ pub(super) fn compress_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper
 
         // FIXME: assumes little-endian
         unsafe {
-            let ptr = (out as *mut KeyIter<63>)
+            let ptr = (out as *mut KeyIter63)
                 .cast::<__m128i>()
                 .byte_add((index as usize) << 1);
             _mm_storeu_si128(ptr, lo);
@@ -223,8 +225,8 @@ pub(super) fn compress_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper
         keys = add(keys, U8_16);
     }
 
-    out.head = 0;
-    out.tail = index;
+    out.0.head = 0;
+    out.0.tail = index;
 }
 
 /// https://en.wikipedia.org/wiki/Bitonic_sorter
@@ -519,7 +521,7 @@ mod tests {
     use ribbit::u2;
     use ribbit::u4;
 
-    use crate::raw::node::linear::KeyIter;
+    use crate::raw::node::linear::KeyIter15;
     use crate::raw::node::simd;
     use crate::raw::node::simd::avx2::bitonic_sort_16;
 
@@ -591,9 +593,9 @@ mod tests {
             }
 
             let mut simd = super::compress_3(keys, len, Some(low), Some(high));
-            for (index, entry) in simd.entries.iter_mut().enumerate() {
+            for (index, entry) in simd.0.entries.iter_mut().enumerate() {
                 if entry.key == 0xFF && entry.index == 0xFF {
-                    assert!(index >= simd.tail as usize);
+                    assert!(index >= simd.0.tail as usize);
                 }
             }
 
@@ -630,17 +632,17 @@ mod tests {
                 core::mem::swap(&mut low, &mut high);
             }
 
-            let mut simd = KeyIter::default();
+            let mut simd = KeyIter15::default();
             super::compress_15(keys, len, Some(low), Some(high), &mut simd);
-            for (index, entry) in simd.entries.iter_mut().enumerate() {
+            for (index, entry) in simd.0.entries.iter_mut().enumerate() {
                 if entry.key == 0xFF && entry.index == 0xFF {
-                    assert!(index >= simd.tail as usize);
+                    assert!(index >= simd.0.tail as usize);
                     entry.key = 0;
                     entry.index = 0;
                 }
             }
 
-            let mut fallback = KeyIter::default();
+            let mut fallback = KeyIter15::default();
             simd::compress_15_fallback(keys, len, Some(low), Some(high), &mut fallback);
 
             assert_eq!(

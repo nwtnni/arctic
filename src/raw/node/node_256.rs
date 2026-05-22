@@ -92,20 +92,8 @@ where
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct KeyIter {
-    #[cfg(target_endian = "big")]
-    _tag: Tag,
-
     head: u16,
     tail: u16,
-
-    #[cfg(target_endian = "little")]
-    _tag: Tag,
-}
-
-#[repr(u32)]
-#[derive(Copy, Clone)]
-enum Tag {
-    Node256 = (node::Type::Node256 as u32) << 30,
 }
 
 impl KeyIter {
@@ -114,7 +102,6 @@ impl KeyIter {
         Self {
             head: lower.get() as u16,
             tail: upper.get() as u16 + 1,
-            _tag: Tag::Node256,
         }
     }
 }
