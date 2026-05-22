@@ -133,7 +133,7 @@ where
         Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
     }
 
-    pub fn update<'k>(&self, key: K::Insert<'k>, value: V) -> Result<Updated<K, V, S>, V> {
+    pub fn update(&self, key: &K::Borrowed, value: V) -> Result<Updated<K, V, S>, V> {
         match self.update_with(key, Some(value), |_, initial| {
             ControlFlow::<(), _>::Continue(initial.take().expect("Value is always initialized"))
         }) {
@@ -145,9 +145,9 @@ where
         }
     }
 
-    pub fn update_with<'k, F>(
+    pub fn update_with<F>(
         &self,
-        key: K::Insert<'k>,
+        key: &K::Borrowed,
         initial: Option<V>,
         mut update: F,
     ) -> Update<K, V, S>
@@ -167,9 +167,9 @@ where
     }
 
     #[inline]
-    fn update_with_optimistic<'k, F>(
+    fn update_with_optimistic<F>(
         &self,
-        key: K::Insert<'k>,
+        key: &K::Borrowed,
         initial: Option<V>,
         update: F,
     ) -> Result<Update<K, V, S>, Option<V>>
@@ -180,9 +180,9 @@ where
     }
 
     #[cold]
-    fn update_with_pessimistic<'k, F>(
+    fn update_with_pessimistic<F>(
         &self,
-        key: K::Insert<'k>,
+        key: &K::Borrowed,
         initial: Option<V>,
         update: F,
     ) -> Update<K, V, S>
@@ -199,7 +199,7 @@ where
     #[inline]
     fn update_with_impl<'k, P, F>(
         &self,
-        key: K::Insert<'k>,
+        key: &'k K::Borrowed,
         mut initial: Option<V>,
         mut update: F,
     ) -> Result<Update<K, V, S>, Option<V>>
@@ -207,7 +207,7 @@ where
         P: Path<K::Read<'k>>,
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
-        let reader = K::borrow_insert(key);
+        let reader = K::Read::from(key);
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 

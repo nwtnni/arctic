@@ -12,6 +12,7 @@ use crate::raw::Frozen;
 use crate::raw::Key;
 use crate::raw::cursor::path;
 use crate::raw::edge;
+use crate::raw::key;
 use crate::sequential::EntryIter;
 use crate::sequential::EntryIterMut;
 use crate::sequential::Shard;
@@ -61,12 +62,12 @@ where
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_mut() })
     }
 
-    pub fn upsert<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<&mut V, (V, &mut V)> {
-        match self.entry(key) {
-            Entry::Vacant(entry) => Ok(entry.insert(value)),
+    pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
+        match self.entry_impl(K::Read::from(key)) {
+            Entry::Vacant(_) => Err(value),
             Entry::Occupied(mut entry) => {
                 let old = entry.insert(value);
-                Err((old, entry.into_mut()))
+                Ok((old, entry.into_mut()))
             }
         }
     }
@@ -78,18 +79,22 @@ where
         }
     }
 
-    pub fn update<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<(V, &mut V), V> {
+    pub fn upsert<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<&mut V, (V, &mut V)> {
         match self.entry(key) {
-            Entry::Vacant(_) => Err(value),
+            Entry::Vacant(entry) => Ok(entry.insert(value)),
             Entry::Occupied(mut entry) => {
                 let old = entry.insert(value);
-                Ok((old, entry.into_mut()))
+                Err((old, entry.into_mut()))
             }
         }
     }
 
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(K::borrow_insert(key)) };
+        self.entry_impl(K::borrow_insert(key))
+    }
+
+    fn entry_impl<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
 
         match cursor.traverse_insert() {
             raw::cursor::Insert::Value {
