@@ -88,7 +88,7 @@ where
     }
 
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
-        self.entry_impl(K::borrow_insert(key))
+        self.entry_impl(K::insert_as_read(key))
     }
 
     fn entry_impl<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {

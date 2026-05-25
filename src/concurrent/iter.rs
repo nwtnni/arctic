@@ -110,7 +110,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.lend()
-            .map(|(key, value)| (K::clone_insert(key), value.clone()))
+            .map(|(key, value)| (K::insert_to_key(key), value.clone()))
     }
 }
 

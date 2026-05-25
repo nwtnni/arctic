@@ -19,39 +19,53 @@ use core::ops::SubAssign;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 
+/// Lexicographically ordered byte sequence that can be stored
+/// in an adaptive radix tree. Must satisfy the precondition that
+/// no key is a prefix of any other key.
 pub trait Key: Borrow<Self::Borrowed> {
+    /// A non-allocated byte sequence that a key can be cheaply borrowed as.
     type Borrowed: 'static + ?Sized + Debug;
 
+    /// Keys can either have edges that store bytes inline (e.g., [`string::NonNullString`]),
+    /// or as references (e.g., [`slice::NonPrefixSlice`]).
+    ///
+    /// The former can take any borrowed bytes with any lifetime when inserting,
+    /// but the latter can only take borrowed bytes that outlive the key type.
     type Insert<'k>: Copy + Borrow<Self::Borrowed>
     where
         Self: 'k;
 
+    /// Tracks key length and allows extracting edges and slicing key bytes.
     #[expect(private_bounds)]
     type Read<'k>: Read<Edge = Self::Edge, Len = Self::Len> + From<&'k Self::Borrowed>;
 
+    /// Constructs a key from an initial reader prefix and sequence of bytes and edges.
     #[expect(private_bounds)]
     type Write: for<'k> Write<Self::Read<'k>>;
 
+    /// Edge metadata.
     #[expect(private_bounds)]
     type Edge: ribbit::Pack<Packed: edge::Meta>;
 
+    /// Key length.
     #[expect(private_bounds)]
     type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
+    /// The key type itself always has a long enough lifetime for insertion.
     fn as_insert(&self) -> Self::Insert<'_>;
 
-    fn borrow_insert<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
+    fn insert_as_read<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
     where
         Self: 'k;
 
-    fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+    fn insert_to_key<'k>(insert: Self::Insert<'k>) -> Self
     where
         Self: 'k;
 
     /// # Safety
     ///
     /// Caller must guarantee that `writer` contains a valid key.
-    unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
+    unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
     where
         Self: 'k;
 }

@@ -166,7 +166,7 @@ impl Key for NonNullString {
     }
 
     #[inline]
-    fn borrow_insert<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
+    fn insert_as_read<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
     where
         Self: 'k,
     {
@@ -174,7 +174,7 @@ impl Key for NonNullString {
     }
 
     #[inline]
-    fn clone_insert<'k>(insert: Self::Insert<'k>) -> Self
+    fn insert_to_key<'k>(insert: Self::Insert<'k>) -> Self
     where
         Self: 'k,
     {
@@ -182,7 +182,7 @@ impl Key for NonNullString {
     }
 
     #[inline]
-    unsafe fn borrow_writer_unchecked<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
+    unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
     where
         Self: 'k,
     {

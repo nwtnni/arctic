@@ -28,9 +28,9 @@ where
 {
     #[inline]
     pub(crate) fn lend(&mut self) -> Option<(K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
-        self.0.lend().map(|(writer, value, edge)| {
-            (unsafe { K::borrow_writer_unchecked(writer) }, value, edge)
-        })
+        self.0
+            .lend()
+            .map(|(writer, value, edge)| (unsafe { K::write_as_insert(writer) }, value, edge))
     }
 
     #[inline]
@@ -41,7 +41,7 @@ where
         mut apply: F,
     ) {
         self.0.for_each_internal(|(writer, value, edge)| {
-            apply((unsafe { K::borrow_writer_unchecked(writer) }, value, edge))
+            apply((unsafe { K::write_as_insert(writer) }, value, edge))
         })
     }
 }

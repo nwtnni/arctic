@@ -130,7 +130,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.lend()
-            .map(|(key, value)| (K::clone_insert(key), value))
+            .map(|(key, value)| (K::insert_to_key(key), value))
     }
 }
 
@@ -180,7 +180,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.lend()
-            .map(|(key, value)| (K::clone_insert(key), value))
+            .map(|(key, value)| (K::insert_to_key(key), value))
     }
 }
 
