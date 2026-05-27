@@ -22,10 +22,19 @@ use crate::raw::key::Len as _;
 use crate::sequential;
 use crate::stat;
 
+/// See [`smr::Guard`].
 pub type Guard<'g, K, V, S> = <<S as Smr>::Global<K, V> as smr::Global<K, V>>::Guard<'g>;
+
+/// See [`value::Owned`].
 pub type Owned<'g, K, V, S> = value::Owned<Guard<'g, K, V, S>, V>;
+
+/// See [`value::Shared`].
 pub type Shared<'g, K, V, S> = value::Shared<Guard<'g, K, V, S>, V>;
+
+/// See [`value::Updated`].
 pub type Updated<'g, K, V, S> = value::Updated<Guard<'g, K, V, S>, V>;
+
+/// See [`value::Upserted`].
 pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 
 pub struct Map<K: Key, V: Value, S: Smr = smr::Hazard> {
@@ -72,6 +81,7 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
     }
 }
 
+/// Outcome of a call to [`Map::update_with`].
 pub enum Update<'g, K, V, S>
 where
     K: Key,
@@ -79,16 +89,22 @@ where
     S: Smr,
     S::Global<K, V>: 'g,
 {
+    /// Key was not present.
     Absent {
-        initial: Option<V>,
+        /// Latest value passed as argument or returned from caller closure.
+        new: Option<V>,
     },
+    /// Value was successfully updated.
     Success(Updated<'g, K, V, S>),
+    /// Caller closure returned [`core::ops::ControlFlow::Break`].
     Break {
+        /// Latest value observed by closure.
         old: Shared<'g, K, V, S>,
-        initial: Option<V>,
+        new: Option<V>,
     },
 }
 
+/// Outcome of a call to [`Map::remove_with`].
 pub enum Remove<'g, K, V, S>
 where
     K: Key,
@@ -96,11 +112,18 @@ where
     S: Smr,
     S::Global<K, V>: 'g,
 {
+    /// Key was not present.
     Absent,
+    /// Value was successfully removed.
     Success { old: Owned<'g, K, V, S> },
-    Break { old: Shared<'g, K, V, S> },
+    /// Caller closure returned [`core::ops::ControlFlow::Break`].
+    Break {
+        /// Latest value observed by closure.
+        old: Shared<'g, K, V, S>,
+    },
 }
 
+/// Outcome of a call to [`Map::upsert_with`].
 pub enum Upsert<'g, K, V, S>
 where
     K: Key,
@@ -108,10 +131,14 @@ where
     S: Smr,
     S::Global<K, V>: 'g,
 {
+    /// Value was successfully upserted.
     Success(Upserted<'g, K, V, S>),
+    /// Caller closure returned [`core::ops::ControlFlow::Break`].
     Break {
+        /// Latest value observed by closure.
         old: Option<Shared<'g, K, V, S>>,
-        initial: Option<V>,
+        /// Latest value passed as argument or returned from caller closure.
+        new: Option<V>,
     },
 }
 
@@ -188,11 +215,9 @@ where
         match self.update_with(key, Some(value), |_, initial| {
             ControlFlow::<(), _>::Continue(initial.take().expect("Value is always initialized"))
         }) {
-            Update::Absent {
-                initial: Some(initial),
-            } => Err(initial),
+            Update::Absent { new: Some(initial) } => Err(initial),
             Update::Success(updated) => Ok(updated),
-            Update::Absent { initial: None } | Update::Break { .. } => unreachable!(),
+            Update::Absent { new: None } | Update::Break { .. } => unreachable!(),
         }
     }
 
@@ -264,7 +289,7 @@ where
 
         loop {
             let updated = match cursor.traverse_update() {
-                None => return Ok(Update::Absent { initial }),
+                None => return Ok(Update::Absent { new: initial }),
                 Some(Ok(old)) => old,
                 Some(Err(Frozen)) => match cursor.freeze() {
                     Err(_) => return Err(initial),
@@ -282,7 +307,7 @@ where
                     ControlFlow::Break(()) => {
                         return Ok(Update::Break {
                             old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
-                            initial,
+                            new: initial,
                         });
                     }
                 };
@@ -577,7 +602,7 @@ where
             Upsert::Success(upserted) => Ok(upserted
                 .try_into_inserted()
                 .unwrap_or_else(|_| unreachable!("Continue on `None`"))),
-            Upsert::Break { old, initial } => Err((old.expect("Break on `Some`"), initial)),
+            Upsert::Break { old, new: initial } => Err((old.expect("Break on `Some`"), initial)),
         }
     }
 
@@ -665,7 +690,7 @@ where
                                 old: old_value.map(|old_value| unsafe {
                                     Shared::<K, V, S>::wrap(guard, old_value)
                                 }),
-                                initial,
+                                new: initial,
                             });
                         }
                     };

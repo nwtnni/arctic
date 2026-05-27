@@ -4,7 +4,7 @@ mod iter;
 mod key;
 pub mod map;
 pub mod smr;
-mod value;
+pub mod value;
 
 pub use iter::EntryIter;
 pub use iter::Shard;
