@@ -1,3 +1,38 @@
+//! This crate contains the primary implementation of
+//! [Arctic: a practical lock-free adaptive radix tree](https://www.usenix.org/conference/osdi26/presentation/ni).
+//! The main contribution is [`concurrent::Map`], which implements
+//! a thread-safe map interface, and also supports
+//! **[non-linearizable](https://en.wikipedia.org/wiki/Linearizability)**
+//! iteration over key ranges and prefixes,
+//! somewhat like a [`std::collections::BTreeMap`] wrapped in a
+//! [`std::sync::Mutex`].
+//!
+//! # Why use this crate?
+//!
+//! As far as we know (corrections welcome!), out of all index data structures that (a) are [lock-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm)
+//! and (b) support range iteration, [`concurrent::Map`] provides the highest scalability and throughput.
+//! In fact, under various conditions (integer keys, skewed requests, update-heavy),
+//! we even out-perform data structures without properties (a) and/or (b).
+//! Our benchmarking infrastructure is in [this repository](https://github.com/nwtnni/index-bench);
+//! users are encouraged to measure performance on their own workloads.
+//!
+//! Briefly comparing against some alternative data structures:
+//!
+//! - Concurrent hash maps (e.g., [DashMap](https://github.com/xacrimon/dashmap), [papaya](https://github.com/ibraheemdev/papaya))
+//!   - Solid performance characteristics
+//!   - Do not support range iteration
+//! - Concurrent B+-trees (e.g., [scc::TreeIndex](https://codeberg.org/wvwwvwwv/scalable-concurrent-containers))
+//!   - Reliable choice overall
+//!   - Typically not lock-free
+//! - Concurrent skip lists (e.g., [crossbeam_skiplist](https://docs.rs/crossbeam-skiplist/latest/crossbeam_skiplist/))
+//!   - Perform poorly on modern hardware (low cache locality)
+//!
+//! # Limitations
+//!
+//! - 128-bit atomic support required for good performance (currently using [portable-atomic](https://github.com/taiki-e/portable-atomic) crate)
+//! - SIMD acceleration is hand-written and currently restricted to AVX2
+//! - Theoretically supports big-endian targets, but untested
+
 macro_rules! const_assert_size_align {
     ($ty:ty, $size:expr, $align:expr) => {
         const _: [(); $size] = [(); core::mem::size_of::<$ty>()];
