@@ -121,6 +121,27 @@ where
     V: Value + Send + Sync,
     S: Smr,
 {
+    /// Retrieve a key-value pair.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::concurrent;
+    ///
+    /// let mut map = concurrent::Map::<u64, u64>::default();
+    ///
+    /// assert!(map.get(&64).is_none());
+    ///
+    /// match map.insert(&64, 3) {
+    ///     Err(_) => unreachable!(),
+    ///     Ok(new) => assert_eq!(*new, 3),
+    /// }
+    ///
+    /// match map.get(&64) {
+    ///     None => unreachable!(),
+    ///     Some(value) => assert_eq!(*value, 3),
+    /// }
+    /// ```
     pub fn get(&self, key: &K::Borrowed) -> Option<Shared<K, V, S>> {
         let reader = K::Read::from(key);
         let guard = self.smr.guard(reader);
@@ -133,6 +154,36 @@ where
         Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
     }
 
+    /// Update an existing key-value pair.
+    ///
+    /// Returns references to the old and newly updated value if the update succeeded,
+    /// or else returns the owned new value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::concurrent;
+    ///
+    /// let mut map = concurrent::Map::<u32, Box<u64>>::default();
+    ///
+    /// match map.update(&37, Box::new(5)) {
+    ///     Err(new) => assert_eq!(*new, 5),
+    ///     Ok(_) => unreachable!(),
+    /// }
+    ///
+    /// match map.insert(&37, Box::new(3)) {
+    ///     Err(_) => unreachable!(),
+    ///     Ok(new) => assert_eq!(*new, 3),
+    /// }
+    ///
+    /// match map.update(&37, Box::new(5)) {
+    ///     Err(_) => unreachable!(),
+    ///     Ok(updated) => {
+    ///         assert_eq!(*updated.old(), 3);
+    ///         assert_eq!(*updated.new(), 5);
+    ///     },
+    /// }
+    /// ```
     pub fn update(&self, key: &K::Borrowed, value: V) -> Result<Updated<K, V, S>, V> {
         match self.update_with(key, Some(value), |_, initial| {
             ControlFlow::<(), _>::Continue(initial.take().expect("Value is always initialized"))
@@ -432,6 +483,28 @@ where
         })
     }
 
+    /// Insert a key-value pair whether or not `self` contains `key`.
+    ///
+    /// Returns references to the (optional) old value and the newly inserted value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::concurrent;
+    /// use arctic::NonNullString;
+    /// use arctic::NonNullStr;
+    ///
+    /// let mut map = concurrent::Map::<NonNullString, u64>::default();
+    /// let key = NonNullStr::new("hello").expect("No null byte");
+    ///
+    /// let upserted = map.upsert(key, 3);
+    /// assert_eq!(upserted.old(), None);
+    /// assert_eq!(*upserted.new(), 3);
+    ///
+    /// let upserted = map.upsert(key, 5);
+    /// assert_eq!(upserted.old().copied(), Some(3));
+    /// assert_eq!(*upserted.new(), 5);
+    /// ```
     pub fn upsert<'k>(&self, key: K::Insert<'k>, value: V) -> Upserted<'_, K, V, S> {
         match self.upsert_with(key, Some(value), |_, new| {
             ControlFlow::<(), _>::Continue(new.take().expect("Value is always initialized"))
@@ -441,6 +514,32 @@ where
         }
     }
 
+    /// Insert a key-value pair **if `self` does not contain `key`**. To overwrite
+    /// an existing key-value pair instead, see [`Self::upsert`].
+    ///
+    /// Returns a reference to the newly inserted value (`Ok(new)`) if the insertion
+    /// succeeded, or a reference to the old value and the owned new value (`Err((old, new))`).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::concurrent;
+    ///
+    /// let mut map = concurrent::Map::<u64, u64>::default();
+    ///
+    /// match map.insert(&64, 3) {
+    ///     Err(_) => unreachable!(),
+    ///     Ok(new) => assert_eq!(*new, 3),
+    /// }
+    ///
+    /// match map.insert(&64, 5) {
+    ///     Err((old, new)) => {
+    ///         assert_eq!(*old, 3);
+    ///         assert_eq!(new, 5);
+    ///     }
+    ///     Ok(_) => unreachable!(),
+    /// }
+    /// ```
     pub fn insert<'k>(
         &self,
         key: K::Insert<'k>,
