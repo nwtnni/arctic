@@ -83,7 +83,7 @@ impl<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>> Deref
     }
 }
 
-/// Iterator over keys and values
+/// Iterator over keys and references to values.
 pub struct EntryIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
     inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g V>,
@@ -134,6 +134,7 @@ where
     }
 }
 
+/// Iterator over keys and mutable references to values.
 pub struct EntryIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
     inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g mut V>,
@@ -184,6 +185,7 @@ where
     }
 }
 
+/// Iterator over references to values.
 pub struct ValueIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
     inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g V>,
@@ -221,6 +223,7 @@ where
     }
 }
 
+/// Iterator over mutable references to values.
 pub struct ValueIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
     inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g mut V>,

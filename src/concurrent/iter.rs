@@ -61,7 +61,7 @@ where
     }
 }
 
-/// Iterator over keys and values
+/// Iterator over keys and references to values.
 pub struct EntryIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
     inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
     value: u64,
@@ -114,7 +114,7 @@ where
     }
 }
 
-/// Iterator over values only
+/// Iterator over references to values.
 pub struct ValueIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
     inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
     value: u64,
