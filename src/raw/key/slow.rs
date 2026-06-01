@@ -14,20 +14,33 @@ impl crate::raw::Key for u64 {
     type Edge = edge::Le;
     type Len = key::vec::Len;
 
+    type Insert<'k> = &'k Self;
+
     #[inline]
-    fn clone_from_borrow(borrow: &Self::Borrowed) -> Self {
-        *borrow
+    fn as_insert(&self) -> Self::Insert<'_> {
+        self
     }
 
     #[inline]
-    unsafe fn borrow_writer_unchecked(_: &Self::Write) -> &Self::Borrowed {
+    fn insert_as_read<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
+    where
+        Self: 'k,
+    {
+        Reader::from(*insert)
+    }
+
+    fn insert_to_key<'k>(_: Self::Insert<'k>) -> Self
+    where
+        Self: 'k,
+    {
+        unimplemented!()
+    }
+
+    unsafe fn write_as_insert<'k>(_: &'k Self::Write) -> Self::Insert<'k>
+    where
+        Self: 'k,
+    {
         unimplemented!("Can't get little-endian integer from big-endian slice")
-    }
-
-    #[inline]
-    unsafe fn from_writer_unchecked(writer: Self::Write) -> Self {
-        let buffer: [u8; 8] = writer.0.try_into().unwrap();
-        u64::from_be_bytes(buffer)
     }
 }
 
@@ -165,12 +178,14 @@ impl key::Read for Reader {
 }
 
 impl From<u64> for Reader {
+    #[inline]
     fn from(key: u64) -> Self {
         unsafe { Reader::new_unchecked(key, 64) }
     }
 }
 
 impl<'k> From<&'k u64> for Reader {
+    #[inline]
     fn from(key: &'k u64) -> Self {
         unsafe { Reader::new_unchecked(*key, 64) }
     }
