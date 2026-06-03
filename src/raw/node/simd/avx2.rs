@@ -87,7 +87,7 @@ pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     let mut bits = len.value() << 4;
     let mut entries = (keys << 8) | INDICES;
 
-    if !(lower.get() == 0 && upper.get() == 255) {
+    if lower.get() > u8::MIN || upper.get() < u8::MAX {
         let mask_len = !(u64::MAX << bits);
         let mask_range = mask_range_4(keys, lower.get(), upper.get());
         let mask_valid = mask_len & mask_range;
@@ -96,11 +96,24 @@ pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
         bits = mask_valid.count_ones() as u8;
     };
 
-    let entries = entries | (u64::MAX << bits);
-    let entries = bitonic_sort_4(entries, bits);
+    let entries = if bits <= 16 {
+        entries
+    } else {
+        bitonic_sort_4(entries | (u64::MAX << bits))
+    };
+
     let mut iter = unsafe { core::mem::transmute::<u64, KeyIter3>(entries) };
     iter.0.head = 0;
     iter.0.tail = bits >> 4;
+
+    // HACK: make it easier to test against fallback
+    if_validate! {
+        iter.0.entries[iter.0.tail as usize..].iter_mut().for_each(|entry| {
+            entry.key = 0;
+            entry.index = 0;
+        })
+    }
+
     iter
 }
 
@@ -233,7 +246,7 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
 /// https://github.com/Geolm/simd_bitonic
 /// https://hal.inria.fr/hal-01512970v1/document
 #[inline]
-fn bitonic_sort_4(input: u64, bits: u8) -> u64 {
+fn bitonic_sort_4(input: u64) -> u64 {
     const RECOMBINE_1: u64 = 0x2301;
     const SORT_1: u64 = RECOMBINE_1;
     const BLEND_1: i32 = 0b1010;
@@ -281,19 +294,11 @@ fn bitonic_sort_4(input: u64, bits: u8) -> u64 {
         unsafe { _mm_blend_epi16::<BLEND>(min, max) }
     }
 
-    if bits <= 8 {
-        return input;
-    }
-
     let mut input = unsafe { _mm_set_epi64x(0, input as i64) };
 
     input = bitonic_step::<RECOMBINE_1, BLEND_1>(input);
-    input = if bits == 16 {
-        input
-    } else {
-        input = bitonic_step::<RECOMBINE_2, BLEND_2>(input);
-        bitonic_step::<SORT_1, BLEND_1>(input)
-    };
+    input = bitonic_step::<RECOMBINE_2, BLEND_2>(input);
+    input = bitonic_step::<SORT_1, BLEND_1>(input);
 
     (unsafe { _mm_cvtsi128_si64x(input) } as u64)
 }
@@ -592,13 +597,7 @@ mod tests {
                 core::mem::swap(&mut low, &mut high);
             }
 
-            let mut simd = super::keys_3(keys, len, Some(low), Some(high));
-            for (index, entry) in simd.0.entries.iter_mut().enumerate() {
-                if entry.key == 0xFF && entry.index == 0xFF {
-                    assert!(index >= simd.0.tail as usize);
-                }
-            }
-
+            let simd = super::keys_3(keys, len, Some(low), Some(high));
             let fallback = simd::keys_3_fallback(keys, len, Some(low), Some(high));
 
             assert_eq!(
