@@ -47,17 +47,6 @@ impl<'g, M: ribbit::Pack> EntryIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> EntryIter<'g, M> {
-    #[inline]
-    pub(crate) fn try_into_single(mut self) -> Result<(u8, NonNull<Atomic<Edge<M>>>), Self> {
-        if self.size_hint().0 == 1 {
-            Ok(self.next().expect("Size hint is exact"))
-        } else {
-            Err(self)
-        }
-    }
-}
-
 impl<'g, M: ribbit::Pack> Iterator for EntryIter<'g, M> {
     type Item = (u8, NonNull<Atomic<Edge<M>>>);
 

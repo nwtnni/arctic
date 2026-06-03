@@ -23,7 +23,6 @@ thread_local! {
 }
 
 pub fn process<K: Key, V: Value, S: Smr>(map: &mut crate::concurrent::Map<K, V, S>) -> Process {
-    let mut depth = Histogram::default();
     let mut compression = Histogram::default();
     let mut node_3 = Histogram::default();
     let mut node_15 = Histogram::default();
@@ -33,19 +32,12 @@ pub fn process<K: Key, V: Value, S: Smr>(map: &mut crate::concurrent::Map<K, V, 
     map.as_sequential()
         .raw
         .postorder()
-        .for_each_internal(|edge, depth_| {
-            let Some(child) = edge.child() else {
-                return;
-            };
-
-            let meta = edge.meta();
+        .for_each_internal(|meta, child| {
             let bits = meta.len().bits();
             compression.record((bits >> 3) as u64);
 
             match child {
-                edge::Child::Value(_) => {
-                    depth.record(depth_ as u64);
-                }
+                edge::Child::Value(_) => {}
                 edge::Child::Node(node) => {
                     let histogram = match node.r#type().unpack() {
                         node::Type::Node3 => &mut node_3,
@@ -69,7 +61,6 @@ pub fn process<K: Key, V: Value, S: Smr>(map: &mut crate::concurrent::Map<K, V, 
         });
 
     Process {
-        depth,
         compression,
         node_3,
         node_15,
@@ -116,7 +107,6 @@ pub fn reset() {
 #[cfg_attr(feature = "stat", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(not(feature = "stat"), expect(unused))]
 pub struct Process {
-    depth: Histogram,
     compression: Histogram,
     node_3: Histogram,
     node_15: Histogram,
@@ -140,6 +130,9 @@ pub(crate) enum Counter {
     Node47Consistent,
     Node47CasSuccess,
     Node47CasFailure,
+
+    EntriesOne,
+    EntriesMany,
 }
 
 pub(crate) enum Max {
@@ -170,6 +163,9 @@ pub struct Thread {
     free_reclaim: u64,
     free_drop: u64,
     hazard_match: u64,
+
+    entries_one: u64,
+    entries_many: u64,
 
     node_47_consistent: u64,
     node_47_cas_success: u64,
@@ -204,6 +200,9 @@ pub(crate) fn increment<C: Into<Counter>>(_counter: C) {
                 Counter::FreeReclaim => &mut thread.free_reclaim,
                 Counter::FreeDrop => &mut thread.free_drop,
                 Counter::HazardMatch => &mut thread.hazard_match,
+
+                Counter::EntriesOne => &mut thread.entries_one,
+                Counter::EntriesMany => &mut thread.entries_many,
 
                 Counter::Node47Consistent => &mut thread.node_47_consistent,
                 Counter::Node47CasSuccess => &mut thread.node_47_cas_success,

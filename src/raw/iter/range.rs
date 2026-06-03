@@ -189,7 +189,7 @@ where
                 let mut lower = *lower;
                 let mut upper = *upper;
 
-                'compress: loop {
+                'flatten: loop {
                     let (meta, child) = {
                         let edge = unsafe { edge.as_ref() }.load_packed(Ordering::Acquire);
                         let Some(child) = edge.child() else {
@@ -243,11 +243,11 @@ where
                             upper = upper_next;
 
                             // Avoid pushing and popping iterators with only one child
-                            match unsafe { node.entries(lower, upper) }.try_into_single() {
+                            match unsafe { node.entry_or_entries(lower, upper) } {
                                 Ok((byte_, edge_)) => {
                                     byte = byte_;
                                     edge = edge_;
-                                    continue 'compress;
+                                    continue 'flatten;
                                 }
                                 Err(iter) => {
                                     self.stack.push((len, lower, upper, iter));

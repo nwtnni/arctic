@@ -427,6 +427,34 @@ where
         )
     }
 
+    #[inline]
+    pub(crate) unsafe fn entry_or_entries<'g, L: Lower, U: Upper>(
+        self,
+        lower: L,
+        upper: U,
+    ) -> Result<(u8, NonNull<ribbit::Atomic<Edge<M>>>), EntryIter<'g, M>> {
+        let entries = self.dispatch(
+            |node| {
+                let mut entries = unsafe { node.as_ref() }.entries(lower, upper);
+                match entries.size_hint().1 {
+                    Some(1) => Ok(entries.next().expect("Size hint is exact")),
+                    _ => Err(entries),
+                }
+            },
+            |node| Err(unsafe { node.as_ref() }.entries(lower, upper)),
+            |node| Err(unsafe { node.as_ref() }.entries(lower, upper)),
+            |node| Err(unsafe { node.as_ref() }.entries(lower, upper)),
+        );
+
+        stat::increment(if entries.is_ok() {
+            stat::Counter::EntriesOne
+        } else {
+            stat::Counter::EntriesMany
+        });
+
+        entries
+    }
+
     /// # Safety
     ///
     /// Caller must ensure there are no other references to this node.

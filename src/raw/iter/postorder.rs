@@ -1,3 +1,4 @@
+use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
@@ -28,43 +29,58 @@ where
     }
 
     #[inline]
-    pub(crate) fn for_each_internal<F: FnMut(ribbit::Packed<Edge<M>>, usize)>(
+    pub(crate) fn for_each_internal<F: FnMut(ribbit::Packed<M>, edge::Child<M>)>(
         mut self,
         mut apply: F,
     ) {
         'vertical: loop {
-            let depth = self.stack.len().saturating_sub(1);
-
             let Some(iter) = self.stack.last_mut() else {
                 return;
             };
 
-            loop {
-                let Some((first, edge)) = iter.next() else {
+            'horizontal: loop {
+                let Some((mut first, mut edge)) = iter.next() else {
                     self.stack.pop();
                     continue 'vertical;
                 };
 
-                if first {
-                    match edge.child() {
-                        // Fall through for non-nodes
-                        None | Some(edge::Child::Value(_)) => {
-                            iter.skip();
-                        }
+                'flatten: loop {
+                    let (meta, child) = {
+                        let edge = unsafe { edge.as_ref() }.load_packed(Ordering::Acquire);
+                        let Some(child) = edge.child() else {
+                            continue 'horizontal;
+                        };
+                        let meta = edge.meta();
+                        (meta, child)
+                    };
+
+                    match child {
                         // Visit children before node
-                        Some(edge::Child::Node(node)) => {
-                            self.stack.push(RepeatIter::new(unsafe {
-                                node.entries::<_, _>(
+                        edge::Child::Node(node) if first => {
+                            match unsafe {
+                                node.entry_or_entries::<_, _>(
                                     Unbound::<()>::default(),
                                     Unbound::<()>::default(),
                                 )
-                            }));
-                            continue 'vertical;
+                            } {
+                                Ok((_, edge_)) => {
+                                    first = true;
+                                    edge = edge_;
+                                    continue 'flatten;
+                                }
+                                Err(iter) => {
+                                    self.stack.push(RepeatIter::new(iter));
+                                    continue 'vertical;
+                                }
+                            }
+                        }
+                        _ => {
+                            iter.skip();
+                            apply(meta, child);
+                            continue 'horizontal;
                         }
                     }
                 }
-
-                apply(edge, depth);
             }
         }
     }
@@ -72,7 +88,7 @@ where
 
 struct RepeatIter<'g, M: ribbit::Pack> {
     first: bool,
-    edge: ribbit::Packed<Edge<M>>,
+    edge: NonNull<ribbit::Atomic<Edge<M>>>,
     iter: node::EntryIter<'g, M>,
 }
 
@@ -84,19 +100,18 @@ where
     fn new(iter: node::EntryIter<'g, M>) -> Self {
         Self {
             first: true,
-            edge: Edge::NULL,
+            edge: NonNull::dangling(),
             iter,
         }
     }
 
     #[inline]
-    fn next(&mut self) -> Option<(bool, ribbit::Packed<Edge<M>>)> {
+    fn next(&mut self) -> Option<(bool, NonNull<ribbit::Atomic<Edge<M>>>)> {
         let first = self.first;
         self.first ^= true;
 
         if first {
             let (_, edge) = self.iter.next()?;
-            let edge = unsafe { edge.as_ref() }.load_packed(Ordering::Acquire);
             self.edge = edge;
         }
 
