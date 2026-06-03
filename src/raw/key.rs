@@ -75,7 +75,9 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     const LEN: Option<Self::Len>;
 
     type Edge: ribbit::Pack<Packed: edge::Meta>;
-    type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
+    type Len: Len
+        + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>
+        + Into<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
     fn len(&self) -> Self::Len;
 
@@ -109,19 +111,6 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     }
 
     fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len;
-
-    fn expand(
-        &self,
-        key: ribbit::Packed<Self::Edge>,
-    ) -> Result<
-        (
-            ribbit::Packed<Self::Edge>,
-            u8,
-            u8,
-            ribbit::Packed<Self::Edge>,
-        ),
-        (),
-    >;
 
     fn prefix(self, end: Self::Len) -> Self;
     fn suffix(self, start: Self::Len) -> Self;

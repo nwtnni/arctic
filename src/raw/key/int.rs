@@ -150,36 +150,6 @@ impl<I: Int> key::Read for Reader<I> {
             len,
         }
     }
-
-    #[inline]
-    fn expand(
-        &self,
-        edge: ribbit::Packed<Self::Edge>,
-    ) -> Result<
-        (
-            ribbit::Packed<Self::Edge>,
-            u8,
-            u8,
-            ribbit::Packed<Self::Edge>,
-        ),
-        (),
-    > {
-        let len_match = self.match_prefix(edge);
-        if len_match >= edge.len().into() {
-            return Err(());
-        }
-
-        validate!(self.len >= len_match);
-        let len_start = u6::new(len_match.0 & !0b111);
-        let len_middle = len_start + const { u6::new(8) };
-
-        let start = edge::Be::new(edge.raw(), len_start);
-        let old_middle = edge.raw().get_u8(len_start.value());
-        let new_middle = self.buffer.get_u8(len_start.value());
-        let end = edge::Be::new(edge.raw() << len_middle.value(), edge.len() - len_middle);
-
-        Ok((start, old_middle, new_middle, end))
-    }
 }
 
 impl<I: Int> core::fmt::Debug for Reader<I> {
@@ -235,6 +205,14 @@ impl From<u6> for Len {
     #[inline]
     fn from(len: u6) -> Self {
         Self(len.value())
+    }
+}
+
+impl From<Len> for u6 {
+    #[inline]
+    fn from(len: Len) -> Self {
+        const MASK: u8 = 0b0011_1000;
+        unsafe { u6::new_unchecked(len.0 & MASK) }
     }
 }
 

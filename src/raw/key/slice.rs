@@ -170,34 +170,6 @@ impl key::Read for Reader<'_> {
         Self(&self.0[..index])
     }
 
-    fn expand(
-        &self,
-        edge: ribbit::Packed<Self::Edge>,
-    ) -> Result<
-        (
-            ribbit::Packed<Self::Edge>,
-            u8,
-            u8,
-            ribbit::Packed<Self::Edge>,
-        ),
-        (),
-    > {
-        let len_match = self.match_prefix(edge);
-        if len_match >= edge.len().into() {
-            return Err(());
-        }
-        let edge = unsafe { edge.as_slice() };
-
-        let len_start = u14::new(len_match.0 as u16);
-        let len_middle = len_start + u14::new(1);
-
-        let start = edge::Slice::new(&edge[..len_start.bytes()]);
-        let old_middle = edge[len_start.bytes()];
-        let new_middle = self.0[len_start.bytes()];
-        let end = edge::Slice::new(&edge[len_middle.bytes()..][..edge.len() - len_middle.bytes()]);
-
-        Ok((start, old_middle, new_middle, end))
-    }
 }
 
 #[derive(Clone, Default, Debug)]

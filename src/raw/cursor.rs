@@ -267,22 +267,27 @@ where
         ),
         Frozen,
     > {
-        if old.meta().is_frozen() {
+        let meta = old.meta();
+        if meta.is_frozen() {
             return Err(Frozen);
         }
 
-        let new = match self.reader.expand(old.meta()) {
-            Err(_) => Edge::new_path(self.reader, value),
-            Ok((start, old_middle, new_middle, end)) => {
-                let (head, _) =
-                    Edge::new_path(self.reader.suffix(R::Len::BYTE + start.len().into()), value);
+        let len = self.reader.match_prefix(meta).into();
+
+        let new = match meta.try_split(len) {
+            None => Edge::new_path(self.reader, value),
+            Some((parent, old_byte, old_child)) => {
+                let new_byte = unsafe { self.reader.get_byte_unchecked(len) };
+                let (new_child, _) =
+                    Edge::new_path(self.reader.suffix(R::Len::BYTE + len.into()), value);
 
                 // NOTE: must put new allocation first because
                 // `deallocate_recursive` recurses on first edge
                 let (head, tail) = Node3::new_expand(
-                    start,
-                    [new_middle, old_middle],
-                    [head, old.with_meta(old.meta().with_key(end))],
+                    parent,
+                    [new_byte, old_byte],
+                    // Preserve flag bits of old child
+                    [new_child, old.with_meta(meta.with_key(old_child))],
                 );
 
                 (head, Some(tail))

@@ -211,7 +211,7 @@ fn replace<M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
     } else if len == 1 {
         let key = keys[0];
         let edge = edges[0];
-        if let Some(meta) = meta.compress(key, edge.meta()) {
+        if let Some(meta) = meta.try_join(key, edge.meta()) {
             return (Smo::CompressEdge, edge.with_meta(meta));
         }
     }

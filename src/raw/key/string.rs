@@ -346,38 +346,6 @@ impl key::Read for Reader<'_> {
             terminate: false,
         }
     }
-
-    fn expand(
-        &self,
-        edge: ribbit::Packed<Self::Edge>,
-    ) -> Result<
-        (
-            ribbit::Packed<Self::Edge>,
-            u8,
-            u8,
-            ribbit::Packed<Self::Edge>,
-        ),
-        (),
-    > {
-        let buffer = self.next_u64();
-
-        let len_match = (edge.raw() ^ buffer).trailing_zeros() as u8;
-        if len_match >= edge.len().value() {
-            return Err(());
-        }
-
-        validate!(self.len().bits() > len_match as usize);
-
-        let len_start = u6::new(len_match & !0b111);
-        let len_middle = len_start + const { u6::new(8) };
-
-        let start = edge::Le::new(edge.raw(), len_start);
-        let old_middle = (edge.raw() >> len_start.value()) as u8;
-        let new_middle = (buffer >> len_start.value()) as u8;
-        let end = edge::Le::new(edge.raw() >> len_middle.value(), edge.len() - len_middle);
-
-        Ok((start, old_middle, new_middle, end))
-    }
 }
 
 #[repr(transparent)]

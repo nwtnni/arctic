@@ -5,7 +5,9 @@ use core::ops::AddAssign;
 use core::ops::Sub;
 use core::ops::SubAssign;
 
+use ribbit::traits::Integer as _;
 use ribbit::u6;
+use ribbit::u14;
 
 use crate::NonPrefixSlice;
 use crate::raw::Key;
@@ -200,38 +202,6 @@ impl<const N: usize> key::Read for Reader<'_, N> {
             .unwrap_or_else(|| self.0.len().min(other.0.len()));
         Self(&self.0[..index])
     }
-
-    fn expand(
-        &self,
-        edge: ribbit::Packed<Self::Edge>,
-    ) -> Result<
-        (
-            ribbit::Packed<Self::Edge>,
-            u8,
-            u8,
-            ribbit::Packed<Self::Edge>,
-        ),
-        (),
-    > {
-        let buffer = self.next_u64();
-
-        let len_match = (edge.raw() ^ buffer).trailing_zeros() as u8;
-        if len_match >= edge.len().value() {
-            return Err(());
-        }
-
-        validate!(self.len().bits() > len_match as usize);
-
-        let len_start = u6::new(len_match & !0b111);
-        let len_middle = len_start + const { u6::new(8) };
-
-        let start = edge::Le::new(edge.raw(), len_start);
-        let old_middle = (edge.raw() >> len_start.value()) as u8;
-        let new_middle = (buffer >> len_start.value()) as u8;
-        let end = edge::Le::new(edge.raw() >> len_middle.value(), edge.len() - len_middle);
-
-        Ok((start, old_middle, new_middle, end))
-    }
 }
 
 #[repr(transparent)]
@@ -288,6 +258,20 @@ impl From<u6> for Len {
     #[inline]
     fn from(len: u6) -> Self {
         Self((len.value() >> 3) as usize)
+    }
+}
+
+impl From<Len> for u6 {
+    #[inline]
+    fn from(len: Len) -> Self {
+        u6::masked_new((len.0 << 3) as u8)
+    }
+}
+
+impl From<Len> for u14 {
+    #[inline]
+    fn from(len: Len) -> Self {
+        u14::masked_new(len.0 as u16)
     }
 }
 

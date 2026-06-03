@@ -233,7 +233,9 @@ pub(crate) trait Meta:
     fn with_inline(self, inline: bool) -> Self;
 
     /// Try to merge consecutive edges into one.
-    fn compress(self, byte: u8, child: Self) -> Option<Self>;
+    fn try_join(self, byte: u8, child: Self) -> Option<Self>;
+
+    fn try_split(self, index: Self::Len) -> Option<(Self, u8, Self)>;
 }
 
 /// Length of compressed bytes along an edge.
@@ -242,6 +244,7 @@ pub(crate) trait Meta:
 /// to support longer edges for borrowed keys eventually.
 pub(crate) trait Len: Copy + Eq + Add<Output = Self> {
     const MAX: Self;
+    const BYTE: Self;
 
     fn bits(self) -> usize;
 
@@ -253,6 +256,7 @@ pub(crate) trait Len: Copy + Eq + Add<Output = Self> {
 
 impl Len for u6 {
     const MAX: Self = u6::new(56);
+    const BYTE: Self = u6::new(8);
 
     #[inline]
     fn bits(self) -> usize {

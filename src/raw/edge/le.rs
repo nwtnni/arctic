@@ -99,23 +99,39 @@ impl edge::Meta for LePacked {
         unsafe { Self::new_unchecked(self.value & Le::MASK_FLAG | key.value) }
     }
 
-    #[inline]
-    fn compress(self, byte: u8, child: Self) -> Option<Self> {
+    fn try_join(self, byte: u8, child: Self) -> Option<Self> {
         validate!(!self.frozen());
 
-        let parent_bits = ((self.value & Le::MASK_LEN) >> 56) as u8;
-        let child_bits = ((child.value & Le::MASK_LEN) >> 56) as u8;
-        let len = u6::try_new(parent_bits + 8 + child_bits).ok()?;
+        let len_parent = edge::Meta::len(self).value();
+        let len_byte = Self::Len::BYTE.value();
+        let len_child = edge::Meta::len(child).value();
+        let len = u6::try_new(len_parent + len_byte + len_child).ok()?;
 
         Some(
             Le::new(
-                (self.value & ((1 << parent_bits) - 1))
-                    .bitor((byte as u64) << parent_bits)
-                    .bitor(child.value << (parent_bits + 8)),
+                (self.value & ((1 << len_parent) - 1))
+                    .bitor((byte as u64) << len_parent)
+                    .bitor(child.value << (len_parent + len_byte)),
                 len,
             )
             .with_value(child.value()),
         )
+    }
+
+    #[inline]
+    fn try_split(self, index: Self::Len) -> Option<(Self, u8, Self)> {
+        let len = edge::Meta::len(self);
+        if index >= len {
+            return None;
+        }
+
+        let index_child = index + Self::Len::BYTE;
+
+        let parent = Le::new(self.raw(), index);
+        let byte = (self.raw() >> index.value()) as u8;
+        let child = Le::new(self.raw() >> index_child.value(), len - index_child);
+
+        Some((parent, byte, child))
     }
 }
 

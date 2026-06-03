@@ -138,43 +138,43 @@ impl key::Read for Reader {
         }
     }
 
-    fn expand(
-        &self,
-        edge: ribbit::Packed<Self::Edge>,
-    ) -> Result<
-        (
-            ribbit::Packed<Self::Edge>,
-            u8,
-            u8,
-            ribbit::Packed<Self::Edge>,
-        ),
-        (),
-    > {
-        let len_match = self.match_prefix(edge);
-        if len_match >= edge.len().into() {
-            return Err(());
-        }
-
-        validate!(self.len > len_match);
-        let len_start = u6::new(len_match.bits() as u8);
-        let len_middle = len_start + const { u6::new(8) };
-        let len_end = u6::new((edge.len().bits() - len_middle.bits()) as u8);
-
-        let edge = u64::to_le_bytes(edge.raw());
-
-        let mut start = [0u8; 8];
-        start[..len_start.bytes()].copy_from_slice(&edge[..len_start.bytes()]);
-        let start = edge::Le::new(u64::from_le_bytes(start), len_start);
-
-        let old_middle = edge[len_start.bytes()];
-        let new_middle = self.buffer[len_start.bytes()];
-
-        let mut end = [0u8; 8];
-        end[..len_end.bytes()].copy_from_slice(&edge[len_middle.bytes()..][..len_end.bytes()]);
-        let end = edge::Le::new(u64::from_le_bytes(end), len_end);
-
-        Ok((start, old_middle, new_middle, end))
-    }
+    // fn expand(
+    //     &self,
+    //     edge: ribbit::Packed<Self::Edge>,
+    // ) -> Result<
+    //     (
+    //         ribbit::Packed<Self::Edge>,
+    //         u8,
+    //         u8,
+    //         ribbit::Packed<Self::Edge>,
+    //     ),
+    //     (),
+    // > {
+    //     let len_match = self.match_prefix(edge);
+    //     if len_match >= edge.len().into() {
+    //         return Err(());
+    //     }
+    //
+    //     validate!(self.len > len_match);
+    //     let len_start = u6::new(len_match.bits() as u8);
+    //     let len_middle = len_start + const { u6::new(8) };
+    //     let len_end = u6::new((edge.len().bits() - len_middle.bits()) as u8);
+    //
+    //     let edge = u64::to_le_bytes(edge.raw());
+    //
+    //     let mut start = [0u8; 8];
+    //     start[..len_start.bytes()].copy_from_slice(&edge[..len_start.bytes()]);
+    //     let start = edge::Le::new(u64::from_le_bytes(start), len_start);
+    //
+    //     let old_middle = edge[len_start.bytes()];
+    //     let new_middle = self.buffer[len_start.bytes()];
+    //
+    //     let mut end = [0u8; 8];
+    //     end[..len_end.bytes()].copy_from_slice(&edge[len_middle.bytes()..][..len_end.bytes()]);
+    //     let end = edge::Le::new(u64::from_le_bytes(end), len_end);
+    //
+    //     Ok((start, old_middle, new_middle, end))
+    // }
 }
 
 impl From<u64> for Reader {

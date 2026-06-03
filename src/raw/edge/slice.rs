@@ -68,21 +68,6 @@ impl edge::Meta for SlicePacked {
         self.with_frozen(frozen)
     }
 
-    #[inline]
-    fn compress(self, _: u8, child: Self) -> Option<Self> {
-        validate!(!self.frozen());
-
-        let parent = unsafe { self.as_slice() };
-        let child = unsafe { child.as_slice() };
-        let len = u16::try_from(parent.len() + 1 + child.len())
-            .ok()
-            .and_then(|len| u14::try_new(len).ok())?;
-
-        Some(Slice::new(unsafe {
-            core::slice::from_raw_parts(child.as_ptr().byte_sub(parent.len() + 1), len.bytes())
-        }))
-    }
-
     fn len(self) -> Self::Len {
         Self::len(self)
     }
@@ -97,6 +82,42 @@ impl edge::Meta for SlicePacked {
 
     fn with_inline(self, _: bool) -> Self {
         todo!()
+    }
+
+    fn try_join(self, _: u8, child: Self) -> Option<Self> {
+        validate!(!self.frozen());
+
+        let len_parent = self.len().value();
+        let len_byte = Self::Len::BYTE.value();
+        let len_child = child.len().value();
+        let len = u14::try_new(len_parent + len_byte + len_child).ok()?;
+
+        Some(Slice::new(unsafe {
+            core::slice::from_raw_parts(
+                child
+                    .as_slice()
+                    .as_ptr()
+                    .byte_sub((len_parent + len_byte) as usize),
+                len.bytes(),
+            )
+        }))
+    }
+
+    #[inline]
+    fn try_split(self, index: Self::Len) -> Option<(Self, u8, Self)> {
+        let len = self.len();
+        if index >= len {
+            return None;
+        }
+
+        let slice = unsafe { self.as_slice() };
+
+        let parent = Slice::new(&slice[..index.bytes()]);
+        let byte = slice[index.bytes()];
+        let index_child = index + Self::Len::BYTE;
+        let child = Slice::new(&slice[index_child.bytes()..]);
+
+        Some((parent, byte, child))
     }
 }
 
@@ -122,6 +143,7 @@ impl PartialOrd for SlicePacked {
 
 impl edge::Len for u14 {
     const MAX: Self = u14::new((1u16 << 14) - 1);
+    const BYTE: Self = u14::new(1);
 
     fn bits(self) -> usize {
         (self.value() as usize) << 3

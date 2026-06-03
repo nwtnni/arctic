@@ -100,24 +100,41 @@ impl edge::Meta for BePacked {
     }
 
     #[inline]
-    fn compress(self, byte: u8, child: Self) -> Option<Self> {
+    fn try_join(self, byte: u8, child: Self) -> Option<Self> {
         validate!(!self.frozen());
 
-        let parent_bits = (self.value & Be::MASK_LEN) as u8;
-        let child_bits = (child.value & Be::MASK_LEN) as u8;
-        let len = u6::try_new(parent_bits + 8 + child_bits).ok()?;
-        let shift = parent_bits as u32 + 8;
+        let len_parent = edge::Meta::len(self).value();
+        let len_byte = Self::Len::BYTE.value();
+        let len_child = edge::Meta::len(child).value();
+        let len = u6::try_new(len_parent + len_byte + len_child).ok()?;
+
+        let shift = (len_parent + len_byte) as u32;
 
         Some(
             Be::new(
                 self.value
-                    .most_significant(parent_bits)
+                    .most_significant(len_parent)
                     .bitor((byte as u64).rotate_right(shift))
                     .bitor(child.value >> shift),
                 len,
             )
             .with_value(child.value()),
         )
+    }
+
+    #[inline]
+    fn try_split(self, index: Self::Len) -> Option<(Self, u8, Self)> {
+        let len = edge::Meta::len(self);
+        if index >= len {
+            return None;
+        }
+
+        let parent = Be::new(self.raw(), index);
+        let byte = self.raw().get_u8(index.value());
+        let index_child = index + Self::Len::BYTE;
+        let child = Be::new(self.raw() << index_child.value(), len - index_child);
+
+        Some((parent, byte, child))
     }
 }
 
