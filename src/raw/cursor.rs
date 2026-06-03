@@ -274,7 +274,7 @@ where
 
         let len = self.reader.match_prefix(meta).into();
 
-        let new = match meta.try_split(len) {
+        let new = match meta.try_expand(len) {
             None => Edge::new_path(self.reader, value),
             Some((parent, old_byte, old_child)) => {
                 let new_byte = unsafe { self.reader.get_byte_unchecked(len) };
@@ -286,8 +286,7 @@ where
                 let (head, tail) = Node3::new_expand(
                     parent,
                     [new_byte, old_byte],
-                    // Preserve flag bits of old child
-                    [new_child, old.with_meta(meta.with_key(old_child))],
+                    [new_child, old.with_meta(old_child)],
                 );
 
                 (head, Some(tail))

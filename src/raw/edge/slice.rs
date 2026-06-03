@@ -15,8 +15,6 @@ pub struct Slice {
 }
 
 impl Slice {
-    const MASK_META: u64 = 0b11u64 << 62;
-
     #[inline]
     pub(crate) fn new(slice: &[u8]) -> ribbit::Packed<Self> {
         validate!(slice.len() < u16::MAX as usize);
@@ -28,6 +26,7 @@ impl Slice {
 }
 
 impl SlicePacked {
+    #[inline]
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
         let ptr = self.ptr().value() as *const u8;
         let len = self.len().value() as usize;
@@ -76,35 +75,32 @@ impl edge::Meta for SlicePacked {
         self.with_value(value)
     }
 
-    fn with_key(self, key: Self) -> Self {
-        unsafe { Self::new_unchecked(self.value & Slice::MASK_META | key.value) }
-    }
-
-    fn with_inline(self, _: bool) -> Self {
-        todo!()
-    }
-
-    fn try_join(self, _: u8, child: Self) -> Option<Self> {
+    fn try_compress(self, _: u8, child: Self) -> Option<Self> {
         validate!(!self.frozen());
+        validate!(!self.value());
 
         let len_parent = self.len().value();
         let len_byte = Self::Len::BYTE.value();
         let len_child = child.len().value();
         let len = u14::try_new(len_parent + len_byte + len_child).ok()?;
 
-        Some(Slice::new(unsafe {
-            core::slice::from_raw_parts(
-                child
-                    .as_slice()
-                    .as_ptr()
-                    .byte_sub((len_parent + len_byte) as usize),
-                len.bytes(),
-            )
-        }))
+        Some(
+            Slice::new(unsafe {
+                core::slice::from_raw_parts(
+                    child
+                        .as_slice()
+                        .as_ptr()
+                        .byte_sub((len_parent + len_byte) as usize),
+                    len.bytes(),
+                )
+            })
+            .with_value(child.value())
+            .with_frozen(child.frozen()),
+        )
     }
 
     #[inline]
-    fn try_split(self, index: Self::Len) -> Option<(Self, u8, Self)> {
+    fn try_expand(self, index: Self::Len) -> Option<(Self, u8, Self)> {
         let len = self.len();
         if index >= len {
             return None;
@@ -115,7 +111,9 @@ impl edge::Meta for SlicePacked {
         let parent = Slice::new(&slice[..index.bytes()]);
         let byte = slice[index.bytes()];
         let index_child = index + Self::Len::BYTE;
-        let child = Slice::new(&slice[index_child.bytes()..]);
+        let child = Slice::new(&slice[index_child.bytes()..])
+            .with_value(self.value())
+            .with_frozen(self.frozen());
 
         Some((parent, byte, child))
     }
@@ -147,5 +145,9 @@ impl edge::Len for u14 {
 
     fn bits(self) -> usize {
         (self.value() as usize) << 3
+    }
+
+    fn range_to(self) -> impl Iterator<Item = Self> {
+        (0..=self.value()).map(Self::new)
     }
 }

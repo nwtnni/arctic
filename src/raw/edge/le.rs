@@ -1,6 +1,7 @@
 //! [`Le`] stores edge metadata for little-endian systems.
 
 use core::cmp;
+use core::ops::BitAnd as _;
 use core::ops::BitOr as _;
 
 use ribbit::u3;
@@ -19,7 +20,6 @@ pub struct Le {
     prefix: u56,
     value: bool,
     frozen: bool,
-    inline: bool,
     #[ribbit(offset = 59)]
     len: u3,
 }
@@ -31,10 +31,16 @@ impl Le {
     #[inline]
     pub(crate) fn new(value: u64, len: u6) -> ribbit::Packed<Self> {
         validate_eq!(len.value() & 0b111, 0);
-        let mask = (1 << len.bits()) - 1;
         unsafe {
-            ribbit::Packed::<Self>::new_unchecked(value & mask | ((len.value() as u64) << 56))
+            ribbit::Packed::<Self>::new_unchecked(
+                value & Self::mask(len) | ((len.value() as u64) << 56),
+            )
         }
+    }
+
+    #[inline]
+    fn mask(len: u6) -> u64 {
+        (1 << len.bits()) - 1
     }
 }
 
@@ -51,7 +57,7 @@ impl IntoIterator for LePacked {
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.value
+        self.raw()
             .to_le_bytes()
             .into_iter()
             .take(self.len().value() as usize)
@@ -59,13 +65,13 @@ impl IntoIterator for LePacked {
 }
 
 impl edge::Meta for LePacked {
-    const NULL: Self = Self::new(u56::new(0), false, false, false, u3::new(0));
+    const NULL: Self = Self::new(u56::new(0), false, false, u3::new(0));
 
     type Len = u6;
 
     #[inline]
     fn len(self) -> u6 {
-        unsafe { u6::new_unchecked(((self.value & Le::MASK_LEN) >> 56) as u8) }
+        unsafe { u6::new_unchecked(((self.raw() & Le::MASK_LEN) >> 56) as u8) }
     }
 
     #[inline]
@@ -88,48 +94,52 @@ impl edge::Meta for LePacked {
         self.with_frozen(frozen)
     }
 
-    #[inline]
-    fn with_inline(self, inline: bool) -> Self {
-        self.with_inline(inline)
-    }
-
-    #[inline]
-    fn with_key(self, key: Self) -> Self {
-        validate_eq!(key.value & Le::MASK_FLAG, 0);
-        unsafe { Self::new_unchecked(self.value & Le::MASK_FLAG | key.value) }
-    }
-
-    fn try_join(self, byte: u8, child: Self) -> Option<Self> {
+    fn try_compress(self, byte: u8, child: Self) -> Option<Self> {
         validate!(!self.frozen());
+        validate!(!self.value());
 
-        let len_parent = edge::Meta::len(self).value();
+        let len_parent = edge::Meta::len(self);
         let len_byte = Self::Len::BYTE.value();
         let len_child = edge::Meta::len(child).value();
-        let len = u6::try_new(len_parent + len_byte + len_child).ok()?;
+        let len = u6::try_new(len_parent.value() + len_byte + len_child).ok()?;
+        let index_child = (len_parent.value() + len_byte) as u32;
 
-        Some(
-            Le::new(
-                (self.value & ((1 << len_parent) - 1))
-                    .bitor((byte as u64) << len_parent)
-                    .bitor(child.value << (len_parent + len_byte)),
-                len,
+        Some(unsafe {
+            Self::new_unchecked(
+                // Parent prefix
+                self.raw()
+                    // Byte
+                    .bitor((byte as u64) << len_parent.value())
+                    // Child prefix
+                    .bitor(child.raw() << index_child)
+                    // Length and flags
+                    .bitand(Le::mask(len))
+                    .bitor((len.value() as u64) << 56)
+                    .bitor(child.raw() & Le::MASK_FLAG),
             )
-            .with_value(child.value()),
-        )
+        })
     }
 
     #[inline]
-    fn try_split(self, index: Self::Len) -> Option<(Self, u8, Self)> {
+    fn try_expand(self, index: Self::Len) -> Option<(Self, u8, Self)> {
         let len = edge::Meta::len(self);
         if index >= len {
             return None;
         }
 
-        let index_child = index + Self::Len::BYTE;
-
         let parent = Le::new(self.raw(), index);
         let byte = (self.raw() >> index.value()) as u8;
-        let child = Le::new(self.raw() >> index_child.value(), len - index_child);
+        let index_child = index + Self::Len::BYTE;
+        let len_child = len - index_child;
+
+        let child = unsafe {
+            Self::new_unchecked(
+                (self.raw() >> index_child.value())
+                    .bitand(Le::mask(len_child))
+                    .bitor((len_child.value() as u64) << 56)
+                    .bitor(self.raw() & Le::MASK_FLAG),
+            )
+        };
 
         Some((parent, byte, child))
     }
@@ -140,7 +150,7 @@ impl Eq for LePacked {}
 impl PartialEq for LePacked {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        ((self.value ^ other.value) & !Le::MASK_FLAG) == 0
+        ((self.raw() ^ other.raw()) & !Le::MASK_FLAG) == 0
     }
 }
 
@@ -151,7 +161,7 @@ impl Ord for LePacked {
             return cmp::Ordering::Equal;
         }
 
-        self.value.swap_bytes().cmp(&other.value.swap_bytes())
+        self.raw().swap_bytes().cmp(&other.raw().swap_bytes())
     }
 }
 
@@ -159,5 +169,47 @@ impl PartialOrd for LePacked {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(feature = "proptest")]
+impl proptest::arbitrary::Arbitrary for Le {
+    type Parameters = ();
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        use proptest::strategy::Just;
+        use proptest::strategy::Strategy as _;
+        (
+            bool::arbitrary(),
+            bool::arbitrary(),
+            0u8..=<u3 as ribbit::traits::Integer>::MAX.value(),
+        )
+            .prop_flat_map(|(value, frozen, len)| {
+                (
+                    Just(value),
+                    Just(frozen),
+                    Just(len),
+                    (0..(1u64 << (len << 3))),
+                )
+            })
+            .prop_map(|(value, frozen, len, prefix)| Self {
+                value,
+                frozen,
+                len: u3::new(len),
+                prefix: u56::new(prefix),
+            })
+            .boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "proptest")]
+    proptest::proptest! {
+         #[test]
+         fn expand_compress_inverse(meta: crate::raw::edge::Le) {
+             crate::raw::edge::tests::expand_compress_inverse(meta)
+         }
     }
 }

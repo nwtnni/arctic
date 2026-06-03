@@ -201,9 +201,7 @@ where
 }
 
 /// Edge compression and child pointer metadata.
-pub(crate) trait Meta:
-    ribbit::Unpack + core::fmt::Debug + Ord + IntoIterator<Item = u8>
-{
+pub trait Meta: ribbit::Unpack + core::fmt::Debug + Ord + IntoIterator<Item = u8> {
     /// Null edge with no compressed edge bytes or child
     const NULL: Self;
 
@@ -225,17 +223,15 @@ pub(crate) trait Meta:
     /// Indicate whether this edge is frozen.
     fn with_frozen(self, frozen: bool) -> Self;
 
-    /// Update with compressed edge bytes from `key`.
-    fn with_key(self, key: Self) -> Self;
+    /// Try to join two edges into one.
+    ///
+    /// Returns `None` if edge cannot hold all bytes.
+    fn try_compress(self, byte: u8, child: Self) -> Option<Self>;
 
-    /// TODO: Reserved for now.
-    #[expect(unused)]
-    fn with_inline(self, inline: bool) -> Self;
-
-    /// Try to merge consecutive edges into one.
-    fn try_join(self, byte: u8, child: Self) -> Option<Self>;
-
-    fn try_split(self, index: Self::Len) -> Option<(Self, u8, Self)>;
+    /// Try to split one edge into two.
+    ///
+    /// Returns `None` if `index` is greater or equal to the edge length.
+    fn try_expand(self, index: Self::Len) -> Option<(Self, u8, Self)>;
 }
 
 /// Length of compressed bytes along an edge.
@@ -245,6 +241,9 @@ pub(crate) trait Meta:
 pub(crate) trait Len: Copy + Eq + Add<Output = Self> {
     const MAX: Self;
     const BYTE: Self;
+
+    #[cfg_attr(not(test), expect(unused))]
+    fn range_to(self) -> impl Iterator<Item = Self>;
 
     fn bits(self) -> usize;
 
@@ -262,6 +261,10 @@ impl Len for u6 {
     fn bits(self) -> usize {
         self.value() as usize
     }
+
+    fn range_to(self) -> impl Iterator<Item = Self> {
+        (0..=self.value()).step_by(8).flat_map(Self::try_new)
+    }
 }
 
 /// Non-null child of an edge.
@@ -275,6 +278,39 @@ impl<M> Debug for Child<M> {
         match self {
             Self::Node(node) => f.debug_tuple("Node").field(node).finish(),
             Self::Value(value) => f.debug_tuple("Value").field(value).finish(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::fmt::Debug;
+
+    use crate::raw::edge::Len;
+    use crate::raw::edge::Meta;
+
+    pub(super) fn expand_compress_inverse<M>(meta: M)
+    where
+        M: ribbit::Pack<Packed: Meta<Len: Debug>>,
+    {
+        let meta = meta.pack();
+
+        for index in meta.len().range_to() {
+            let Some((parent, byte, child)) = meta.try_expand(index) else {
+                assert_eq!(index, meta.len());
+                continue;
+            };
+
+            let actual = parent.try_compress(byte, child).unwrap();
+            assert!(
+                actual == meta
+                    && actual.is_frozen() == meta.is_frozen()
+                    && actual.is_value() == meta.is_value(),
+                "Expand-compress mismatch:\n\
+                {meta:x?}@{index:x?}\n\
+                {parent:x?} - {byte:x?} - {child:x?}\n\
+                {actual:x?}",
+            );
         }
     }
 }
