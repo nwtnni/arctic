@@ -44,6 +44,7 @@ where
 {
     const TYPE: node::Type = <H::Packed as Header>::TYPE;
     const CAPACITY: usize = <H::Packed as Header>::CAPACITY;
+    type KeyIter = <H::Packed as Header>::KeyIter;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
@@ -67,7 +68,7 @@ where
         &self,
         lower: L,
         upper: U,
-    ) -> node::KeyIter {
+    ) -> Self::KeyIter {
         self.header
             .load_packed(Ordering::Relaxed)
             .keys(lower, upper)
@@ -171,6 +172,7 @@ where
 pub(super) trait Header: ribbit::Unpack + core::fmt::Debug {
     const TYPE: node::Type;
     const CAPACITY: usize;
+    type KeyIter: Into<node::KeyIter>;
 
     unsafe fn new_unchecked(keys: &[u8]) -> Self;
 
@@ -188,7 +190,7 @@ pub(super) trait Header: ribbit::Unpack + core::fmt::Debug {
         self,
         lower: L,
         upper: U,
-    ) -> node::KeyIter;
+    ) -> Self::KeyIter;
 }
 
 /// NOTE: We order `head` and `tail` fields at the end

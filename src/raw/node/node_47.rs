@@ -48,6 +48,7 @@ where
 {
     const TYPE: node::Type = node::Type::Node47;
     const CAPACITY: usize = 47;
+    type KeyIter = Box<linear::KeyIter63>;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
@@ -66,7 +67,7 @@ where
         &self,
         lower: L,
         upper: U,
-    ) -> node::KeyIter {
+    ) -> Self::KeyIter {
         self.header.keys(lower, upper)
     }
 
@@ -240,11 +241,11 @@ impl Header {
         &self,
         lower: L,
         upper: U,
-    ) -> node::KeyIter {
+    ) -> Box<linear::KeyIter63> {
         let len = self.meta_consistent().len().value();
         let mut iter = Box::new(linear::KeyIter63::default());
         node::simd::keys_47(&self.data, lower, upper, len, &mut iter);
-        node::KeyIter::new_47(iter)
+        iter
     }
 
     fn meta_consistent(&self) -> ribbit::Packed<Meta> {
@@ -344,5 +345,12 @@ impl Meta {
 impl Default for MetaPacked {
     fn default() -> Self {
         Meta::DEFAULT
+    }
+}
+
+impl From<Box<linear::KeyIter63>> for node::KeyIter {
+    #[inline]
+    fn from(iter: Box<linear::KeyIter63>) -> Self {
+        node::KeyIter::new_47(iter)
     }
 }

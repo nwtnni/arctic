@@ -61,6 +61,8 @@ where
     /// The maximum number of entries this node can contain.
     const CAPACITY: usize;
 
+    type KeyIter: Into<KeyIter>;
+
     /// Returns a new node populated with `keys` and `edges`.
     ///
     /// # Safety
@@ -81,11 +83,11 @@ where
     }
 
     /// Returns a sorted iterator over this node's keys.
-    fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> KeyIter;
+    fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> Self::KeyIter;
 
     /// Returns a sorted iterator over this node's keys and edges.
     fn entries<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> EntryIter<M> {
-        unsafe { EntryIter::new(self.keys(lower, upper), self.edges()) }
+        unsafe { EntryIter::new(self.keys(lower, upper).into(), self.edges()) }
     }
 
     fn edges(&self) -> &[Atomic<Edge<M>>];
@@ -435,10 +437,15 @@ where
     ) -> Result<(u8, NonNull<ribbit::Atomic<Edge<M>>>), EntryIter<'g, M>> {
         let entries = self.dispatch(
             |node| {
-                let mut entries = unsafe { node.as_ref() }.entries(lower, upper);
-                match entries.size_hint().1 {
-                    Some(1) => Ok(entries.next().expect("Size hint is exact")),
-                    _ => Err(entries),
+                let node = unsafe { node.as_ref() };
+                let mut keys = node.keys(lower, upper);
+                let edges = node.edges();
+                match keys.size_hint().1 {
+                    Some(1) => {
+                        let pair = keys.next().expect("Size hint is exact");
+                        Ok((pair.key, NonNull::from(&edges[pair.index as usize])))
+                    }
+                    _ => Err(unsafe { EntryIter::new(keys.into(), edges) }),
                 }
             },
             |node| Err(unsafe { node.as_ref() }.entries(lower, upper)),

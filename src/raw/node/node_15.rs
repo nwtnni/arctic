@@ -36,6 +36,7 @@ impl Default for HeaderPacked {
 impl linear::Header for ribbit::Packed<Header> {
     const TYPE: node::Type = node::Type::Node15;
     const CAPACITY: usize = 15;
+    type KeyIter = Box<linear::KeyIter15>;
 
     unsafe fn new_unchecked(keys: &[u8]) -> Self {
         let mut buffer = [0u8; 16];
@@ -92,10 +93,17 @@ impl linear::Header for ribbit::Packed<Header> {
         self,
         lower: L,
         upper: U,
-    ) -> node::KeyIter {
+    ) -> Self::KeyIter {
         let len = self.len();
         let mut iter = Box::new(linear::KeyIter15::default());
         node::simd::keys_15(self.value, len, lower, upper, &mut iter);
+        iter
+    }
+}
+
+impl From<Box<linear::KeyIter15>> for node::KeyIter {
+    #[inline]
+    fn from(iter: Box<linear::KeyIter15>) -> Self {
         node::KeyIter::new_15(iter)
     }
 }

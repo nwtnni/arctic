@@ -47,6 +47,7 @@ impl Default for HeaderPacked {
 impl linear::Header for ribbit::Packed<Header> {
     const TYPE: node::Type = node::Type::Node3;
     const CAPACITY: usize = 3;
+    type KeyIter = linear::KeyIter3;
 
     #[expect(clippy::get_first)]
     unsafe fn new_unchecked(keys: &[u8]) -> Self {
@@ -103,10 +104,9 @@ impl linear::Header for ribbit::Packed<Header> {
         self,
         lower: L,
         upper: U,
-    ) -> node::KeyIter {
+    ) -> Self::KeyIter {
         let len = self.len();
-        let iter = node::simd::keys_3(self.value, len, lower, upper);
-        node::KeyIter::new_3(iter)
+        node::simd::keys_3(self.value, len, lower, upper)
     }
 }
 
@@ -171,5 +171,12 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
 
         let head = Edge::<M>::new_node(meta, node::Ptr::new_node_3(head));
         (head, tail)
+    }
+}
+
+impl From<linear::KeyIter3> for node::KeyIter {
+    #[inline]
+    fn from(iter: linear::KeyIter3) -> Self {
+        node::KeyIter::new_3(iter)
     }
 }

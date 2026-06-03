@@ -33,6 +33,7 @@ where
 {
     const TYPE: node::Type = node::Type::Node256;
     const CAPACITY: usize = 256;
+    type KeyIter = KeyIter;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
@@ -51,8 +52,8 @@ where
         &self,
         lower: L,
         upper: U,
-    ) -> node::KeyIter {
-        node::KeyIter::new_256(KeyIter::new(lower, upper))
+    ) -> Self::KeyIter {
+        KeyIter::new(lower, upper)
     }
 
     #[inline]
@@ -151,5 +152,12 @@ impl DoubleEndedIterator for KeyIter {
 
         self.tail -= 1;
         Some(self.tail as u8)
+    }
+}
+
+impl From<KeyIter> for node::KeyIter {
+    #[inline]
+    fn from(iter: KeyIter) -> Self {
+        node::KeyIter::new_256(iter)
     }
 }
