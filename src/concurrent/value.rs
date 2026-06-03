@@ -55,7 +55,7 @@ impl<T: Sized> Value for Box<T> {
 
     #[inline]
     unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
-        let borrow = unsafe { (*raw as *const T).as_ref() };
+        let borrow = unsafe { core::ptr::with_exposed_provenance::<T>((*raw) as usize).as_ref() };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
     }
 }

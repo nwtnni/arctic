@@ -19,12 +19,12 @@ pub unsafe trait Value {
 unsafe impl<T: Sized> Value for Box<T> {
     #[inline]
     unsafe fn from_raw(raw: u64) -> Self {
-        unsafe { Box::from_raw(raw as *mut T) }
+        unsafe { Box::from_raw(core::ptr::with_exposed_provenance_mut::<T>(raw as usize)) }
     }
 
     #[inline]
     fn into_raw(self) -> u64 {
-        Box::into_raw(self) as u64
+        Box::into_raw(self).expose_provenance() as u64
     }
 }
 
@@ -32,13 +32,12 @@ unsafe impl<T: Sized> Value for Box<T> {
 unsafe impl<'v, T: 'v + Sized> Value for &'v T {
     #[inline]
     fn into_raw(self) -> u64 {
-        // FIXME: strict provenance
-        (self as *const T) as u64
+        (self as *const T).expose_provenance() as u64
     }
 
     #[inline]
     unsafe fn from_raw(raw: u64) -> Self {
-        let borrow = unsafe { (raw as *const T).as_ref() };
+        let borrow = unsafe { core::ptr::with_exposed_provenance::<T>(raw as usize).as_ref() };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
     }
 }
