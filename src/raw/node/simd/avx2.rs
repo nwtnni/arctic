@@ -95,14 +95,8 @@ pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
 
     let entries = entries | (u64::MAX << bits);
     let mut iter = unsafe { core::mem::transmute::<u64, KeyIter3>(entries) };
-    iter.0.head = 0;
-    iter.0.tail = bits >> 4;
-
-    if iter.0.tail <= 1 {
-        return iter;
-    }
-
     let entries = &mut iter.0.entries;
+
     if entries[0] > entries[1] {
         entries.swap(0, 1);
     }
@@ -112,6 +106,9 @@ pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     if entries[0] > entries[1] {
         entries.swap(0, 1);
     }
+
+    iter.0.head = 0;
+    iter.0.tail = bits >> 4;
     iter
 }
 
