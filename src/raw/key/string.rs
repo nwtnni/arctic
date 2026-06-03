@@ -1,5 +1,6 @@
 use core::borrow::Borrow as _;
 use core::fmt;
+use core::num::NonZeroUsize;
 
 use ribbit::u6;
 
@@ -11,10 +12,11 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
-/// Newtype guaranteeing this [`std::string::String`] does
-/// not contain any internal null bytes.
+/// Newtype guaranteeing this [`std::string::String`] (a) is not empty,
+/// and (b) does not contain any internal null bytes.
 ///
-/// This is required so that we can internally use a null
+/// Property (a) is required so our set implementation has a meaningful byte to index.
+/// Property (b) is required so that we can internally use a null
 /// byte as a terminator, to maintain the prefix tree
 /// precondition that no key is a prefix of another key.
 #[repr(transparent)]
@@ -43,7 +45,7 @@ impl NonNullString {
     /// Get a reference to this string.
     #[inline]
     pub const fn as_non_null_str(&self) -> &NonNullStr {
-        // SAFETY: `self.0` does not contain null bytes
+        // SAFETY: `self.0` is neither empty nor contains null bytes
         unsafe { NonNullStr::new_unchecked(self.0.as_str()) }
     }
 }
@@ -56,11 +58,11 @@ impl From<NonNullString> for String {
 }
 
 impl core::ops::Deref for NonNullString {
-    type Target = String;
+    type Target = NonNullStr;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.as_non_null_str()
     }
 }
 
@@ -86,8 +88,8 @@ impl proptest::arbitrary::Arbitrary for NonNullString {
     }
 }
 
-/// Newtype guaranteeing this [`core::primitive::str`]
-/// does not contain any internal null bytes.
+/// Newtype guaranteeing this [str][`core::primitive::str`] (a) is non-empty
+/// and (b) does not contain any internal null bytes.
 ///
 /// Also see [`NonNullString`].
 #[repr(transparent)]
@@ -97,7 +99,7 @@ pub struct NonNullStr(str);
 impl NonNullStr {
     /// # Safety
     ///
-    /// Caller must guarantee that this string does not contain any null bytes.
+    /// Caller must guarantee that this string is non-empty and does not contain any null bytes.
     #[inline]
     pub const unsafe fn new_unchecked(str: &str) -> &Self {
         // SAFETY: `NonNullStr` is `repr(transparent)`
@@ -107,6 +109,10 @@ impl NonNullStr {
     /// Returns a `NonNullStr` if `str` does not contain a null byte.
     #[inline]
     pub const fn new(str: &str) -> Option<&Self> {
+        if str.is_empty() {
+            return None;
+        }
+
         // HACK: `core::primitive::str::contains` is not const
         let mut i = 0;
         let slice = str.as_bytes();
@@ -125,6 +131,11 @@ impl NonNullStr {
     #[inline]
     pub fn to_non_null_string(&self) -> NonNullString {
         self.to_owned()
+    }
+
+    #[inline]
+    pub const fn len(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.0.len()).expect("NonNullStr is non-empty")
     }
 }
 

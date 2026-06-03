@@ -2,7 +2,6 @@ use core::borrow::Borrow as _;
 use core::fmt::Debug;
 use core::ops::ControlFlow;
 use std::collections::BTreeMap;
-use std::ffi::CString;
 
 use arctic::NonNullString;
 use proptest::arbitrary::Arbitrary;
@@ -53,14 +52,6 @@ prop_state_machine! {
         10000
         =>
         Arctic<NonNullString, u64>
-    );
-
-    #[test]
-    fn cstring_u64(
-        sequential
-        1000
-        =>
-        Arctic<CString, u64>
     );
 }
 

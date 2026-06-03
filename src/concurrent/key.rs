@@ -1,5 +1,3 @@
-use std::ffi::CString;
-
 use crate::NonNullString;
 use crate::NonPrefixSlice;
 use crate::NonPrefixVec;
@@ -27,15 +25,6 @@ impl Key for NonPrefixVec {
     }
 }
 
-impl Key for CString {
-    type Prefix = Le;
-
-    #[inline]
-    fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
-        hazard_vec(reader)
-    }
-}
-
 impl Key for NonNullString {
     type Prefix = Le;
 
@@ -54,7 +43,7 @@ impl<const N: usize> Key for [u8; N] {
     }
 }
 
-impl<'a> Key for &'a NonPrefixSlice {
+impl Key for &'_ NonPrefixSlice {
     type Prefix = Le;
 
     #[inline]

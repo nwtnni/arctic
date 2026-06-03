@@ -1,3 +1,5 @@
+use core::num::NonZeroUsize;
+
 use ribbit::u14;
 
 use crate::NonPrefixVec;
@@ -10,8 +12,8 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
-/// Newtype guaranteeing this slice is not a prefix of
-/// any other [`NonPrefixVec`] or [`NonPrefixSlice`].
+/// Newtype guaranteeing this slice (a) is non-empty,
+/// and (b) is not a prefix of any other [`NonPrefixVec`] or [`NonPrefixSlice`].
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonPrefixSlice([u8]);
@@ -19,7 +21,7 @@ pub struct NonPrefixSlice([u8]);
 impl NonPrefixSlice {
     /// # Safety
     ///
-    /// Caller must guarantee that `slice` is not a prefix of any
+    /// Caller must guarantee that `slice` is neither empty, nor a prefix of any
     /// other [`NonPrefixVec`] or [`NonPrefixSlice`].
     #[inline]
     pub const unsafe fn new_unchecked(slice: &[u8]) -> &Self {
@@ -30,6 +32,11 @@ impl NonPrefixSlice {
     #[inline]
     pub fn to_non_prefix_vec(&self) -> NonPrefixVec {
         unsafe { NonPrefixVec::new_unchecked(self.0.to_owned()) }
+    }
+
+    #[inline]
+    pub const fn len(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.0.len()).expect("NonPrefixSlice is non-empty")
     }
 }
 

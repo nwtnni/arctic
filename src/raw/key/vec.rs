@@ -1,11 +1,9 @@
 use core::borrow::Borrow as _;
-use core::ffi::CStr;
 use core::fmt;
 use core::ops::Add;
 use core::ops::AddAssign;
 use core::ops::Sub;
 use core::ops::SubAssign;
-use std::ffi::CString;
 
 use ribbit::u6;
 
@@ -18,7 +16,7 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
-/// Newtype guaranteeing this [`Vec`] is not a prefix of
+/// Newtype guaranteeing this [`Vec`] (a) is not empty, and (b) is not a prefix of
 /// any other [`NonPrefixVec`] or [`NonPrefixSlice`].
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -27,8 +25,8 @@ pub struct NonPrefixVec(Vec<u8>);
 impl NonPrefixVec {
     /// # Safety
     ///
-    /// Caller must guarantee that `vec` is not a prefix of any
-    /// other `NonPrefixVec` or `NonPrefixSlice`.
+    /// Caller must guarantee that `vec` is neither empty, nor a prefix of any
+    /// other [`NonPrefixVec`] or [`NonPrefixSlice`].
     pub const unsafe fn new_unchecked(vec: Vec<u8>) -> Self {
         Self(vec)
     }
@@ -48,11 +46,11 @@ impl From<NonPrefixVec> for Vec<u8> {
 }
 
 impl core::ops::Deref for NonPrefixVec {
-    type Target = Vec<u8>;
+    type Target = NonPrefixSlice;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.as_non_prefix_slice()
     }
 }
 
@@ -101,46 +99,6 @@ impl Key for NonPrefixVec {
     }
 }
 
-impl Key for CString {
-    type Read<'k> = Reader<'k, { usize::MAX }>;
-    type Write = Writer;
-    type Borrowed = CStr;
-    type Insert<'k> = &'k Self::Borrowed;
-    type Edge = edge::Le;
-    type Len = Len;
-
-    #[inline]
-    fn as_insert(&self) -> Self::Insert<'_> {
-        self.borrow()
-    }
-
-    #[inline]
-    fn insert_as_read<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
-    where
-        Self: 'k,
-    {
-        Reader::from(insert)
-    }
-
-    #[inline]
-    fn insert_to_key<'k>(insert: Self::Insert<'k>) -> Self
-    where
-        Self: 'k,
-    {
-        insert.to_owned()
-    }
-
-    #[inline]
-    unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
-    where
-        Self: 'k,
-    {
-        if_validate!(CStr::from_bytes_with_nul(&writer.0).unwrap(), unsafe {
-            CStr::from_bytes_with_nul_unchecked(&writer.0)
-        })
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k, const N: usize>(pub(crate) &'k [u8]);
 
@@ -173,20 +131,6 @@ impl<'k> From<&'k NonPrefixVec> for Reader<'k, { usize::MAX }> {
     #[inline]
     fn from(key: &'k NonPrefixVec) -> Self {
         Self::from(key.as_non_prefix_slice())
-    }
-}
-
-impl<'k> From<&'k CStr> for Reader<'k, { usize::MAX }> {
-    #[inline]
-    fn from(key: &'k CStr) -> Self {
-        Self(key.to_bytes_with_nul())
-    }
-}
-
-impl<'k> From<&'k CString> for Reader<'k, { usize::MAX }> {
-    #[inline]
-    fn from(key: &'k CString) -> Self {
-        Self::from(key.as_c_str())
     }
 }
 
