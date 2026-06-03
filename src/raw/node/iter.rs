@@ -388,14 +388,12 @@ impl KeyIndex {
 }
 
 impl PartialOrd for KeyIndex {
-    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for KeyIndex {
-    #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // SAFETY: `Self` is repr(C) and has same size and alignment as u16
         let actual = unsafe {

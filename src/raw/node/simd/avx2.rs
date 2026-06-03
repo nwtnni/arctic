@@ -2,6 +2,7 @@ use core::arch::x86_64::__m128i;
 use core::arch::x86_64::__m256i;
 use core::arch::x86_64::_mm_adds_epu8;
 use core::arch::x86_64::_mm_and_si128;
+use core::arch::x86_64::_mm_blend_epi16;
 use core::arch::x86_64::_mm_cmpeq_epi8;
 use core::arch::x86_64::_mm_cmpeq_epi16;
 use core::arch::x86_64::_mm_cmplt_epi8;
@@ -16,6 +17,8 @@ use core::arch::x86_64::_mm_mullo_epi16;
 use core::arch::x86_64::_mm_set_epi64x;
 use core::arch::x86_64::_mm_set1_epi8;
 use core::arch::x86_64::_mm_set1_epi16;
+use core::arch::x86_64::_mm_setr_epi8;
+use core::arch::x86_64::_mm_shuffle_epi8;
 use core::arch::x86_64::_mm_slli_epi16;
 use core::arch::x86_64::_mm_srli_epi16;
 use core::arch::x86_64::_mm_storeu_si128;
@@ -94,19 +97,8 @@ pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     };
 
     let entries = entries | (u64::MAX << bits);
+    let entries = bitonic_sort_4(entries, bits);
     let mut iter = unsafe { core::mem::transmute::<u64, KeyIter3>(entries) };
-    let entries = &mut iter.0.entries;
-
-    if entries[0] > entries[1] {
-        entries.swap(0, 1);
-    }
-    if entries[1] > entries[2] {
-        entries.swap(1, 2);
-    }
-    if entries[0] > entries[1] {
-        entries.swap(0, 1);
-    }
-
     iter.0.head = 0;
     iter.0.tail = bits >> 4;
     iter
@@ -235,6 +227,75 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
 
     out.0.head = 0;
     out.0.tail = index;
+}
+
+/// https://en.wikipedia.org/wiki/Bitonic_sorter
+/// https://github.com/Geolm/simd_bitonic
+/// https://hal.inria.fr/hal-01512970v1/document
+#[inline]
+fn bitonic_sort_4(input: u64, bits: u8) -> u64 {
+    const RECOMBINE_1: u64 = 0x2301;
+    const SORT_1: u64 = RECOMBINE_1;
+    const BLEND_1: i32 = 0b1010;
+
+    const RECOMBINE_2: u64 = 0x0123;
+    const BLEND_2: i32 = 0b1100;
+
+    #[inline]
+    fn bitonic_step<const SHUFFLE: u64, const BLEND: i32>(input: __m128i) -> __m128i {
+        const fn extract(shuffle: u64, index: u8) -> i8 {
+            // `% 8` to repeat across lanes, `/ 2` for u16 granularity, `* 4` for bit width
+            let shift = (index % 8 / 2) * 4;
+            let select = (shuffle >> shift) & 0b1111;
+            // Mix bit from top/bottom u16 back in
+            ((select << 1) | (index as u64 & 1)) as i8
+        }
+
+        let shuffle = unsafe {
+            _mm_shuffle_epi8(
+                input,
+                _mm_setr_epi8(
+                    const { extract(SHUFFLE, 0) },
+                    const { extract(SHUFFLE, 1) },
+                    const { extract(SHUFFLE, 2) },
+                    const { extract(SHUFFLE, 3) },
+                    const { extract(SHUFFLE, 4) },
+                    const { extract(SHUFFLE, 5) },
+                    const { extract(SHUFFLE, 6) },
+                    const { extract(SHUFFLE, 7) },
+                    const { extract(SHUFFLE, 8) },
+                    const { extract(SHUFFLE, 9) },
+                    const { extract(SHUFFLE, 10) },
+                    const { extract(SHUFFLE, 11) },
+                    const { extract(SHUFFLE, 12) },
+                    const { extract(SHUFFLE, 13) },
+                    const { extract(SHUFFLE, 14) },
+                    const { extract(SHUFFLE, 15) },
+                ),
+            )
+        };
+
+        let min = unsafe { _mm_min_epu16(input, shuffle) };
+        let max = unsafe { _mm_max_epu16(input, shuffle) };
+
+        unsafe { _mm_blend_epi16::<BLEND>(min, max) }
+    }
+
+    if bits <= 8 {
+        return input;
+    }
+
+    let mut input = unsafe { _mm_set_epi64x(0, input as i64) };
+
+    input = bitonic_step::<RECOMBINE_1, BLEND_1>(input);
+    input = if bits == 16 {
+        input
+    } else {
+        input = bitonic_step::<RECOMBINE_2, BLEND_2>(input);
+        bitonic_step::<SORT_1, BLEND_1>(input)
+    };
+
+    (unsafe { _mm_cvtsi128_si64x(input) } as u64)
 }
 
 /// https://en.wikipedia.org/wiki/Bitonic_sorter
