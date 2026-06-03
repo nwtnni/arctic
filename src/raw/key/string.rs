@@ -337,10 +337,7 @@ impl key::Read for Reader<'_> {
             return self;
         }
 
-        let index = core::iter::zip(self.slice, other.slice)
-            .position(|(l, r)| l != r)
-            .unwrap_or_else(|| self.slice.len().min(other.slice.len()));
-
+        let index = key::common_prefix(self.slice, other.slice);
         Self {
             slice: &self.slice[..index],
             terminate: false,

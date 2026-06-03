@@ -142,3 +142,11 @@ pub trait Len:
     fn bits(self) -> usize;
     fn bytes(self) -> usize;
 }
+
+// TODO: optimize?
+#[inline]
+fn common_prefix(left: &[u8], right: &[u8]) -> usize {
+    core::iter::zip(left, right)
+        .position(|(l, r)| l != r)
+        .unwrap_or_else(|| left.len().min(right.len()))
+}

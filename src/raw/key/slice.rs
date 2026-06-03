@@ -143,11 +143,8 @@ impl key::Read for Reader<'_> {
     }
 
     fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        key::vec::Len(
-            core::iter::zip(self.0, unsafe { meta.as_slice() })
-                .position(|(l, r)| l != r)
-                .unwrap_or_else(|| unsafe { self.0.len().min(meta.as_slice().len()) }),
-        )
+        let other = unsafe { meta.as_slice() };
+        key::vec::Len(key::common_prefix(self.0, other))
     }
 
     #[inline]
@@ -164,12 +161,9 @@ impl key::Read for Reader<'_> {
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        let index = core::iter::zip(self.0, other.0)
-            .position(|(l, r)| l != r)
-            .unwrap_or_else(|| self.0.len().min(other.0.len()));
+        let index = key::common_prefix(self.0, other.0);
         Self(&self.0[..index])
     }
-
 }
 
 #[derive(Clone, Default, Debug)]

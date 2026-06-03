@@ -197,9 +197,7 @@ impl<const N: usize> key::Read for Reader<'_, N> {
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        let index = core::iter::zip(self.0, other.0)
-            .position(|(l, r)| l != r)
-            .unwrap_or_else(|| self.0.len().min(other.0.len()));
+        let index = key::common_prefix(self.0, other.0);
         Self(&self.0[..index])
     }
 }
