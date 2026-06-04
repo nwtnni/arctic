@@ -359,30 +359,38 @@ fn compress_15(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
     let len = mask_bit.count_ones() as u8;
 
     cfg_select! {
-        all(target_feature = "avx512vbmi2", target_feature = "avx512vl") => unsafe {
+        target_feature = "avx512vbmi2" => unsafe {
             let out = core::arch::x86_64::_mm256_mask_compress_epi16(
                 _mm256_set1_epi8(0xFFu8 as i8),
                 mask_bit,
                 interleave(lo, hi),
             );
         }
+        // https://stackoverflow.com/a/36951611
+        // https://stackoverflow.com/a/61431303
         _ => {
-            const HIGH: u128 = 0xFFu128.rotate_right(8);
+            validate!(len < 16);
 
-            // https://stackoverflow.com/a/36951611
-            // https://stackoverflow.com/a/61431303
+            // Expand each bit to a nibble
             let mask_nibble = unsafe { _pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
 
-            const SHUFFLE: u64 = 0xFEDC_BA98_7654_3210;
+            // Select and compress masked nibbles
+            let shuffle = unsafe { _pext_u64(U4_SEQ, mask_nibble) };
 
-            let shuffle = unsafe { _pext_u64(SHUFFLE, mask_nibble) };
-            // Ensure non-selected bytes are 0xFF
+            // Ensure non-mask nibbles shuffle to 0xF
             let shuffle = shuffle | (u64::MAX << ((len as u64) * 4));
+
+            // Expand shuffle to low u8 of each u16 lane
             let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(shuffle as i64)) };
+
+            // Shift high nibble of low u8 to low nibble of high u8
             let shuffle = unsafe {
                 _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
             };
 
+            // Shuffle, ensuring index 0xF contains byte 0xFF for bitonic sort
+            // Since we know len < 16, this does not clobber
+            const HIGH: u128 = 0xFFu128.rotate_right(8);
             let lo = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(lo | HIGH), shuffle)});
             let hi = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(hi | HIGH), shuffle)});
             let out = interleave(lo, hi);
@@ -413,13 +421,19 @@ unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128
                 );
             }
         }
+        // https://stackoverflow.com/a/36951611
+        // https://stackoverflow.com/a/61431303
         _ => {
-            // https://stackoverflow.com/a/36951611
-            // https://stackoverflow.com/a/61431303
+            // Expand each bit to a nibble
             let mask_nibble = unsafe { _pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
 
-            const SHUFFLE: u64 = 0xFEDC_BA98_7654_3210;
-            let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(_pext_u64(SHUFFLE, mask_nibble) as i64)) };
+            // Select and compress masked nibbles
+            let shuffle = unsafe { _pext_u64(U4_SEQ, mask_nibble) };
+
+            // Expand shuffle to low u8 of each u16 lane
+            let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(shuffle as i64)) };
+
+            // Shift high nibble of low u8 to low nibble of high u8
             let shuffle = unsafe {
                 _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
             };
@@ -429,7 +443,7 @@ unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128
             let data = interleave(lo, hi);
 
             cfg_select! {
-                all(target_feature = "avx512bw", target_feature = "avx512vl") => {
+                all(target_feature = "avx512bw") => {
                     unsafe {
                         core::arch::x86_64::_mm256_mask_storeu_epi16(
                             out.as_mut_ptr().cast::<i16>(),
@@ -439,6 +453,8 @@ unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128
                     }
                 }
                 _ => {
+                    // NOTE: this forces KeyIter63 to take up an extra 32 bytes to
+                    // avoid out-of-bound stores. Is there a better alternative for AVX2?
                     unsafe {
                         _mm256_storeu_si256(
                             out.as_mut_ptr().cast(),
@@ -517,6 +533,7 @@ fn mask_byte_to_bit(mask: u128) -> u16 {
     unsafe { _mm_movemask_epi8(u128_to_avx(mask)) as u16 }
 }
 
+const U4_SEQ: u64 = 0xFEDC_BA98_7654_3210;
 const U8_16: u128 = 0x1010_1010_1010_1010_1010_1010_1010_1010u128;
 const U8_SEQ: u128 = 0x0F0E_0D0C_0B0A_0908_0706_0504_0302_0100u128;
 
