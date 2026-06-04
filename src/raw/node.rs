@@ -86,7 +86,11 @@ where
     fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> Self::KeyIter;
 
     /// Returns a sorted iterator over this node's keys and edges.
-    fn entries<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> EntryIter<M> {
+    fn entries<'g, L: iter::Lower, U: iter::Upper>(
+        &'g self,
+        lower: L,
+        upper: U,
+    ) -> EntryIter<'g, M> {
         unsafe { EntryIter::new(self.keys(lower, upper).into(), self.edges()) }
     }
 

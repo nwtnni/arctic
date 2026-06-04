@@ -18,10 +18,10 @@ impl<K: Key> Map<K> {
     }
 
     #[inline]
-    pub(crate) unsafe fn cursor<'k, P: cursor::Path<K::Read<'k>>>(
-        &self,
+    pub(crate) unsafe fn cursor<'g, 'k, P: cursor::Path<K::Read<'k>>>(
+        &'g self,
         key: impl Into<K::Read<'k>>,
-    ) -> Cursor<K::Read<'k>, P> {
+    ) -> Cursor<'g, K::Read<'k>, P> {
         unsafe { Cursor::<_, P>::new(self.root(), key.into()) }
     }
 

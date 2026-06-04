@@ -169,7 +169,7 @@ where
     ///     Some(value) => assert_eq!(*value, 3),
     /// }
     /// ```
-    pub fn get(&self, key: &K::Borrowed) -> Option<Shared<K, V, S>> {
+    pub fn get<'g>(&'g self, key: &K::Borrowed) -> Option<Shared<'g, K, V, S>> {
         let reader = K::Read::from(key);
         let guard = self.smr.guard(reader);
         let value = unsafe {
@@ -211,7 +211,7 @@ where
     ///     },
     /// }
     /// ```
-    pub fn update(&self, key: &K::Borrowed, value: V) -> Result<Updated<K, V, S>, V> {
+    pub fn update<'g>(&'g self, key: &K::Borrowed, value: V) -> Result<Updated<'g, K, V, S>, V> {
         match self.update_with(key, Some(value), |_, initial| {
             ControlFlow::<(), _>::Continue(initial.take().expect("Value is always initialized"))
         }) {
@@ -221,12 +221,12 @@ where
         }
     }
 
-    pub fn update_with<F>(
-        &self,
+    pub fn update_with<'g, F>(
+        &'g self,
         key: &K::Borrowed,
         initial: Option<V>,
         mut update: F,
-    ) -> Update<K, V, S>
+    ) -> Update<'g, K, V, S>
     where
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
@@ -243,12 +243,12 @@ where
     }
 
     #[inline]
-    fn update_with_optimistic<F>(
-        &self,
+    fn update_with_optimistic<'g, F>(
+        &'g self,
         key: &K::Borrowed,
         initial: Option<V>,
         update: F,
-    ) -> Result<Update<K, V, S>, Option<V>>
+    ) -> Result<Update<'g, K, V, S>, Option<V>>
     where
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
@@ -256,12 +256,12 @@ where
     }
 
     #[cold]
-    fn update_with_pessimistic<F>(
-        &self,
+    fn update_with_pessimistic<'g, F>(
+        &'g self,
         key: &K::Borrowed,
         initial: Option<V>,
         update: F,
-    ) -> Update<K, V, S>
+    ) -> Update<'g, K, V, S>
     where
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
@@ -273,12 +273,12 @@ where
     }
 
     #[inline]
-    fn update_with_impl<'k, P, F>(
-        &self,
+    fn update_with_impl<'g, 'k, P, F>(
+        &'g self,
         key: &'k K::Borrowed,
         mut initial: Option<V>,
         mut update: F,
-    ) -> Result<Update<K, V, S>, Option<V>>
+    ) -> Result<Update<'g, K, V, S>, Option<V>>
     where
         P: Path<K::Read<'k>>,
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
@@ -377,7 +377,7 @@ where
         remove
     }
 
-    pub fn remove(&self, key: &K::Borrowed) -> Option<Owned<K, V, S>> {
+    pub fn remove<'g>(&'g self, key: &K::Borrowed) -> Option<Owned<'g, K, V, S>> {
         match self.remove_with(key, |_| ControlFlow::Continue(())) {
             Remove::Absent => None,
             Remove::Success { old } => Some(old),
@@ -385,7 +385,7 @@ where
         }
     }
 
-    pub fn remove_with<F>(&self, key: &K::Borrowed, mut with: F) -> Remove<K, V, S>
+    pub fn remove_with<'g, F>(&'g self, key: &K::Borrowed, mut with: F) -> Remove<'g, K, V, S>
     where
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
@@ -394,11 +394,11 @@ where
     }
 
     #[inline]
-    fn remove_with_impl<'k, const RECURSIVE: bool, P, F>(
-        &self,
+    fn remove_with_impl<'g, 'k, const RECURSIVE: bool, P, F>(
+        &'g self,
         key: &'k K::Borrowed,
         remove: &mut F,
-    ) -> Result<Remove<K, V, S>, P::PopError>
+    ) -> Result<Remove<'g, K, V, S>, P::PopError>
     where
         P: Path<K::Read<'k>>,
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
@@ -565,11 +565,11 @@ where
     ///     Ok(_) => unreachable!(),
     /// }
     /// ```
-    pub fn insert<'k>(
-        &self,
+    pub fn insert<'g, 'k>(
+        &'g self,
         key: K::Insert<'k>,
         value: V,
-    ) -> Result<Shared<K, V, S>, (Shared<K, V, S>, V)> {
+    ) -> Result<Shared<'g, K, V, S>, (Shared<'g, K, V, S>, V)> {
         let mut value = Some(value);
         self.insert_with(key, || value.take().expect("Call thunk once"))
             .map_err(|(shared, initial)| {
@@ -582,11 +582,11 @@ where
             })
     }
 
-    pub fn insert_with<'k, F>(
-        &self,
+    pub fn insert_with<'g, 'k, F>(
+        &'g self,
         key: K::Insert<'k>,
         insert: F,
-    ) -> Result<Shared<K, V, S>, (Shared<K, V, S>, Option<V>)>
+    ) -> Result<Shared<'g, K, V, S>, (Shared<'g, K, V, S>, Option<V>)>
     where
         F: FnOnce() -> V,
     {
@@ -606,12 +606,12 @@ where
         }
     }
 
-    pub fn upsert_with<'k, F>(
-        &self,
+    pub fn upsert_with<'g, 'k, F>(
+        &'g self,
         key: K::Insert<'k>,
         initial: Option<V>,
         mut upsert: F,
-    ) -> Upsert<K, V, S>
+    ) -> Upsert<'g, K, V, S>
     where
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
@@ -628,12 +628,12 @@ where
     }
 
     #[inline]
-    fn upsert_with_optimistic<'k, F>(
-        &self,
+    fn upsert_with_optimistic<'g, 'k, F>(
+        &'g self,
         key: K::Insert<'k>,
         initial: Option<V>,
         upsert: F,
-    ) -> Result<Upsert<K, V, S>, Option<V>>
+    ) -> Result<Upsert<'g, K, V, S>, Option<V>>
     where
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
@@ -641,12 +641,12 @@ where
     }
 
     #[cold]
-    fn upsert_with_pessimistic<'k, F>(
-        &self,
+    fn upsert_with_pessimistic<'g, 'k, F>(
+        &'g self,
         key: K::Insert<'k>,
         initial: Option<V>,
         upsert: F,
-    ) -> Upsert<K, V, S>
+    ) -> Upsert<'g, K, V, S>
     where
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
@@ -658,12 +658,12 @@ where
     }
 
     #[inline]
-    fn upsert_with_impl<'k, P, F>(
-        &self,
+    fn upsert_with_impl<'g, 'k, P, F>(
+        &'g self,
         key: K::Insert<'k>,
         mut initial: Option<V>,
         mut upsert: F,
-    ) -> Result<Upsert<K, V, S>, Option<V>>
+    ) -> Result<Upsert<'g, K, V, S>, Option<V>>
     where
         P: Path<K::Read<'k>>,
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
@@ -768,16 +768,19 @@ where
         unsafe { Shard::new(guard, self.seq.raw.all()) }
     }
 
-    pub fn prefix<'k>(
-        &self,
+    pub fn prefix<'g, 'k>(
+        &'g self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<iter::Shard<'_, 'k, K, V, RangeFull, Guard<'_, K, V, S>>> {
+    ) -> Option<iter::Shard<'g, 'k, K, V, RangeFull, Guard<'g, K, V, S>>> {
         let prefix = prefix.into();
         let guard = self.smr.guard(prefix);
         Some(unsafe { Shard::new(guard, self.seq.raw.prefix(prefix)?) })
     }
 
-    pub fn range<'k, R>(&self, range: R) -> Option<iter::Shard<'_, 'k, K, V, R, Guard<'_, K, V, S>>>
+    pub fn range<'g, 'k, R>(
+        &'g self,
+        range: R,
+    ) -> Option<iter::Shard<'g, 'k, K, V, R, Guard<'g, K, V, S>>>
     where
         R: crate::raw::iter::Range<K::Read<'k>>,
     {

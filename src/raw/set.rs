@@ -80,7 +80,7 @@ impl Set {
         unsafe { set_256.as_mut() }
     }
 
-    fn as_ref(&self) -> Ref {
+    fn as_ref<'g>(&'g self) -> Ref<'g> {
         if unsafe { self.raw >> 56 } <= 56 {
             Ref::Set8(unsafe { &self.set_8 })
         } else {
@@ -95,7 +95,7 @@ impl Set {
         }
     }
 
-    fn as_mut(&mut self) -> RefMut {
+    fn as_mut<'g>(&'g mut self) -> RefMut<'g> {
         if unsafe { self.raw >> 56 } <= 56 {
             RefMut::Set8(unsafe { &mut self.set_8 })
         } else {
