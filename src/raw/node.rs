@@ -61,7 +61,7 @@ where
     /// The maximum number of entries this node can contain.
     const CAPACITY: usize;
 
-    type KeyIter: Into<KeyIter>;
+    type KeyIter: Iterator<Item = iter::KeyIndex> + Into<KeyIter>;
 
     /// Returns a new node populated with `keys` and `edges`.
     ///
@@ -74,25 +74,8 @@ where
     /// - Edges are unique
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self>;
 
-    /// Returns the number of non-null edges this node contains.
-    fn len(&self) -> u8 {
-        self.edges()
-            .iter()
-            .filter(|edge| !edge.load_packed(Ordering::Relaxed).is_null())
-            .count() as u8
-    }
-
     /// Returns a sorted iterator over this node's keys.
     fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> Self::KeyIter;
-
-    /// Returns a sorted iterator over this node's keys and edges.
-    fn entries<'g, L: iter::Lower, U: iter::Upper>(
-        &'g self,
-        lower: L,
-        upper: U,
-    ) -> EntryIter<'g, M> {
-        unsafe { EntryIter::new(self.keys(lower, upper).into(), self.edges()) }
-    }
 
     fn edges(&self) -> &[Atomic<Edge<M>>];
 
@@ -108,91 +91,65 @@ where
     /// Implementer must guarantee that `Some(index)` is within `self.edges()`
     fn get_or_insert_key(&self, key: u8) -> Option<u8>;
 
-    /// # Safety
-    ///
-    /// Implementer must guarantee that `Some(index)` is within `self.edges()`
-    fn insert_key(&mut self, key: u8) -> Option<u8>;
-
-    #[inline]
-    #[expect(unused)]
-    fn insert(&mut self, key: u8) -> Option<&mut Atomic<Edge<M>>> {
-        let index = self.insert_key(key)? as usize;
-        let edges = self.edges_mut();
-        Some(if_validate!(&mut edges[index], unsafe {
-            edges.get_unchecked_mut(index)
-        }))
-    }
-
     /// Freeze this node's header (i.e., its non-edge metadata).
     ///
     /// Returns the number of edges that must be frozen.
     fn freeze_header(&self) -> usize;
-
-    fn replace<const LEN: usize, const FREEZE: bool>(
-        &self,
-        meta: ribbit::Packed<M>,
-    ) -> (Smo, ribbit::Packed<Edge<M>>) {
-        const {
-            // HACK: can't use generic associated type as array length
-            assert!(Self::CAPACITY == LEN);
-        }
-
-        // Caller must not call replace if doomed to fail CAS
-        validate!(!meta.is_frozen());
-
-        // Can only call replace on nodes
-        validate!(!meta.is_value());
-
-        let mut keys = [0u8; LEN];
-        let mut edges = [Edge::NULL; LEN];
-
-        if FREEZE {
-            let len = self.freeze_header();
-            self.edges().iter().take(len).for_each(Edge::freeze)
-        }
-
-        let len = self
-            .entries(Unbound::<()>::default(), Unbound::<()>::default())
-            .map(|(key, edge)| (key, unsafe { edge.as_ref() }.load_packed(Ordering::Relaxed)))
-            .filter(|(_, edge)| !edge.is_null())
-            .map(|(key, edge)| match FREEZE {
-                true => {
-                    validate!(
-                        edge.meta().is_frozen(),
-                        "{} edge must be frozen before replace",
-                        core::any::type_name::<Self>(),
-                    );
-                    (key, edge.unfreeze())
-                }
-                false => {
-                    validate!(
-                        !edge.meta().is_frozen(),
-                        "{} edge must not be frozen",
-                        core::any::type_name::<Self>(),
-                    );
-                    (key, edge)
-                }
-            })
-            .zip(&mut keys)
-            .zip(&mut edges)
-            .map(|(((key_old, edge_old), key_new), edge_new)| {
-                *key_new = key_old;
-                *edge_new = edge_old;
-            })
-            .count();
-
-        replace::<M, Self>(meta, &keys[..len], &edges[..len])
-    }
 }
 
-fn replace<M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
+fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
+    node: &N,
     meta: ribbit::Packed<M>,
-    keys: &[u8],
-    edges: &[ribbit::Packed<Edge<M>>],
+    freeze: bool,
+    keys: &mut [u8; CAPACITY],
+    edges: &mut [ribbit::Packed<Edge<M>>; CAPACITY],
 ) -> (Smo, ribbit::Packed<Edge<M>>) {
-    validate_eq!(keys.len(), edges.len());
+    const {
+        // HACK: can't use associated constant as array length
+        assert!(CAPACITY == N::CAPACITY);
+    }
 
-    let len = keys.len();
+    // Caller must not call replace if doomed to fail CAS
+    validate!(!meta.is_frozen());
+
+    // Can only call replace on nodes
+    validate!(!meta.is_value());
+
+    if freeze {
+        let len = node.freeze_header();
+        node.edges().iter().take(len).for_each(Edge::freeze)
+    }
+
+    let len = node
+        .keys(Unbound::<()>::default(), Unbound::<()>::default())
+        .map(|iter::KeyIndex { key, index }| {
+            let index = index as usize;
+            let edge = if_validate!(&node.edges()[index], unsafe {
+                node.edges().get_unchecked(index)
+            })
+            .load_packed(Ordering::Relaxed);
+            (key, edge)
+        })
+        .filter(|(_, edge)| !edge.is_null())
+        .map(|(key, edge)| match freeze {
+            true => {
+                validate!(
+                    edge.meta().is_frozen(),
+                    "Edge must be frozen before replace",
+                );
+                (key, edge.unfreeze())
+            }
+            false => {
+                validate!(!edge.meta().is_frozen(), "Edge must not be frozen",);
+                (key, edge)
+            }
+        })
+        .zip(core::iter::zip(&mut *keys, &mut *edges))
+        .map(|((key_old, edge_old), (key_new, edge_new))| {
+            *key_new = key_old;
+            *edge_new = edge_old;
+        })
+        .count();
 
     if len == 0 {
         return (Smo::DeleteNode, Edge::NULL);
@@ -205,7 +162,7 @@ fn replace<M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
     }
 
     // Heuristic: assume a full node should be expanded
-    let node = unsafe { Ptr::new_unchecked(len == N::CAPACITY, keys, edges) };
+    let node = unsafe { Ptr::new_unchecked(len == N::CAPACITY, &keys[..len], &edges[..len]) };
     let edge = Edge::new_node(meta, node);
     (Smo::ReplaceNode, edge)
 }
@@ -365,9 +322,11 @@ where
         self.value
     }
 
-    #[inline]
     pub(crate) unsafe fn len(self) -> u8 {
-        impl_forward!(self, |node| unsafe { node.as_ref() }.len())
+        impl_forward!(self, |node| unsafe { node.as_ref() }.edges())
+            .iter()
+            .filter(|edge| !edge.load_packed(Ordering::Relaxed).is_null())
+            .count() as u8
     }
 
     #[inline]
@@ -400,59 +359,105 @@ where
         }))
     }
 
-    #[inline]
-    pub(crate) unsafe fn replace<const FREEZE: bool>(
+    pub(crate) unsafe fn replace(
         self,
         parent: ribbit::Packed<M>,
+        freeze: bool,
     ) -> (Smo, ribbit::Packed<Edge<M>>) {
         self.dispatch(
-            |node| unsafe { node.as_ref() }.replace::<3, FREEZE>(parent),
-            |node| unsafe { node.as_ref() }.replace::<15, FREEZE>(parent),
-            |node| unsafe { node.as_ref() }.replace::<47, FREEZE>(parent),
-            |node| unsafe { node.as_ref() }.replace::<256, FREEZE>(parent),
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    freeze,
+                    &mut [0u8; 3],
+                    &mut [Edge::NULL; 3],
+                )
+            },
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    freeze,
+                    &mut [0u8; 15],
+                    &mut [Edge::NULL; 15],
+                )
+            },
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    freeze,
+                    &mut [0u8; 47],
+                    &mut [Edge::NULL; 47],
+                )
+            },
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    freeze,
+                    &mut [0u8; 256],
+                    &mut [Edge::NULL; 256],
+                )
+            },
         )
     }
 
-    #[inline]
     pub(crate) unsafe fn entries<'g, L: Lower, U: Upper>(
         self,
         lower: L,
         upper: U,
     ) -> EntryIter<'g, M> {
-        impl_forward!(self, |node| unsafe { node.as_ref() }.entries(lower, upper))
+        let (keys, edges) = impl_forward!(self, |node| {
+            let node = unsafe { node.as_ref() };
+            (KeyIter::from(node.keys(lower, upper)), node.edges())
+        });
+
+        unsafe { EntryIter::new(keys, edges) }
     }
 
-    #[inline]
     pub(crate) unsafe fn entry_or_entries<'g, L: Lower, U: Upper>(
         self,
         lower: L,
         upper: U,
     ) -> Result<(u8, NonNull<ribbit::Atomic<Edge<M>>>), EntryIter<'g, M>> {
-        let entries = self.dispatch(
-            |node| {
-                let node = unsafe { node.as_ref() };
-                let mut keys = node.keys(lower, upper);
-                let edges = node.edges();
-                match keys.size_hint().1 {
-                    Some(1) => {
-                        let pair = keys.next().expect("Size hint is exact");
-                        Ok((pair.key, NonNull::from(&edges[pair.index as usize])))
+        let iter = self
+            .dispatch(
+                |node| {
+                    let node = unsafe { node.as_ref() };
+                    let mut keys = node.keys(lower, upper);
+                    let edges = node.edges();
+                    match keys.size_hint().1 {
+                        Some(1) => {
+                            let pair = keys.next().expect("Size hint is exact");
+                            Ok((pair.key, NonNull::from(&edges[pair.index as usize])))
+                        }
+                        _ => Err((keys.into(), edges)),
                     }
-                    _ => Err(unsafe { EntryIter::new(keys.into(), edges) }),
-                }
-            },
-            |node| Err(unsafe { node.as_ref() }.entries(lower, upper)),
-            |node| Err(unsafe { node.as_ref() }.entries(lower, upper)),
-            |node| Err(unsafe { node.as_ref() }.entries(lower, upper)),
-        );
+                },
+                |node| {
+                    let node = unsafe { node.as_ref() };
+                    Err((node.keys(lower, upper).into(), node.edges()))
+                },
+                |node| {
+                    let node = unsafe { node.as_ref() };
+                    Err((node.keys(lower, upper).into(), node.edges()))
+                },
+                |node| {
+                    let node = unsafe { node.as_ref() };
+                    Err((node.keys(lower, upper).into(), node.edges()))
+                },
+            )
+            .map_err(|(keys, edges)| unsafe { EntryIter::new(keys, edges) });
 
-        stat::increment(if entries.is_ok() {
+        stat::increment(if iter.is_ok() {
             stat::Counter::EntriesOne
         } else {
             stat::Counter::EntriesMany
         });
 
-        entries
+        iter
     }
 
     /// # Safety

@@ -11,6 +11,7 @@ use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::Edge;
 use crate::raw::node::Node;
+use crate::raw::node::iter::KeyIndex;
 
 /// [`Node`] representation that contains exactly 256 key-edge pairs.
 #[repr(C, align(4096))]
@@ -77,11 +78,6 @@ where
     }
 
     #[inline]
-    fn insert_key(&mut self, key: u8) -> Option<u8> {
-        Some(key)
-    }
-
-    #[inline]
     fn freeze_header(&self) -> usize {
         Self::CAPACITY
     }
@@ -114,7 +110,7 @@ impl KeyIter {
 }
 
 impl Iterator for KeyIter {
-    type Item = u8;
+    type Item = KeyIndex;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -124,7 +120,10 @@ impl Iterator for KeyIter {
 
         let next = self.head as u8;
         self.head += 1;
-        Some(next)
+        Some(KeyIndex {
+            key: next,
+            index: next,
+        })
     }
 
     #[inline]
@@ -151,7 +150,10 @@ impl DoubleEndedIterator for KeyIter {
         }
 
         self.tail -= 1;
-        Some(self.tail as u8)
+        Some(KeyIndex {
+            key: self.tail as u8,
+            index: self.tail as u8,
+        })
     }
 }
 

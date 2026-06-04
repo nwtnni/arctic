@@ -112,20 +112,6 @@ where
         }
     }
 
-    #[inline]
-    fn insert_key(&mut self, key: u8) -> Option<u8> {
-        let old = self.header.get_packed();
-
-        match old.get_or_insert(key) {
-            Ok(index) => Some(index),
-            Err(None) => None,
-            Err(Some(new)) => {
-                self.header.set_packed(new);
-                Some(old.len())
-            }
-        }
-    }
-
     fn freeze_header(&self) -> usize {
         let mut header = self.header.load_packed(Ordering::Relaxed);
 
@@ -172,7 +158,7 @@ where
 pub(super) trait Header: ribbit::Unpack + core::fmt::Debug {
     const TYPE: node::Type;
     const CAPACITY: usize;
-    type KeyIter: Into<node::KeyIter>;
+    type KeyIter: Iterator<Item = node::iter::KeyIndex> + Into<node::KeyIter>;
 
     unsafe fn new_unchecked(keys: &[u8]) -> Self;
 

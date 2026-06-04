@@ -92,11 +92,6 @@ where
     }
 
     #[inline]
-    fn insert_key(&mut self, key: u8) -> Option<u8> {
-        self.header.insert(key)
-    }
-
-    #[inline]
     fn freeze_header(&self) -> usize {
         self.header.freeze() as usize
     }
@@ -211,31 +206,31 @@ impl Header {
         }
     }
 
-    fn insert(&mut self, key: u8) -> Option<u8> {
-        let old_meta = self.meta.get_packed();
-        let len = old_meta.len().value();
-
-        validate!(!old_meta.frozen());
-        validate!(len <= 47);
-
-        if len == 47 {
-            return None;
-        }
-
-        let new_meta = old_meta.with_len(u6::new(len + 1)).with_last(key);
-        self.meta.set_packed(new_meta);
-
-        let (row, col) = Self::key_to_row_col(key);
-
-        let data = unsafe { self.data_unchecked_mut(row) };
-
-        let old_data = *data.get_mut();
-        let hole = !(0xFFu64 << col);
-        let new_data = old_data & hole | ((len as u64) << col);
-
-        *data.get_mut() = new_data;
-        Some(len)
-    }
+    // fn insert(&mut self, key: u8) -> Option<u8> {
+    //     let old_meta = self.meta.get_packed();
+    //     let len = old_meta.len().value();
+    //
+    //     validate!(!old_meta.frozen());
+    //     validate!(len <= 47);
+    //
+    //     if len == 47 {
+    //         return None;
+    //     }
+    //
+    //     let new_meta = old_meta.with_len(u6::new(len + 1)).with_last(key);
+    //     self.meta.set_packed(new_meta);
+    //
+    //     let (row, col) = Self::key_to_row_col(key);
+    //
+    //     let data = unsafe { self.data_unchecked_mut(row) };
+    //
+    //     let old_data = *data.get_mut();
+    //     let hole = !(0xFFu64 << col);
+    //     let new_data = old_data & hole | ((len as u64) << col);
+    //
+    //     *data.get_mut() = new_data;
+    //     Some(len)
+    // }
 
     fn keys<L: node::iter::Lower, U: node::iter::Upper>(
         &self,

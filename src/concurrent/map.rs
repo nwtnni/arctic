@@ -474,7 +474,7 @@ where
                         None => break 'outer,
                         Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
                         Some(edge::Child::Node(node)) if node == target => unsafe {
-                            node.replace::<true>(old.meta())
+                            node.replace(old.meta(), true)
                         },
                         // Must have been replaced by someone else
                         Some(edge::Child::Node(_)) => break 'outer,
@@ -727,7 +727,7 @@ where
                     node: old_node,
                     edge: old,
                 } if !old.meta().is_frozen() => {
-                    let (smo, new) = unsafe { old_node.replace::<true>(old.meta()) };
+                    let (smo, new) = unsafe { old_node.replace(old.meta(), true) };
                     match cursor.edge().compare_exchange_packed(
                         old,
                         new,

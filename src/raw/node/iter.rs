@@ -310,9 +310,7 @@ impl Iterator for KeyIter {
             unsafe { &mut self.node_3 }.next(),
             unsafe { self.as_node_15_unchecked().as_mut() }.next(),
             unsafe { self.as_node_47_unchecked().as_mut() }.next(),
-            unsafe { &mut self.node_256 }
-                .next()
-                .map(|key| KeyIndex { key, index: key }),
+            unsafe { &mut self.node_256 }.next(),
         )
     }
 
@@ -336,9 +334,7 @@ impl DoubleEndedIterator for KeyIter {
             unsafe { &mut self.node_3 }.next_back(),
             unsafe { self.as_node_15_unchecked().as_mut() }.next_back(),
             unsafe { self.as_node_47_unchecked().as_mut() }.next_back(),
-            unsafe { &mut self.node_256 }
-                .next_back()
-                .map(|key| KeyIndex { key, index: key }),
+            unsafe { &mut self.node_256 }.next_back(),
         )
     }
 }
