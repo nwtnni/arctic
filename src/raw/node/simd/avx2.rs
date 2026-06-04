@@ -14,7 +14,6 @@ use core::arch::x86_64::_mm_max_epu16;
 use core::arch::x86_64::_mm_min_epu8;
 use core::arch::x86_64::_mm_min_epu16;
 use core::arch::x86_64::_mm_movemask_epi8;
-use core::arch::x86_64::_mm_mullo_epi16;
 use core::arch::x86_64::_mm_or_si128;
 use core::arch::x86_64::_mm_set_epi64x;
 use core::arch::x86_64::_mm_set1_epi8;
@@ -22,7 +21,6 @@ use core::arch::x86_64::_mm_set1_epi16;
 use core::arch::x86_64::_mm_setr_epi8;
 use core::arch::x86_64::_mm_shuffle_epi8;
 use core::arch::x86_64::_mm_slli_epi16;
-use core::arch::x86_64::_mm_srli_epi16;
 use core::arch::x86_64::_mm_unpackhi_epi8;
 use core::arch::x86_64::_mm_unpacklo_epi8;
 use core::arch::x86_64::_mm256_blend_epi16;
@@ -165,16 +163,21 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     let len_u8 = unsafe { _mm_set1_epi8(len as i8) };
     let mut len = 0;
 
+    #[inline]
+    fn keys(i: u8) -> u128 {
+        avx_to_u128(unsafe { _mm_adds_epu8(u128_to_avx(U8_SEQ), _mm_set1_epi8((i * 16) as i8)) })
+    }
+
     if lower.get() > u8::MIN || upper.get() < u8::MAX {
         let i = lower.get() / 16;
         let j = upper.get() / 16;
 
-        let mut keys = add(U8_SEQ, mul(U8_16, i));
-
-        for indices in indices[i as usize..=j as usize]
+        for (k, indices) in indices[i as usize..=j as usize]
             .iter()
             .map(|indices| indices.load(Ordering::Relaxed))
+            .enumerate()
         {
+            let keys = keys(i + k as u8);
             let mask_len = avx_to_u128(unsafe { _mm_cmplt_epi8(u128_to_avx(indices), len_u8) });
             let mask_range = mask_range(keys, lower, upper);
             len += unsafe {
@@ -185,7 +188,6 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
                     keys,
                 )
             };
-            keys = add(keys, U8_16);
         }
     } else {
         for (i, indices) in indices
@@ -193,7 +195,7 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
             .map(|indices| indices.load(Ordering::Relaxed))
             .enumerate()
         {
-            let keys = add(U8_SEQ, mul(U8_16, i as u8));
+            let keys = keys(i as u8);
             let mask_len = avx_to_u128(unsafe { _mm_cmplt_epi8(u128_to_avx(indices), len_u8) });
             len += unsafe {
                 compress_store_47(&mut out.0.entries[len as usize..], mask_len, indices, keys)
@@ -550,30 +552,7 @@ fn mask_byte_to_bit(mask: u128) -> u16 {
 }
 
 const U4_SEQ: u64 = 0xFEDC_BA98_7654_3210;
-const U8_16: u128 = 0x1010_1010_1010_1010_1010_1010_1010_1010u128;
 const U8_SEQ: u128 = 0x0F0E_0D0C_0B0A_0908_0706_0504_0302_0100u128;
-
-// https://stackoverflow.com/a/29155682
-#[inline]
-fn mul(a: u128, b: u8) -> u128 {
-    let a = u128_to_avx(a);
-    let b = unsafe { _mm_set1_epi8(b as i8) };
-
-    let even = avx_to_u128(unsafe { _mm_and_si128(_mm_mullo_epi16(a, b), _mm_set1_epi16(0xFF)) });
-    let odd = avx_to_u128(unsafe {
-        _mm_slli_epi16::<8>(_mm_mullo_epi16(
-            _mm_srli_epi16::<8>(a),
-            _mm_srli_epi16::<8>(b),
-        ))
-    });
-
-    even | odd
-}
-
-#[inline]
-fn add(a: u128, b: u128) -> u128 {
-    avx_to_u128(unsafe { _mm_adds_epu8(u128_to_avx(a), u128_to_avx(b)) })
-}
 
 #[inline]
 const fn avx_to_u128(value: __m128i) -> u128 {
