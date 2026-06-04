@@ -1,26 +1,21 @@
 use core::arch::x86_64::__m128i;
 use core::arch::x86_64::__m256i;
 use core::arch::x86_64::_mm_adds_epu8;
-use core::arch::x86_64::_mm_and_si128;
 use core::arch::x86_64::_mm_blend_epi16;
 use core::arch::x86_64::_mm_cmpeq_epi8;
 use core::arch::x86_64::_mm_cmpeq_epi16;
 use core::arch::x86_64::_mm_cmplt_epi8;
-use core::arch::x86_64::_mm_cvtepu8_epi16;
-use core::arch::x86_64::_mm_cvtsi64_si128;
 use core::arch::x86_64::_mm_cvtsi128_si64x;
 use core::arch::x86_64::_mm_max_epu8;
 use core::arch::x86_64::_mm_max_epu16;
 use core::arch::x86_64::_mm_min_epu8;
 use core::arch::x86_64::_mm_min_epu16;
 use core::arch::x86_64::_mm_movemask_epi8;
-use core::arch::x86_64::_mm_or_si128;
 use core::arch::x86_64::_mm_set_epi64x;
 use core::arch::x86_64::_mm_set1_epi8;
 use core::arch::x86_64::_mm_set1_epi16;
 use core::arch::x86_64::_mm_setr_epi8;
 use core::arch::x86_64::_mm_shuffle_epi8;
-use core::arch::x86_64::_mm_slli_epi16;
 use core::arch::x86_64::_mm_unpackhi_epi8;
 use core::arch::x86_64::_mm_unpacklo_epi8;
 use core::arch::x86_64::_mm256_blend_epi16;
@@ -33,8 +28,6 @@ use core::arch::x86_64::_mm256_setr_epi8;
 use core::arch::x86_64::_mm256_setr_m128i;
 use core::arch::x86_64::_mm256_shuffle_epi8;
 use core::arch::x86_64::_mm256_store_si256;
-use core::arch::x86_64::_mm256_storeu_si256;
-use core::arch::x86_64::_pdep_u64;
 use core::arch::x86_64::_pext_u64;
 use core::sync::atomic::Ordering;
 
@@ -387,10 +380,11 @@ fn compress_15(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
     cfg_select! {
         all(target_feature = "avx512vbmi2", target_feature = "avx512vl") => unsafe {
             let out = core::arch::x86_64::_mm256_mask_compress_epi16(
-                _mm256_set1_epi8(0xFFu8 as i8),
+                core::arch::x86_64::_mm256_set1_epi16(0xFFFFu16 as i16),
                 mask_bit,
                 interleave(lo, hi),
             );
+            (out, len)
         }
         // https://stackoverflow.com/a/36951611
         // https://stackoverflow.com/a/61431303
@@ -398,7 +392,7 @@ fn compress_15(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
             validate!(len < 16);
 
             // Expand each bit to a nibble
-            let mask_nibble = unsafe { _pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
+            let mask_nibble = unsafe { core::arch::x86_64::_pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
 
             // Select and compress masked nibbles
             let shuffle = unsafe { _pext_u64(U4_SEQ, mask_nibble) };
@@ -407,11 +401,11 @@ fn compress_15(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
             let shuffle = shuffle | (u64::MAX << ((len as u64) * 4));
 
             // Expand shuffle to low u8 of each u16 lane
-            let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(shuffle as i64)) };
+            let shuffle = unsafe { core::arch::x86_64::_mm_cvtepu8_epi16(core::arch::x86_64::_mm_cvtsi64_si128(shuffle as i64)) };
 
             // Shift high nibble of low u8 to low nibble of high u8
             let shuffle = unsafe {
-                _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
+                core::arch::x86_64::_mm_and_si128(core::arch::x86_64::_mm_or_si128(shuffle, core::arch::x86_64::_mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
             };
 
             // Shuffle, ensuring index 0xF contains byte 0xFF for bitonic sort
@@ -420,10 +414,9 @@ fn compress_15(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
             let lo = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(lo | HIGH), shuffle)});
             let hi = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(hi | HIGH), shuffle)});
             let out = interleave(lo, hi);
+            (out, len)
         }
     }
-
-    (out, len)
 }
 
 /// # Safety
@@ -451,17 +444,17 @@ unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128
         // https://stackoverflow.com/a/61431303
         _ => {
             // Expand each bit to a nibble
-            let mask_nibble = unsafe { _pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
+            let mask_nibble = unsafe { core::arch::x86_64::_pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
 
             // Select and compress masked nibbles
             let shuffle = unsafe { _pext_u64(U4_SEQ, mask_nibble) };
 
             // Expand shuffle to low u8 of each u16 lane
-            let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(shuffle as i64)) };
+            let shuffle = unsafe { core::arch::x86_64::_mm_cvtepu8_epi16(core::arch::x86_64::_mm_cvtsi64_si128(shuffle as i64)) };
 
             // Shift high nibble of low u8 to low nibble of high u8
             let shuffle = unsafe {
-                _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
+                core::arch::x86_64::_mm_and_si128(core::arch::x86_64::_mm_or_si128(shuffle, core::arch::x86_64::_mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
             };
 
             let lo = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(lo), shuffle)});
@@ -482,7 +475,7 @@ unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128
                     // NOTE: this forces KeyIter63 to take up an extra 32 bytes to
                     // avoid out-of-bound stores. Is there a better alternative for AVX2?
                     unsafe {
-                        _mm256_storeu_si256(
+                        core::arch::x86_64::_mm256_storeu_si256(
                             out.as_mut_ptr().cast(),
                             data,
                         );
