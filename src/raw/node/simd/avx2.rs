@@ -9,7 +9,6 @@ use core::arch::x86_64::_mm_cmplt_epi8;
 use core::arch::x86_64::_mm_cvtepu8_epi16;
 use core::arch::x86_64::_mm_cvtsi64_si128;
 use core::arch::x86_64::_mm_cvtsi128_si64x;
-use core::arch::x86_64::_mm_extract_epi64;
 use core::arch::x86_64::_mm_max_epu8;
 use core::arch::x86_64::_mm_max_epu16;
 use core::arch::x86_64::_mm_min_epu8;
@@ -574,14 +573,6 @@ fn mul(a: u128, b: u8) -> u128 {
 #[inline]
 fn add(a: u128, b: u128) -> u128 {
     avx_to_u128(unsafe { _mm_adds_epu8(u128_to_avx(a), u128_to_avx(b)) })
-}
-
-#[inline]
-fn split(value: u128) -> (u64, u64) {
-    let value = u128_to_avx(value);
-    let lo = unsafe { _mm_cvtsi128_si64x(value) } as u64;
-    let hi = unsafe { _mm_extract_epi64::<1>(value) } as u64;
-    (lo, hi)
 }
 
 #[inline]

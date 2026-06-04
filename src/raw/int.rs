@@ -15,7 +15,6 @@ pub(crate) trait Int:
     + core::ops::Not<Output = Self>
     + core::ops::BitAnd<Output = Self>
 {
-    const MSB: Self;
     const MAX: Self;
     const BITS: u8;
 
@@ -42,7 +41,6 @@ macro_rules! impl_int {
     ($($ty:ty: $bits:expr, $into_u64:expr, $from_u64:expr, $into_u128:expr),* $(,)?) => {
         $(
             impl Int for $ty {
-                const MSB: Self = (1 as $ty).rotate_right(1);
                 const MAX: Self = <$ty>::MAX;
                 const BITS: u8 = <$ty>::BITS as u8;
 
