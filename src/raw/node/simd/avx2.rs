@@ -136,65 +136,21 @@ pub(super) fn keys_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
 ) {
     let mask_len = mask_len(len.value());
 
-    let (bits, ks, is) = if lower.get() == 0 && upper.get() == 255 {
-        let fill = !mask_len;
-        (
-            (len.value() as u32) << 3,
-            u128_to_avx(keys | fill),
-            u128_to_avx(U8_SEQ | fill),
-        )
-    } else {
+    let (iter, len) = if lower.get() > u8::MIN || upper.get() < u8::MAX {
         let mask_range = mask_range(keys, lower, upper);
-
-        let (ks_lo, ks_hi) = split(keys);
-        let (is_lo, is_hi) = split(U8_SEQ);
-        let (mask_lo, mask_hi) = split(mask_len & mask_range);
-        let shift_lo = mask_lo.count_ones();
-        let shift_hi = mask_hi.count_ones();
-
-        let ks_lo = unsafe { _pext_u64(ks_lo, mask_lo) };
-        let ks_hi = unsafe { _pext_u64(ks_hi, mask_hi) };
-
-        let is_lo = unsafe { _pext_u64(is_lo, mask_lo) };
-        let is_hi = unsafe { _pext_u64(is_hi, mask_hi) };
-
-        validate!(shift_lo <= 64);
-        validate!(shift_hi < 64);
-
-        let ks_hi_hi = ks_hi.unbounded_shr(64 - shift_lo);
-        let is_hi_hi = is_hi.unbounded_shr(64 - shift_lo);
-        let fill_hi = u64::MAX << shift_hi.saturating_sub(64 - shift_lo);
-
-        let ks_hi_lo = ks_hi.unbounded_shl(shift_lo);
-        let is_hi_lo = is_hi.unbounded_shl(shift_lo);
-        let fill_lo = u64::MAX.unbounded_shl(shift_hi + shift_lo);
-
-        let ks = unsafe {
-            _mm_set_epi64x(
-                (fill_hi | ks_hi_hi) as i64,
-                (fill_lo | ks_hi_lo | ks_lo) as i64,
-            )
-        };
-        let is = unsafe {
-            _mm_set_epi64x(
-                (fill_hi | is_hi_hi) as i64,
-                (fill_lo | is_hi_lo | is_lo) as i64,
-            )
-        };
-
-        (shift_lo + shift_hi, ks, is)
+        compress_15(mask_len & mask_range, U8_SEQ, keys)
+    } else {
+        let fill = !mask_len;
+        (interleave(U8_SEQ | fill, keys | fill), len.value())
     };
+
+    let sorted = bitonic_sort_16(iter, len);
 
     unsafe {
-        let sorted = bitonic_sort_16(
-            _mm256_set_m128i(_mm_unpackhi_epi8(is, ks), _mm_unpacklo_epi8(is, ks)),
-            bits,
-        );
-
         _mm256_store_si256(out as *mut _ as _, sorted);
-        out.0.head = 0;
-        out.0.tail = (bits >> 3) as u8;
-    };
+    }
+    out.0.head = 0;
+    out.0.tail = len;
 }
 
 #[inline]
@@ -215,7 +171,9 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
         let indices = indices[k as usize].load(Ordering::Relaxed);
         let valid = mask_lt(indices, len as i8) & mask_range(keys, lower, upper);
 
-        index += compress_store_zero(&mut out.0.entries[index as usize..], valid, indices, keys);
+        index += unsafe {
+            compress_store_47(&mut out.0.entries[index as usize..], valid, indices, keys)
+        };
         keys = add(keys, U8_16);
     }
 
@@ -288,7 +246,7 @@ fn bitonic_sort_4(input: u64) -> u64 {
 /// https://github.com/Geolm/simd_bitonic
 /// https://hal.inria.fr/hal-01512970v1/document
 #[inline]
-fn bitonic_sort_16(mut input: __m256i, bits: u32) -> __m256i {
+fn bitonic_sort_16(mut input: __m256i, len: u8) -> __m256i {
     const RECOMBINE_1: u64 = 0x6745_2301;
     const SORT_1: u64 = RECOMBINE_1;
     const BLEND_1: i32 = 0b1010_1010;
@@ -385,7 +343,7 @@ fn bitonic_sort_16(mut input: __m256i, bits: u32) -> __m256i {
     input = bitonic_step::<SORT_2, BLEND_2>(input);
     input = bitonic_step::<SORT_1, BLEND_1>(input);
 
-    if bits <= 64 {
+    if len <= 8 {
         input
     } else {
         input = bitonic_step::<RECOMBINE_8, BLEND_8>(input);
@@ -396,7 +354,51 @@ fn bitonic_sort_16(mut input: __m256i, bits: u32) -> __m256i {
 }
 
 #[inline]
-fn compress_store_zero(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128) -> u8 {
+fn compress_15(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
+    let mask_bit = mask_byte_to_bit(mask);
+    let len = mask_bit.count_ones() as u8;
+
+    cfg_select! {
+        all(target_feature = "avx512vbmi2", target_feature = "avx512vl") => unsafe {
+            let out = core::arch::x86_64::_mm256_mask_compress_epi16(
+                _mm256_set1_epi8(0xFFu8 as i8),
+                mask_bit,
+                interleave(lo, hi),
+            );
+        }
+        _ => {
+            const HIGH: u128 = 0xFFu128.rotate_right(8);
+
+            // https://stackoverflow.com/a/36951611
+            // https://stackoverflow.com/a/61431303
+            let mask_nibble = unsafe { _pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
+
+            const SHUFFLE: u64 = 0xFEDC_BA98_7654_3210;
+
+            let shuffle = unsafe { _pext_u64(SHUFFLE, mask_nibble) };
+            // Ensure non-selected bytes are 0xFF
+            let shuffle = shuffle | (u64::MAX << ((len as u64) * 4));
+            let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(shuffle as i64)) };
+            let shuffle = unsafe {
+                _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
+            };
+
+            let lo = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(lo | HIGH), shuffle)});
+            let hi = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(hi | HIGH), shuffle)});
+            let out = interleave(lo, hi);
+        }
+    }
+
+    (out, len)
+}
+
+/// # Safety
+///
+/// Caller must guarantee `out` has length >= 16.
+#[inline]
+unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128) -> u8 {
+    validate!(out.len() >= 16);
+
     let mask_bit = mask_byte_to_bit(mask);
     let len = mask_bit.count_ones() as u8;
 
@@ -419,7 +421,7 @@ fn compress_store_zero(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128) -> 
             const SHUFFLE: u64 = 0xFEDC_BA98_7654_3210;
             let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(_pext_u64(SHUFFLE, mask_nibble) as i64)) };
             let shuffle = unsafe {
-                _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi16(0x0F0F))
+                _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi8(0x0F))
             };
 
             let lo = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(lo), shuffle)});
