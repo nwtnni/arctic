@@ -104,24 +104,6 @@ impl Key for NonPrefixVec {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k, const N: usize>(pub(crate) &'k [u8]);
 
-impl<'k, const N: usize> Reader<'k, N> {
-    #[inline]
-    fn next_u64(&self) -> u64 {
-        if self.0.len() >= 8 {
-            return unsafe { self.0.as_ptr().cast::<u64>().read_unaligned() };
-        }
-
-        // FIXME: try to avoid memcpy?
-        // https://github.com/llvm/llvm-project/issues/87440
-        // https://github.com/rust-lang/rust/issues/92993
-        // https://github.com/rust-lang/rust/pull/37573
-        let mut buffer = [0u8; 8];
-        buffer[..self.0.len()].copy_from_slice(self.0);
-
-        u64::from_le_bytes(buffer)
-    }
-}
-
 impl<'k> From<&'k NonPrefixSlice> for Reader<'k, { usize::MAX }> {
     #[inline]
     fn from(key: &'k NonPrefixSlice) -> Self {
@@ -160,7 +142,7 @@ impl<const N: usize> key::Read for Reader<'_, N> {
         len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
     ) -> ribbit::Packed<Self::Edge> {
         let len = u6::new((self.len().bits()).min(len.bits()) as u8);
-        edge::Le::new(self.next_u64(), len)
+        edge::Le::new(key::read_u64(self.0), len)
     }
 
     #[inline]
@@ -175,13 +157,13 @@ impl<const N: usize> key::Read for Reader<'_, N> {
     ) -> Option<<ribbit::Packed<Self::Edge> as edge::Meta>::Len> {
         // Avoid bit <-> byte conversion
         let len_edge = edge.len();
-        let len_match = (edge.raw() ^ self.next_u64()).trailing_zeros() as u8;
+        let len_match = (edge.raw() ^ key::read_u64(self.0)).trailing_zeros() as u8;
         (len_match >= len_edge.value()).then_some(len_edge)
     }
 
     #[inline]
     fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        Len(((edge.raw() ^ self.next_u64()).trailing_zeros() as usize) >> 3)
+        Len(((edge.raw() ^ key::read_u64(self.0)).trailing_zeros() as usize) >> 3)
     }
 
     #[inline]

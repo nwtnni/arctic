@@ -150,3 +150,20 @@ fn common_prefix(left: &[u8], right: &[u8]) -> usize {
         .position(|(l, r)| l != r)
         .unwrap_or_else(|| left.len().min(right.len()))
 }
+
+// TODO: optimize?
+#[inline]
+fn read_u64(slice: &[u8]) -> u64 {
+    if slice.len() >= 8 {
+        return unsafe { slice.as_ptr().cast::<u64>().read_unaligned() };
+    }
+
+    // FIXME: try to avoid memcpy?
+    // https://github.com/llvm/llvm-project/issues/87440
+    // https://github.com/rust-lang/rust/issues/92993
+    // https://github.com/rust-lang/rust/pull/37573
+    let mut buffer = [0u8; 8];
+    buffer[..slice.len()].copy_from_slice(slice);
+
+    u64::from_le_bytes(buffer)
+}
