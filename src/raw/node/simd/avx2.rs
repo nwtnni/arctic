@@ -383,7 +383,7 @@ fn compress_15(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
     let len = mask_bit.count_ones() as u8;
 
     cfg_select! {
-        target_feature = "avx512vbmi2" => unsafe {
+        all(target_feature = "avx512vbmi2", target_feature = "avx512vl") => unsafe {
             let out = core::arch::x86_64::_mm256_mask_compress_epi16(
                 _mm256_set1_epi8(0xFFu8 as i8),
                 mask_bit,
@@ -436,7 +436,7 @@ unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128
 
     cfg_select! {
         // TODO: https://lemire.me/blog/2025/02/14/avx-512-gotcha-avoid-compressing-words-to-memory-with-amd-zen-4-processors/
-        target_feature = "avx512vbmi2" => {
+        all(target_feature = "avx512vbmi2", target_feature = "avx512vl") => {
             unsafe {
                 core::arch::x86_64::_mm256_mask_compressstoreu_epi16(
                     out.as_mut_ptr().cast::<i16>(),
@@ -467,7 +467,7 @@ unsafe fn compress_store_47(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128
             let data = interleave(lo, hi);
 
             cfg_select! {
-                all(target_feature = "avx512bw") => {
+                all(target_feature = "avx512bw", target_feature = "avx512vl") => {
                     unsafe {
                         core::arch::x86_64::_mm256_mask_storeu_epi16(
                             out.as_mut_ptr().cast::<i16>(),
