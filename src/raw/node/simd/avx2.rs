@@ -6,6 +6,8 @@ use core::arch::x86_64::_mm_blend_epi16;
 use core::arch::x86_64::_mm_cmpeq_epi8;
 use core::arch::x86_64::_mm_cmpeq_epi16;
 use core::arch::x86_64::_mm_cmplt_epi8;
+use core::arch::x86_64::_mm_cvtepu8_epi16;
+use core::arch::x86_64::_mm_cvtsi64_si128;
 use core::arch::x86_64::_mm_cvtsi128_si64x;
 use core::arch::x86_64::_mm_extract_epi64;
 use core::arch::x86_64::_mm_max_epu8;
@@ -14,6 +16,7 @@ use core::arch::x86_64::_mm_min_epu8;
 use core::arch::x86_64::_mm_min_epu16;
 use core::arch::x86_64::_mm_movemask_epi8;
 use core::arch::x86_64::_mm_mullo_epi16;
+use core::arch::x86_64::_mm_or_si128;
 use core::arch::x86_64::_mm_set_epi64x;
 use core::arch::x86_64::_mm_set1_epi8;
 use core::arch::x86_64::_mm_set1_epi16;
@@ -21,7 +24,6 @@ use core::arch::x86_64::_mm_setr_epi8;
 use core::arch::x86_64::_mm_shuffle_epi8;
 use core::arch::x86_64::_mm_slli_epi16;
 use core::arch::x86_64::_mm_srli_epi16;
-use core::arch::x86_64::_mm_storeu_si128;
 use core::arch::x86_64::_mm_unpackhi_epi8;
 use core::arch::x86_64::_mm_unpacklo_epi8;
 use core::arch::x86_64::_mm256_blend_epi16;
@@ -31,8 +33,11 @@ use core::arch::x86_64::_mm256_min_epu16;
 use core::arch::x86_64::_mm256_permute2x128_si256;
 use core::arch::x86_64::_mm256_set_m128i;
 use core::arch::x86_64::_mm256_setr_epi8;
+use core::arch::x86_64::_mm256_setr_m128i;
 use core::arch::x86_64::_mm256_shuffle_epi8;
 use core::arch::x86_64::_mm256_store_si256;
+use core::arch::x86_64::_mm256_storeu_si256;
+use core::arch::x86_64::_pdep_u64;
 use core::arch::x86_64::_pext_u64;
 use core::sync::atomic::Ordering;
 
@@ -40,6 +45,7 @@ use ribbit::Atomic;
 use ribbit::u2;
 use ribbit::u4;
 
+use crate::raw::node::iter::KeyIndex;
 use crate::raw::node::linear::KeyIter3;
 use crate::raw::node::linear::KeyIter15;
 use crate::raw::node::linear::KeyIter63;
@@ -209,32 +215,7 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
         let indices = indices[k as usize].load(Ordering::Relaxed);
         let valid = mask_lt(indices, len as i8) & mask_range(keys, lower, upper);
 
-        let (ks_lo, ks_hi) = split(keys);
-        let (is_lo, is_hi) = split(indices);
-        let (mask_lo, mask_hi) = split(valid);
-        let shift = mask_lo.count_ones();
-
-        let ks_lo = unsafe { _pext_u64(ks_lo, mask_lo) };
-        let ks_hi = unsafe { _pext_u64(ks_hi, mask_hi) };
-        let is_lo = unsafe { _pext_u64(is_lo, mask_lo) };
-        let is_hi = unsafe { _pext_u64(is_hi, mask_hi) };
-
-        let ks = unsafe { _mm_set_epi64x(ks_hi as i64, ks_lo as i64) };
-        let is = unsafe { _mm_set_epi64x(is_hi as i64, is_lo as i64) };
-
-        let lo = unsafe { _mm_unpacklo_epi8(is, ks) };
-        let hi = unsafe { _mm_unpackhi_epi8(is, ks) };
-
-        // FIXME: assumes little-endian
-        unsafe {
-            let ptr = (out as *mut KeyIter63)
-                .cast::<__m128i>()
-                .byte_add((index as usize) << 1);
-            _mm_storeu_si128(ptr, lo);
-            _mm_storeu_si128(ptr.byte_add((shift >> 2) as usize), hi);
-        }
-
-        index += mask_byte_to_bit(valid).count_ones() as u8;
+        index += compress_store_zero(&mut out.0.entries[index as usize..], valid, indices, keys);
         keys = add(keys, U8_16);
     }
 
@@ -412,6 +393,69 @@ fn bitonic_sort_16(mut input: __m256i, bits: u32) -> __m256i {
         input = bitonic_step::<SORT_2, BLEND_2>(input);
         bitonic_step::<SORT_1, BLEND_1>(input)
     }
+}
+
+#[inline]
+fn compress_store_zero(out: &mut [KeyIndex], mask: u128, lo: u128, hi: u128) -> u8 {
+    let mask_bit = mask_byte_to_bit(mask);
+    let len = mask_bit.count_ones() as u8;
+
+    cfg_select! {
+        // TODO: https://lemire.me/blog/2025/02/14/avx-512-gotcha-avoid-compressing-words-to-memory-with-amd-zen-4-processors/
+        target_feature = "avx512vbmi2" => {
+            unsafe {
+                core::arch::x86_64::_mm256_mask_compressstoreu_epi16(
+                    out.as_mut_ptr().cast::<i16>(),
+                    mask_bit,
+                    interleave(lo, hi),
+                );
+            }
+        }
+        _ => {
+            // https://stackoverflow.com/a/36951611
+            // https://stackoverflow.com/a/61431303
+            let mask_nibble = unsafe { _pdep_u64(mask_bit as u64, 0x1111_1111_1111_1111) } * 0xF;
+
+            const SHUFFLE: u64 = 0xFEDC_BA98_7654_3210;
+            let shuffle = unsafe { _mm_cvtepu8_epi16(_mm_cvtsi64_si128(_pext_u64(SHUFFLE, mask_nibble) as i64)) };
+            let shuffle = unsafe {
+                _mm_and_si128(_mm_or_si128(shuffle, _mm_slli_epi16::<4>(shuffle)), _mm_set1_epi16(0x0F0F))
+            };
+
+            let lo = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(lo), shuffle)});
+            let hi = avx_to_u128(unsafe { _mm_shuffle_epi8(u128_to_avx(hi), shuffle)});
+            let data = interleave(lo, hi);
+
+            cfg_select! {
+                all(target_feature = "avx512bw", target_feature = "avx512vl") => {
+                    unsafe {
+                        core::arch::x86_64::_mm256_mask_storeu_epi16(
+                            out.as_mut_ptr().cast::<i16>(),
+                            mask_bit,
+                            data,
+                        );
+                    }
+                }
+                _ => {
+                    unsafe {
+                        _mm256_storeu_si256(
+                            out.as_mut_ptr().cast(),
+                            data,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    len
+}
+
+#[inline]
+fn interleave(lo: u128, hi: u128) -> __m256i {
+    let lo = u128_to_avx(lo);
+    let hi = u128_to_avx(hi);
+    unsafe { _mm256_setr_m128i(_mm_unpacklo_epi8(lo, hi), _mm_unpackhi_epi8(lo, hi)) }
 }
 
 /// Output has 8 bits set for each byte in `array` that is less than `byte` (signed).

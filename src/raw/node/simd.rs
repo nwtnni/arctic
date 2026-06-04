@@ -169,7 +169,7 @@ pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
         // when all 256 bytes are loaded
         .zip((i as u16 * 16)..)
         .map(|(index, key)| (index, key as u8))
-        .filter(|(index, key)| (*index < len && *key >= lower.get() && *key <= upper.get()))
+        .filter(|(index, key)| *index < len && *key >= lower.get() && *key <= upper.get())
         .zip(&mut out.0.entries)
         .map(|((index, key), out)| {
             out.index = index;
