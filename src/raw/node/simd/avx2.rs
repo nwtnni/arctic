@@ -161,24 +161,49 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     len: u8,
     out: &mut KeyIter63,
 ) {
-    let i = lower.get() / 16;
-    let j = upper.get() / 16;
+    validate!(len <= 0x7F, "AVX2 only supports signed byte comparison");
 
-    let mut index = 0;
-    let mut keys = add(U8_SEQ, mul(U8_16, i));
+    let len_u8 = unsafe { _mm_set1_epi8(len as i8) };
+    let mut len = 0;
 
-    for k in i..=j {
-        let indices = indices[k as usize].load(Ordering::Relaxed);
-        let valid = mask_lt(indices, len as i8) & mask_range(keys, lower, upper);
+    if lower.get() > u8::MIN || upper.get() < u8::MAX {
+        let i = lower.get() / 16;
+        let j = upper.get() / 16;
 
-        index += unsafe {
-            compress_store_47(&mut out.0.entries[index as usize..], valid, indices, keys)
-        };
-        keys = add(keys, U8_16);
+        let mut keys = add(U8_SEQ, mul(U8_16, i));
+
+        for indices in indices[i as usize..=j as usize]
+            .iter()
+            .map(|indices| indices.load(Ordering::Relaxed))
+        {
+            let mask_len = avx_to_u128(unsafe { _mm_cmplt_epi8(u128_to_avx(indices), len_u8) });
+            let mask_range = mask_range(keys, lower, upper);
+            len += unsafe {
+                compress_store_47(
+                    &mut out.0.entries[len as usize..],
+                    mask_len & mask_range,
+                    indices,
+                    keys,
+                )
+            };
+            keys = add(keys, U8_16);
+        }
+    } else {
+        for (i, indices) in indices
+            .iter()
+            .map(|indices| indices.load(Ordering::Relaxed))
+            .enumerate()
+        {
+            let keys = add(U8_SEQ, mul(U8_16, i as u8));
+            let mask_len = avx_to_u128(unsafe { _mm_cmplt_epi8(u128_to_avx(indices), len_u8) });
+            len += unsafe {
+                compress_store_47(&mut out.0.entries[len as usize..], mask_len, indices, keys)
+            }
+        }
     }
 
     out.0.head = 0;
-    out.0.tail = index;
+    out.0.tail = len;
 }
 
 /// https://en.wikipedia.org/wiki/Bitonic_sorter
@@ -474,14 +499,6 @@ fn interleave(lo: u128, hi: u128) -> __m256i {
     let lo = u128_to_avx(lo);
     let hi = u128_to_avx(hi);
     unsafe { _mm256_setr_m128i(_mm_unpacklo_epi8(lo, hi), _mm_unpackhi_epi8(lo, hi)) }
-}
-
-/// Output has 8 bits set for each byte in `array` that is less than `byte` (signed).
-#[inline]
-fn mask_lt(array: u128, byte: i8) -> u128 {
-    let array = u128_to_avx(array);
-    let byte = unsafe { _mm_set1_epi8(byte) };
-    avx_to_u128(unsafe { _mm_cmplt_epi8(array, byte) })
 }
 
 /// Output has 8 bits set for each byte in `array` that is within `min..=max` (unsigned).
