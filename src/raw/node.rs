@@ -103,28 +103,10 @@ where
     /// Implementer must guarantee that `Some(index)` is within `self.edges()`
     fn get_key(&self, key: u8) -> Option<u8>;
 
-    #[inline]
-    fn get(&self, key: u8) -> Option<&Atomic<Edge<M>>> {
-        let index = self.get_key(key)? as usize;
-        let edges = self.edges();
-        Some(if_validate!(&edges[index], unsafe {
-            edges.get_unchecked(index)
-        }))
-    }
-
     /// # Safety
     ///
     /// Implementer must guarantee that `Some(index)` is within `self.edges()`
     fn get_or_insert_key(&self, key: u8) -> Option<u8>;
-
-    #[inline]
-    fn get_or_insert(&self, key: u8) -> Option<&Atomic<Edge<M>>> {
-        let index = self.get_or_insert_key(key)? as usize;
-        let edges = self.edges();
-        Some(if_validate!(&edges[index], unsafe {
-            edges.get_unchecked(index)
-        }))
-    }
 
     /// # Safety
     ///
@@ -367,6 +349,13 @@ where
     }
 }
 
+/// Reduce dispatch boilerplate when every branch is identical.
+macro_rules! impl_forward {
+    ($ptr:expr, $closure:expr) => {
+        $ptr.dispatch($closure, $closure, $closure, $closure)
+    };
+}
+
 impl<M> PtrPacked<M>
 where
     M: ribbit::Pack<Packed: edge::Meta>,
@@ -378,32 +367,37 @@ where
 
     #[inline]
     pub(crate) unsafe fn len(self) -> u8 {
-        self.dispatch(
-            |node| unsafe { node.as_ref() }.len(),
-            |node| unsafe { node.as_ref() }.len(),
-            |node| unsafe { node.as_ref() }.len(),
-            |node| unsafe { node.as_ref() }.len(),
-        )
+        impl_forward!(self, |node| unsafe { node.as_ref() }.len())
     }
 
     #[inline]
     pub(crate) unsafe fn get<'g>(self, key: u8) -> Option<&'g Atomic<Edge<M>>> {
-        self.dispatch(
-            |node| unsafe { node.as_ref() }.get(key),
-            |node| unsafe { node.as_ref() }.get(key),
-            |node| unsafe { node.as_ref() }.get(key),
-            |node| unsafe { node.as_ref() }.get(key),
-        )
+        let (index, edges) = impl_forward!(self, |node| {
+            let node = unsafe { node.as_ref() };
+            let index = node.get_key(key);
+            let edges = node.edges();
+            (index, edges)
+        });
+
+        let index = index? as usize;
+        Some(if_validate!(&edges[index], unsafe {
+            edges.get_unchecked(index)
+        }))
     }
 
     #[inline]
     pub(crate) unsafe fn get_or_insert<'g>(self, key: u8) -> Option<&'g Atomic<Edge<M>>> {
-        self.dispatch(
-            |node| unsafe { node.as_ref() }.get_or_insert(key),
-            |node| unsafe { node.as_ref() }.get_or_insert(key),
-            |node| unsafe { node.as_ref() }.get_or_insert(key),
-            |node| unsafe { node.as_ref() }.get_or_insert(key),
-        )
+        let (index, edges) = impl_forward!(self, |node| {
+            let node = unsafe { node.as_ref() };
+            let index = node.get_or_insert_key(key);
+            let edges = node.edges();
+            (index, edges)
+        });
+
+        let index = index? as usize;
+        Some(if_validate!(&edges[index], unsafe {
+            edges.get_unchecked(index)
+        }))
     }
 
     #[inline]
@@ -425,12 +419,7 @@ where
         lower: L,
         upper: U,
     ) -> EntryIter<'g, M> {
-        self.dispatch(
-            |node| unsafe { node.as_ref() }.entries(lower, upper),
-            |node| unsafe { node.as_ref() }.entries(lower, upper),
-            |node| unsafe { node.as_ref() }.entries(lower, upper),
-            |node| unsafe { node.as_ref() }.entries(lower, upper),
-        )
+        impl_forward!(self, |node| unsafe { node.as_ref() }.entries(lower, upper))
     }
 
     #[inline]
@@ -471,12 +460,7 @@ where
     /// Caller must ensure there are no other references to this node.
     pub(crate) unsafe fn deallocate(self, counter: stat::Counter) {
         stat::increment(counter);
-        self.dispatch(
-            |node| drop(unsafe { Box::from_raw(node.as_ptr()) }),
-            |node| drop(unsafe { Box::from_raw(node.as_ptr()) }),
-            |node| drop(unsafe { Box::from_raw(node.as_ptr()) }),
-            |node| drop(unsafe { Box::from_raw(node.as_ptr()) }),
-        )
+        impl_forward!(self, |node| drop(unsafe { Box::from_raw(node.as_ptr()) }))
     }
 
     /// Deallocate recursive `Node3`s created by [`crate::raw::Edge::new_path`].
