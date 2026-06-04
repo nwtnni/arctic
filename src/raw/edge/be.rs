@@ -205,13 +205,5 @@ impl proptest::arbitrary::Arbitrary for Be {
 
 #[cfg(test)]
 mod tests {
-    use proptest::proptest;
-
-    #[cfg(feature = "proptest")]
-    proptest! {
-         #[test]
-         fn expand_compress_inverse(meta: crate::raw::edge::Be) {
-             crate::raw::edge::tests::expand_compress_inverse(meta)
-         }
-    }
+    crate::raw::edge::tests::impl_suite!(crate::raw::edge::Be);
 }
