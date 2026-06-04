@@ -492,10 +492,10 @@ where
                             continue 'outer;
                         }
                         Err(_) => {
-                            if smo.is_allocate() {
-                                if let Some(node) = new.as_node() {
-                                    unsafe { node.deallocate(stat::Counter::FreeConflict) };
-                                }
+                            if smo.is_allocate()
+                                && let Some(node) = new.as_node()
+                            {
+                                unsafe { node.deallocate(stat::Counter::FreeConflict) };
                             }
                         }
                     }

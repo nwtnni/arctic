@@ -150,14 +150,13 @@ where
             let len_edge = meta.len();
             let len_prefix = self.reader.match_prefix(meta);
 
-            if len_prefix >= len_edge.into() {
-                if let edge::Child::Node(node) = child {
-                    if let Some(byte) = self.reader.get_byte(len_edge) {
-                        let next = unsafe { node.get(byte) }?;
-                        self.push(len_edge, node, next);
-                        continue;
-                    }
-                }
+            if len_prefix >= len_edge.into()
+                && let edge::Child::Node(node) = child
+                && let Some(byte) = self.reader.get_byte(len_edge)
+            {
+                let next = unsafe { node.get(byte) }?;
+                self.push(len_edge, node, next);
+                continue;
             }
 
             if len_prefix < self.reader.len() {

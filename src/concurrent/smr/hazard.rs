@@ -240,16 +240,16 @@ impl<K: Key, V: Value> Global<K, V> {
 
             validate!(prefix.is_value() ^ prefix.is_node());
 
-            if cfg!(feature = "stat") {
-                if let Some(record) = match prefix.bytes() {
+            if cfg!(feature = "stat")
+                && let Some(record) = match prefix.bytes() {
                     0 => Some(stat::Record::ReclaimAge0),
                     1 => Some(stat::Record::ReclaimAge1),
                     2 => Some(stat::Record::ReclaimAge2),
                     3 => Some(stat::Record::ReclaimAge3),
                     _ => None,
-                } {
-                    stat::record(record, prefix.age() as u64 + 1);
                 }
+            {
+                stat::record(record, prefix.age() as u64 + 1);
             }
 
             deallocate::<K::Prefix, V>(*prefix, *raw, stat::Counter::FreeRetire);
