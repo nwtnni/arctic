@@ -201,7 +201,9 @@ where
 }
 
 /// Edge compression and child pointer metadata.
-pub trait Meta: ribbit::Unpack + core::fmt::Debug + Ord + IntoIterator<Item = u8> {
+pub(crate) trait Meta:
+    ribbit::Unpack + core::fmt::Debug + Ord + IntoIterator<Item = u8>
+{
     /// Null edge with no compressed edge bytes or child
     const NULL: Self;
 
