@@ -29,6 +29,7 @@ mod node_47;
 pub(super) mod simd;
 
 pub(crate) use iter::EntryIter;
+pub(crate) use iter::KeyIndex;
 pub(crate) use iter::KeyIter;
 pub(crate) use iter::Lower;
 pub(crate) use iter::Upper;
@@ -95,6 +96,9 @@ where
     ///
     /// Returns the number of edges that must be frozen.
     fn freeze_header(&self) -> usize;
+
+    fn min<L: Lower>(&self, lower: L) -> Option<KeyIndex>;
+    fn max<U: Upper>(&self, upper: U) -> Option<KeyIndex>;
 }
 
 fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
@@ -458,6 +462,16 @@ where
         });
 
         iter
+    }
+
+    #[expect(unused)]
+    pub(crate) fn min<L: Lower>(self, lower: L) -> Option<KeyIndex> {
+        impl_forward!(self, |node| unsafe { node.as_ref().min(lower) })
+    }
+
+    #[expect(unused)]
+    pub(crate) fn max<U: Upper>(self, upper: U) -> Option<KeyIndex> {
+        impl_forward!(self, |node| unsafe { node.as_ref().max(upper) })
     }
 
     /// # Safety

@@ -89,15 +89,19 @@ impl linear::Header for ribbit::Packed<Header> {
         Err(Some(unsafe { Self::new_unchecked(value) }))
     }
 
-    fn keys<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
-        self,
-        lower: L,
-        upper: U,
-    ) -> Self::KeyIter {
+    fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U) -> Self::KeyIter {
         let len = self.len();
         let mut iter = Box::new(linear::KeyIter15::default());
         node::simd::keys_15(self.value, len, lower, upper, &mut iter);
         iter
+    }
+
+    fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex> {
+        node::simd::min_15(self.value, self.len(), lower)
+    }
+
+    fn max<U: node::Upper>(self, upper: U) -> Option<node::KeyIndex> {
+        node::simd::max_15(self.value, self.len(), upper)
     }
 }
 

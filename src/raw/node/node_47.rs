@@ -95,6 +95,16 @@ where
     fn freeze_header(&self) -> usize {
         self.header.freeze() as usize
     }
+
+    #[inline]
+    fn min<L: node::Lower>(&self, lower: L) -> Option<KeyIndex> {
+        self.header.min(lower)
+    }
+
+    #[inline]
+    fn max<U: node::Upper>(&self, upper: U) -> Option<KeyIndex> {
+        self.header.max(upper)
+    }
 }
 
 impl<M> Debug for Node47<M>
@@ -241,6 +251,14 @@ impl Header {
         let mut iter = Box::new(linear::KeyIter63::default());
         node::simd::keys_47(&self.data, lower, upper, len, &mut iter);
         iter
+    }
+
+    fn min<L: node::Lower>(&self, _lower: L) -> Option<KeyIndex> {
+        todo!()
+    }
+
+    fn max<U: node::Upper>(&self, _upper: U) -> Option<KeyIndex> {
+        todo!()
     }
 
     fn meta_consistent(&self) -> ribbit::Packed<Meta> {

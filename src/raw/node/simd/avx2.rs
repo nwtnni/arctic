@@ -72,6 +72,42 @@ pub(super) fn get_15(array: u128, key: u8) -> u8 {
 }
 
 #[inline]
+pub(super) fn min_3<L: crate::raw::node::Lower>(
+    _keys: u64,
+    _len: u2,
+    _lower: L,
+) -> Option<KeyIndex> {
+    todo!()
+}
+
+#[inline]
+pub(super) fn max_3<U: crate::raw::node::Upper>(
+    _keys: u64,
+    _len: u2,
+    _upper: U,
+) -> Option<KeyIndex> {
+    todo!()
+}
+
+#[inline]
+pub(super) fn min_15<L: crate::raw::node::Lower>(
+    _keys: u128,
+    _len: u4,
+    _lower: L,
+) -> Option<KeyIndex> {
+    todo!()
+}
+
+#[inline]
+pub(super) fn max_15<U: crate::raw::node::Upper>(
+    _keys: u128,
+    _len: u4,
+    _upper: U,
+) -> Option<KeyIndex> {
+    todo!()
+}
+
+#[inline]
 pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     keys: u64,
     len: u2,

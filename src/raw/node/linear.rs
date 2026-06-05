@@ -64,11 +64,7 @@ where
     }
 
     #[inline]
-    fn keys<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
-        &self,
-        lower: L,
-        upper: U,
-    ) -> Self::KeyIter {
+    fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U) -> Self::KeyIter {
         self.header
             .load_packed(Ordering::Relaxed)
             .keys(lower, upper)
@@ -112,6 +108,7 @@ where
         }
     }
 
+    #[inline]
     fn freeze_header(&self) -> usize {
         let mut header = self.header.load_packed(Ordering::Relaxed);
 
@@ -128,6 +125,16 @@ where
         }
 
         header.len() as usize
+    }
+
+    #[inline]
+    fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {
+        self.header.load_packed(Ordering::Relaxed).min(lower)
+    }
+
+    #[inline]
+    fn max<U: node::Upper>(&self, upper: U) -> Option<node::KeyIndex> {
+        self.header.load_packed(Ordering::Relaxed).max(upper)
     }
 }
 
@@ -177,6 +184,9 @@ pub(super) trait Header: ribbit::Unpack + core::fmt::Debug {
         lower: L,
         upper: U,
     ) -> Self::KeyIter;
+
+    fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex>;
+    fn max<U: node::Upper>(self, upper: U) -> Option<node::KeyIndex>;
 }
 
 /// NOTE: We order `head` and `tail` fields at the end

@@ -4,6 +4,7 @@
 //! It is not linear because it has no header metadata at all.
 
 use core::fmt::Debug;
+use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
 
@@ -11,6 +12,7 @@ use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::Edge;
 use crate::raw::node::Node;
+use crate::raw::node::iter;
 use crate::raw::node::iter::KeyIndex;
 
 /// [`Node`] representation that contains exactly 256 key-edge pairs.
@@ -80,6 +82,43 @@ where
     #[inline]
     fn freeze_header(&self) -> usize {
         Self::CAPACITY
+    }
+
+    #[inline]
+    fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {
+        self.0
+            .iter()
+            .enumerate()
+            .skip(lower.get() as usize)
+            .find_map(|(index, edge)| {
+                if edge.load_packed(Ordering::Relaxed).is_null() {
+                    return None;
+                } else {
+                    Some(iter::KeyIndex {
+                        index: index as u8,
+                        key: index as u8,
+                    })
+                }
+            })
+    }
+
+    #[inline]
+    fn max<U: node::Upper>(&self, upper: U) -> Option<node::KeyIndex> {
+        self.0
+            .iter()
+            .enumerate()
+            .rev()
+            .skip(upper.get() as usize)
+            .find_map(|(index, edge)| {
+                if edge.load_packed(Ordering::Relaxed).is_null() {
+                    return None;
+                } else {
+                    Some(iter::KeyIndex {
+                        index: index as u8,
+                        key: index as u8,
+                    })
+                }
+            })
     }
 }
 

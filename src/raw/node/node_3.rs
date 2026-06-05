@@ -100,13 +100,17 @@ impl linear::Header for ribbit::Packed<Header> {
         Err(Some(unsafe { Self::new_unchecked(value) }))
     }
 
-    fn keys<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
-        self,
-        lower: L,
-        upper: U,
-    ) -> Self::KeyIter {
+    fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U) -> Self::KeyIter {
         let len = self.len();
         node::simd::keys_3(self.value, len, lower, upper)
+    }
+
+    fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex> {
+        node::simd::min_3(self.value, self.len(), lower)
+    }
+
+    fn max<U: node::Upper>(self, upper: U) -> Option<node::KeyIndex> {
+        node::simd::max_3(self.value, self.len(), upper)
     }
 }
 

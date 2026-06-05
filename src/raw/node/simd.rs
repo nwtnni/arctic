@@ -55,6 +55,62 @@ fn get_15_fallback(array: u128, key: u8) -> u8 {
 }
 
 #[inline]
+pub(super) fn min_3<L: node::Lower>(keys: u64, len: u2, lower: L) -> Option<KeyIndex> {
+    simd!(
+        "opt-no-node3-keys",
+        avx2::min_3(keys, len, lower),
+        min_3_fallback(keys, len, lower),
+    )
+}
+
+#[inline]
+fn min_3_fallback<L: node::Lower>(keys: u64, len: u2, lower: L) -> Option<KeyIndex> {
+    iter_3(keys, len, lower, node::Unbound::<()>::default()).min()
+}
+
+#[inline]
+pub(super) fn max_3<U: node::Upper>(keys: u64, len: u2, upper: U) -> Option<KeyIndex> {
+    simd!(
+        "opt-no-node3-keys",
+        avx2::max_3(keys, len, upper),
+        max_3_fallback(keys, len, upper),
+    )
+}
+
+#[inline]
+fn max_3_fallback<U: node::Upper>(keys: u64, len: u2, upper: U) -> Option<KeyIndex> {
+    iter_3(keys, len, node::Unbound::<()>::default(), upper).max()
+}
+
+#[inline]
+pub(super) fn min_15<L: node::Lower>(keys: u128, len: u4, lower: L) -> Option<KeyIndex> {
+    simd!(
+        "opt-no-node15-keys",
+        avx2::min_15(keys, len, lower),
+        min_15_fallback(keys, len, lower),
+    )
+}
+
+#[inline]
+fn min_15_fallback<L: node::Lower>(keys: u128, len: u4, lower: L) -> Option<KeyIndex> {
+    iter_15(keys, len, lower, node::Unbound::<()>::default()).min()
+}
+
+#[inline]
+pub(super) fn max_15<U: node::Upper>(keys: u128, len: u4, upper: U) -> Option<KeyIndex> {
+    simd!(
+        "opt-no-node15-keys",
+        avx2::max_15(keys, len, upper),
+        max_15_fallback(keys, len, upper),
+    )
+}
+
+#[inline]
+fn max_15_fallback<U: node::Upper>(keys: u128, len: u4, upper: U) -> Option<KeyIndex> {
+    iter_15(keys, len, node::Unbound::<()>::default(), upper).max()
+}
+
+#[inline]
 pub(super) fn keys_3<L: node::Lower, U: node::Upper>(
     keys: u64,
     len: u2,
@@ -75,23 +131,11 @@ fn keys_3_fallback<L: node::Lower, U: node::Upper>(
     lower: L,
     upper: U,
 ) -> KeyIter3 {
-    let mut buffer = [0u16; 3];
-
-    let len = keys
-        .to_le_bytes()
-        .into_iter()
-        .step_by(2)
-        .take(len.value() as usize)
-        .enumerate()
-        .filter(|(_, key)| *key >= lower.get() && *key <= upper.get())
-        .zip(&mut buffer)
-        .map(|((index, key), out)| {
-            *out = (index as u16) | (key as u16) << 8;
-        })
+    let mut buffer = [KeyIndex::DEFAULT; 3];
+    let len = core::iter::zip(&mut buffer, iter_3(keys, len, lower, upper))
+        .map(|(out, r#in)| *out = r#in)
         .count();
-
     buffer[..len].sort_unstable();
-    let buffer = unsafe { core::mem::transmute::<[u16; 3], [KeyIndex; 3]>(buffer) };
     KeyIter3::new_3(buffer, len as u8)
 }
 
@@ -118,19 +162,9 @@ pub(super) fn keys_15_fallback<L: node::Lower, U: node::Upper>(
     upper: U,
     out: &mut KeyIter15,
 ) {
-    let len = keys
-        .to_le_bytes()
-        .into_iter()
-        .take(len.value() as usize)
-        .enumerate()
-        .filter(|(_, key)| *key >= lower.get() && *key <= upper.get())
-        .zip(&mut out.0.entries)
-        .map(|((index, key), out)| {
-            out.key = key;
-            out.index = index as u8;
-        })
+    let len = core::iter::zip(&mut out.0.entries, iter_15(keys, len, lower, upper))
+        .map(|(out, r#in)| *out = r#in)
         .count();
-
     out.0.entries[..len].sort_unstable();
     out.0.head = 0;
     out.0.tail = len as u8;
@@ -179,4 +213,41 @@ pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
 
     out.0.head = 0;
     out.0.tail = len as u8;
+}
+
+fn iter_3<L: node::Lower, U: node::Upper>(
+    keys: u64,
+    len: u2,
+    lower: L,
+    upper: U,
+) -> impl Iterator<Item = KeyIndex> {
+    keys.to_le_bytes()
+        .into_iter()
+        .step_by(2)
+        .take(len.value() as usize)
+        .enumerate()
+        .filter(move |(_, key)| *key >= lower.get())
+        .filter(move |(_, key)| *key <= upper.get())
+        .map(|(index, key)| KeyIndex {
+            index: index as u8,
+            key,
+        })
+}
+
+fn iter_15<L: node::Lower, U: node::Upper>(
+    keys: u128,
+    len: u4,
+    lower: L,
+    upper: U,
+) -> impl Iterator<Item = KeyIndex> {
+    keys.to_le_bytes()
+        .into_iter()
+        .take(len.value() as usize)
+        .enumerate()
+        .filter(move |(_, key)| *key >= lower.get())
+        .filter(move |(_, key)| *key <= upper.get())
+        .map(|(index, key)| KeyIndex {
+            index: index as u8,
+            key,
+        })
 }
