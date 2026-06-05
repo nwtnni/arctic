@@ -326,7 +326,10 @@ where
                 None | Some(_) => break None,
             };
 
-            let (op, new) = unsafe { node.replace(meta, true) };
+            let (op, new) = unsafe {
+                node.freeze();
+                node.replace(meta)
+            };
 
             match self.edge().compare_exchange_packed(
                 edge,

@@ -290,7 +290,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
         if self.replace {
             let old = unsafe { self.cursor.edge_mut().get_packed() };
             let old_node = old.as_node().expect("Replace implies node");
-            let (smo, new) = unsafe { old_node.replace(old.meta(), false) };
+            let (smo, new) = unsafe { old_node.replace(old.meta()) };
             // No concurrent operations, so must be node replacement with larger node
             validate_eq!(smo, crate::raw::Smo::ReplaceNode);
             unsafe { self.cursor.edge_mut() }.set_packed(new);

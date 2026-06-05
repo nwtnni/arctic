@@ -104,7 +104,6 @@ where
 fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
     node: &N,
     meta: ribbit::Packed<M>,
-    freeze: bool,
     keys: &mut [u8; CAPACITY],
     edges: &mut [ribbit::Packed<Edge<M>>; CAPACITY],
 ) -> (Smo, ribbit::Packed<Edge<M>>) {
@@ -119,11 +118,6 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M
     // Can only call replace on nodes
     validate!(!meta.is_value());
 
-    if freeze {
-        let len = node.freeze_header();
-        node.edges().iter().take(len).for_each(Edge::freeze)
-    }
-
     let len = node
         .keys(Unbound::<()>::default(), Unbound::<()>::default())
         .map(|iter::KeyIndex { key, index }| {
@@ -135,19 +129,7 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M
             (key, edge)
         })
         .filter(|(_, edge)| !edge.is_null())
-        .map(|(key, edge)| match freeze {
-            true => {
-                validate!(
-                    edge.meta().is_frozen(),
-                    "Edge must be frozen before replace",
-                );
-                (key, edge.unfreeze())
-            }
-            false => {
-                validate!(!edge.meta().is_frozen(), "Edge must not be frozen",);
-                (key, edge)
-            }
-        })
+        .map(|(key, edge)| (key, edge.unfreeze()))
         .zip(core::iter::zip(&mut *keys, &mut *edges))
         .map(|((key_old, edge_old), (key_new, edge_new))| {
             *key_new = key_old;
@@ -363,17 +345,23 @@ where
         }))
     }
 
+    pub(crate) unsafe fn freeze(self) {
+        impl_forward!(self, |node| {
+            let node = unsafe { node.as_ref() };
+            let len = node.freeze_header();
+            node.edges().iter().take(len).for_each(Edge::freeze)
+        });
+    }
+
     pub(crate) unsafe fn replace(
         self,
         parent: ribbit::Packed<M>,
-        freeze: bool,
     ) -> (Smo, ribbit::Packed<Edge<M>>) {
         self.dispatch(
             |node| {
                 replace(
                     unsafe { node.as_ref() },
                     parent,
-                    freeze,
                     &mut [0u8; 3],
                     &mut [Edge::NULL; 3],
                 )
@@ -382,7 +370,6 @@ where
                 replace(
                     unsafe { node.as_ref() },
                     parent,
-                    freeze,
                     &mut [0u8; 15],
                     &mut [Edge::NULL; 15],
                 )
@@ -391,7 +378,6 @@ where
                 replace(
                     unsafe { node.as_ref() },
                     parent,
-                    freeze,
                     &mut [0u8; 47],
                     &mut [Edge::NULL; 47],
                 )
@@ -400,7 +386,6 @@ where
                 replace(
                     unsafe { node.as_ref() },
                     parent,
-                    freeze,
                     &mut [0u8; 256],
                     &mut [Edge::NULL; 256],
                 )
