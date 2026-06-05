@@ -771,22 +771,19 @@ where
     pub fn prefix<'g, 'k>(
         &'g self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<iter::Shard<'g, 'k, K, V, RangeFull, Guard<'g, K, V, S>>> {
+    ) -> iter::Shard<'g, 'k, K, V, RangeFull, Guard<'g, K, V, S>> {
         let prefix = prefix.into();
         let guard = self.smr.guard(prefix);
-        Some(unsafe { Shard::new(guard, self.seq.raw.prefix(prefix)?) })
+        unsafe { Shard::new(guard, self.seq.raw.prefix(prefix)) }
     }
 
-    pub fn range<'g, 'k, R>(
-        &'g self,
-        range: R,
-    ) -> Option<iter::Shard<'g, 'k, K, V, R, Guard<'g, K, V, S>>>
+    pub fn range<'g, 'k, R>(&'g self, range: R) -> iter::Shard<'g, 'k, K, V, R, Guard<'g, K, V, S>>
     where
         R: crate::raw::iter::Range<K::Read<'k>>,
     {
         let prefix = range.common_prefix();
         let guard = self.smr.guard(prefix);
-        Some(unsafe { Shard::new(guard, self.seq.raw.range(range, prefix)?) })
+        unsafe { Shard::new(guard, self.seq.raw.range(range, prefix)) }
     }
 }
 

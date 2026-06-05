@@ -52,10 +52,14 @@ where
     O: Order,
 {
     pub(crate) unsafe fn new_unchecked(
-        root: NonNull<Atomic<Edge<K::Edge>>>,
+        root: *mut Atomic<Edge<K::Edge>>,
         prefix: K,
         range: &R,
     ) -> Self {
+        let Some(root) = NonNull::new(root) else {
+            return Self::default();
+        };
+
         let edge = unsafe { root.as_ref() }.load_packed(Ordering::Acquire);
 
         let Some(child) = edge.child() else {

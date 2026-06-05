@@ -243,8 +243,12 @@ mod tests {
         let map = Map::<u64, _>::default();
         let key = 1u64;
         map.upsert(&key, 2u64);
-        let range = map.range(1u64..=1u64).unwrap();
-        assert_eq!(range.entries::<Ascend>().collect::<Vec<_>>(), vec![(1, 2)]);
+        assert_eq!(
+            map.range(1u64..=1u64)
+                .entries::<Ascend>()
+                .collect::<Vec<_>>(),
+            vec![(1, 2)]
+        );
     }
 
     #[test]
@@ -260,9 +264,10 @@ mod tests {
     #[test]
     fn scan_gap() {
         let map = insert_all((0u64..512).step_by(2));
-        let range = map.range(256u64..=511u64).unwrap();
         assert_eq!(
-            range.entries::<Ascend>().collect::<Vec<_>>(),
+            map.range(256u64..=511u64)
+                .entries::<Ascend>()
+                .collect::<Vec<_>>(),
             (256..512)
                 .step_by(2)
                 .map(|key| (key, key / 2))
@@ -339,10 +344,9 @@ mod tests {
             map.upsert(&key, key);
             assert_eq!(map.get(&key).as_deref().copied(), Some(key));
         }
-        let range = map.range(2..=4).unwrap();
 
         assert_eq!(
-            range.entries::<Descend>().collect::<Vec<_>>(),
+            map.range(2..=4).entries::<Descend>().collect::<Vec<_>>(),
             vec![(4, 4), (3, 3), (2, 2)]
         );
     }
@@ -475,22 +479,17 @@ mod tests {
         };
 
         // Concurrent prefix iteration, non-linearizable
-        let prefix = map
-            .prefix(K::Read::from(first.borrow()).common_prefix(K::Read::from(last.borrow())))
-            .unwrap();
-        prefix
+        map.prefix(K::Read::from(first.borrow()).common_prefix(K::Read::from(last.borrow())))
             .entries::<Descend>()
             .zip(keys.iter().rev())
             .for_each(|((lk, lv), (rk, rv))| {
                 assert_eq!(lk, *rk);
                 assert_eq!(lv, *rv);
             });
-        drop(prefix);
 
         // Concurrent range iteration, non-linearizable
-        let range = map.range(first.borrow()..=last.borrow()).unwrap();
         let mut i = 0;
-        range
+        map.range(first.borrow()..=last.borrow())
             .entries::<Descend>()
             .zip(keys.iter().rev())
             .for_each(|((lk, lv), (rk, rv))| {
@@ -499,7 +498,6 @@ mod tests {
                 assert_eq!(lv, *rv);
             });
         assert_eq!(i, keys.len());
-        drop(range);
 
         map
     }

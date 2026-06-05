@@ -34,7 +34,7 @@ impl<K: Key> Map<K> {
     pub(crate) unsafe fn prefix<'k>(
         &self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<raw::Shard<'_, 'k, K, RangeFull>> {
+    ) -> raw::Shard<'_, 'k, K, RangeFull> {
         unsafe { raw::Shard::<K>::new_prefix(self.root(), prefix.into()) }
     }
 
@@ -43,7 +43,7 @@ impl<K: Key> Map<K> {
         &self,
         range: R,
         prefix: K::Read<'k>,
-    ) -> Option<raw::Shard<'_, 'k, K, R>>
+    ) -> raw::Shard<'_, 'k, K, R>
     where
         R: raw::iter::Range<K::Read<'k>>,
     {

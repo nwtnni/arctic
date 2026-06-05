@@ -126,20 +126,17 @@ where
     }
 
     #[inline]
-    pub fn prefix<'k>(
-        &self,
-        prefix: impl Into<K::Read<'k>>,
-    ) -> Option<Shard<'_, 'k, K, V, RangeFull>> {
-        Some(unsafe { Shard::new(self.raw.prefix(prefix)?) })
+    pub fn prefix<'k>(&self, prefix: impl Into<K::Read<'k>>) -> Shard<'_, 'k, K, V, RangeFull> {
+        unsafe { Shard::new(self.raw.prefix(prefix)) }
     }
 
     #[inline]
-    pub fn range<'k, R>(&self, range: R) -> Option<Shard<'_, 'k, K, V, R>>
+    pub fn range<'k, R>(&self, range: R) -> Shard<'_, 'k, K, V, R>
     where
         R: raw::iter::Range<K::Read<'k>>,
     {
         let prefix = range.common_prefix();
-        Some(unsafe { Shard::new(self.raw.range(range, prefix)?) })
+        unsafe { Shard::new(self.raw.range(range, prefix)) }
     }
 
     #[inline]
@@ -151,16 +148,16 @@ where
     pub fn prefix_mut<'k>(
         &mut self,
         prefix: impl Into<K::Read<'k>>,
-    ) -> Option<ShardMut<'_, 'k, K, V, RangeFull>> {
-        Some(unsafe { ShardMut::new(self.prefix(prefix)?) })
+    ) -> ShardMut<'_, 'k, K, V, RangeFull> {
+        unsafe { ShardMut::new(self.prefix(prefix)) }
     }
 
     #[inline]
-    pub fn range_mut<'k, R>(&mut self, range: R) -> Option<ShardMut<'_, 'k, K, V, R>>
+    pub fn range_mut<'k, R>(&mut self, range: R) -> ShardMut<'_, 'k, K, V, R>
     where
         R: raw::iter::Range<K::Read<'k>>,
     {
-        Some(unsafe { ShardMut::new(self.range(range)?) })
+        unsafe { ShardMut::new(self.range(range)) }
     }
 }
 

@@ -159,15 +159,15 @@ where
                 lower,
                 upper,
             } => {
-                if let Some(prefix) = state.0.range(lower.borrow()..=upper.borrow()) {
-                    let expected = expected.0.range::<K, _>(lower.clone()..=upper.clone());
-                    let mut expected = if descend {
-                        Box::new(expected.rev())
-                    } else {
-                        Box::new(expected) as Box<dyn Iterator<Item = _>>
-                    };
+                let actual = state.0.range(lower.borrow()..=upper.borrow());
+                let expected = expected.0.range::<K, _>(lower.clone()..=upper.clone());
+                let mut expected = if descend {
+                    Box::new(expected.rev())
+                } else {
+                    Box::new(expected) as Box<dyn Iterator<Item = _>>
+                };
 
-                    macro_rules! compare {
+                macro_rules! compare {
                         () => {
                             |(key_actual, value_actual)| {
                                 let key_actual: &K::Borrowed = key_actual.borrow();
@@ -186,19 +186,18 @@ where
                         };
                     }
 
-                    if descend {
-                        prefix
-                            .entries::<arctic::Descend>()
-                            .for_each_internal(compare!())
-                    } else {
-                        prefix
-                            .entries::<arctic::Ascend>()
-                            .for_each_internal(compare!())
-                    }
-
-                    let next = expected.next();
-                    assert!(next.is_none(), "Missing entry {next:?}");
+                if descend {
+                    actual
+                        .entries::<arctic::Descend>()
+                        .for_each_internal(compare!())
+                } else {
+                    actual
+                        .entries::<arctic::Ascend>()
+                        .for_each_internal(compare!())
                 }
+
+                let next = expected.next();
+                assert!(next.is_none(), "Missing entry {next:?}");
             }
         }
 

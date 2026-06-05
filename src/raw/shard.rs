@@ -1,6 +1,5 @@
 use core::marker::PhantomData;
 use core::ops::RangeFull;
-use core::ptr::NonNull;
 
 use ribbit::Atomic;
 
@@ -20,7 +19,7 @@ pub(crate) struct Shard<'g, 'k, K, R = RangeFull>
 where
     K: Key,
 {
-    root: NonNull<Atomic<Edge<K::Edge>>>,
+    root: *mut Atomic<Edge<K::Edge>>,
     prefix: K::Read<'k>,
     range: R,
     _global: PhantomData<&'g Atomic<Edge<K::Edge>>>,
@@ -33,48 +32,50 @@ where
 {
     #[inline]
     pub(crate) unsafe fn new_all(root: &'g Atomic<Edge<K::Edge>>) -> Shard<'g, 'k, K, RangeFull> {
-        unsafe { Shard::new(root, K::Read::default(), ..) }
+        unsafe { Shard::new(root as *const _ as *mut _, K::Read::default(), ..) }
     }
 
     pub(crate) unsafe fn new_prefix(
         root: &'g Atomic<Edge<K::Edge>>,
         prefix: K::Read<'k>,
-    ) -> Option<Shard<'g, 'k, K, RangeFull>> {
+    ) -> Shard<'g, 'k, K, RangeFull> {
         let mut cursor = unsafe { Cursor::<_, path::Discard>::new(root, prefix) };
-        cursor.traverse_prefix()?;
+        let Some(_) = cursor.traverse_prefix() else {
+            return unsafe { Shard::new(core::ptr::null_mut(), prefix, ..) };
+        };
         let root = cursor.edge();
         let len = cursor.len();
         let prefix = prefix.prefix(len);
-        Some(unsafe { Shard::new(root, prefix, ..) })
+        unsafe { Shard::new(root as *const _ as *mut _, prefix, ..) }
     }
 
     pub(crate) unsafe fn new_range(
         root: &'g Atomic<Edge<K::Edge>>,
         range: R,
         prefix: K::Read<'k>,
-    ) -> Option<Shard<'g, 'k, K, R>>
+    ) -> Shard<'g, 'k, K, R>
     where
         R: Range<K::Read<'k>>,
     {
         validate_eq!(prefix, range.common_prefix());
         let mut cursor = unsafe { Cursor::<_, path::Discard>::new(root, prefix) };
-        cursor.traverse_prefix()?;
-
+        let Some(_) = cursor.traverse_prefix() else {
+            return unsafe { Shard::new(core::ptr::null_mut(), prefix, range) };
+        };
         let root = cursor.edge();
         let len = cursor.len();
         let prefix = prefix.prefix(len);
-
-        Some(unsafe { Shard::new(root, prefix, range) })
+        unsafe { Shard::new(root as *const _ as *mut _, prefix, range) }
     }
 
     #[inline]
     unsafe fn new(
-        root: &'g Atomic<Edge<K::Edge>>,
+        root: *mut Atomic<Edge<K::Edge>>,
         prefix: K::Read<'k>,
         range: R,
     ) -> Shard<'g, 'k, K, R> {
         Shard {
-            root: NonNull::from(root),
+            root,
             prefix,
             range,
             _global: PhantomData,
