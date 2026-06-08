@@ -19,9 +19,11 @@ use core::arch::x86_64::_mm_shuffle_epi8;
 use core::arch::x86_64::_mm_unpackhi_epi8;
 use core::arch::x86_64::_mm_unpacklo_epi8;
 use core::arch::x86_64::_mm256_blend_epi16;
+use core::arch::x86_64::_mm256_cvtepi8_epi16;
 use core::arch::x86_64::_mm256_extracti128_si256;
 use core::arch::x86_64::_mm256_max_epu16;
 use core::arch::x86_64::_mm256_min_epu16;
+use core::arch::x86_64::_mm256_or_si256;
 use core::arch::x86_64::_mm256_permute2x128_si256;
 use core::arch::x86_64::_mm256_set_m128i;
 use core::arch::x86_64::_mm256_setr_epi8;
@@ -29,6 +31,7 @@ use core::arch::x86_64::_mm256_setr_m128i;
 use core::arch::x86_64::_mm256_shuffle_epi8;
 use core::arch::x86_64::_mm256_store_si256;
 use core::arch::x86_64::_pext_u64;
+use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
@@ -113,40 +116,47 @@ pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     len: u2,
     lower: L,
     upper: U,
-) -> KeyIter3 {
-    const INDICES: u64 = 0x0002_0001_0000;
-
+    out: &mut KeyIter3,
+) {
     let mut bits = len.value() << 4;
-    let mut entries = (keys << 8) | INDICES;
+    let mut iter = (keys << 8) | 0x0002_0001_0000;
 
     if lower.get() > u8::MIN || upper.get() < u8::MAX {
         let mask_len = !(u64::MAX << bits);
         let mask_range = mask_range_4(keys, lower.get(), upper.get());
         let mask_valid = mask_len & mask_range;
 
-        entries = unsafe { _pext_u64(entries, mask_valid) };
+        iter = unsafe { _pext_u64(iter, mask_valid) };
         bits = mask_valid.count_ones() as u8;
     };
 
-    let entries = if bits <= 16 {
-        entries
-    } else {
-        bitonic_sort_4(entries | (u64::MAX << bits))
-    };
-
-    let mut iter = unsafe { core::mem::transmute::<u64, KeyIter3>(entries) };
-    iter.0.head = 0;
-    iter.0.tail = bits >> 4;
+    unsafe { NonNull::from(&mut *out).cast::<u64>().write(iter) };
+    out.0.head = 0;
+    out.0.tail = bits >> 4;
 
     // HACK: make it easier to test against fallback
     if_validate! {
-        iter.0.entries[iter.0.tail as usize..].iter_mut().for_each(|entry| {
+        out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
             entry.key = 0;
             entry.index = 0;
         })
     }
+}
 
-    iter
+#[inline]
+pub(super) fn sort_3(iter: &mut KeyIter3) {
+    let len = iter.0.tail;
+    if len <= 1 {
+        return;
+    }
+    let fill = u64::MAX << (len << 4);
+
+    {
+        let sorted = NonNull::from(&mut *iter).cast::<u64>();
+        unsafe { sorted.write(bitonic_sort_4(sorted.read() | fill)) };
+    }
+    iter.0.head = 0;
+    iter.0.tail = len;
 }
 
 // https://talkchess.com/viewtopic.php?t=78804
@@ -160,20 +170,45 @@ pub(super) fn keys_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     upper: U,
     out: &mut KeyIter15,
 ) {
-    let mask_len = mask_len(len.value());
-
     let (iter, len) = if lower.get() > u8::MIN || upper.get() < u8::MAX {
+        let mask_len = mask_len(len.value());
         let mask_range = mask_range(keys, lower, upper);
-        compress_15(mask_len & mask_range, U8_SEQ, keys)
+        let mask_valid = mask_len & mask_range;
+        compress_15(mask_valid, U8_SEQ, keys)
     } else {
-        let fill = !mask_len;
-        (interleave(U8_SEQ | fill, keys | fill), len.value())
+        (interleave(U8_SEQ, keys), len.value())
     };
 
-    let sorted = bitonic_sort_16(iter, len);
-
     unsafe {
-        _mm256_store_si256(out as *mut _ as _, sorted);
+        _mm256_store_si256(out as *mut _ as _, iter);
+    }
+    out.0.head = 0;
+    out.0.tail = len;
+
+    // HACK: make it easier to test against fallback
+    if_validate! {
+        out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
+            entry.key = 0;
+            entry.index = 0;
+        })
+    }
+}
+
+#[inline]
+pub(super) fn sort_15(out: &mut KeyIter15) {
+    let len = out.0.tail;
+
+    // Fill unused bytes with 0xFF
+    let fill = unsafe { _mm256_cvtepi8_epi16(u128_to_avx(!mask_len(len))) };
+
+    {
+        let sorted = NonNull::from(&mut *out).cast::<__m256i>();
+
+        let iter = unsafe { bitonic_sort_16(_mm256_or_si256(sorted.read(), fill), len) };
+
+        unsafe {
+            sorted.write(iter);
+        }
     }
     out.0.head = 0;
     out.0.tail = len;
@@ -605,6 +640,7 @@ mod tests {
     use ribbit::u2;
     use ribbit::u4;
 
+    use crate::raw::node::linear::KeyIter3;
     use crate::raw::node::linear::KeyIter15;
     use crate::raw::node::simd;
     use crate::raw::node::simd::avx2::bitonic_sort_16;
@@ -676,8 +712,11 @@ mod tests {
                 core::mem::swap(&mut low, &mut high);
             }
 
-            let simd = super::keys_3(keys, len, Some(low), Some(high));
-            let fallback = simd::keys_3_fallback(keys, len, Some(low), Some(high));
+            let mut simd = KeyIter3::default();
+            super::keys_3(keys, len, Some(low), Some(high), &mut simd);
+
+            let mut fallback = KeyIter3::default();
+            simd::keys_3_fallback(keys, len, Some(low), Some(high), &mut fallback);
 
             assert_eq!(
                 simd, fallback,

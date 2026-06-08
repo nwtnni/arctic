@@ -8,6 +8,7 @@ use crate::raw::node::Linear;
 #[cfg_attr(not(doc), expect(unused_imports))]
 use crate::raw::node::Node;
 use crate::raw::node::linear;
+use crate::raw::node::linear::KeyIter15;
 
 /// [`Node`] representation that contains at most 15 key-edge pairs.
 pub(crate) type Node15<M> = Linear<15, Header, M>;
@@ -36,7 +37,7 @@ impl Default for HeaderPacked {
 impl linear::Header for ribbit::Packed<Header> {
     const TYPE: node::Type = node::Type::Node15;
     const CAPACITY: usize = 15;
-    type KeyIter = Box<linear::KeyIter15>;
+    type KeyIter = KeyIter15;
 
     unsafe fn new_unchecked(keys: &[u8]) -> Self {
         let mut buffer = [0u8; 16];
@@ -89,11 +90,9 @@ impl linear::Header for ribbit::Packed<Header> {
         Err(Some(unsafe { Self::new_unchecked(value) }))
     }
 
-    fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U) -> Self::KeyIter {
+    fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U, iter: &mut KeyIter15) {
         let len = self.len();
-        let mut iter = Box::new(linear::KeyIter15::default());
-        node::simd::keys_15(self.value, len, lower, upper, &mut iter);
-        iter
+        node::simd::keys_15(self.value, len, lower, upper, iter);
     }
 
     fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex> {
@@ -105,9 +104,9 @@ impl linear::Header for ribbit::Packed<Header> {
     }
 }
 
-impl From<Box<linear::KeyIter15>> for node::KeyIter {
+impl From<Box<KeyIter15>> for node::KeyIter {
     #[inline]
-    fn from(iter: Box<linear::KeyIter15>) -> Self {
+    fn from(iter: Box<KeyIter15>) -> Self {
         node::KeyIter::new_15(iter)
     }
 }

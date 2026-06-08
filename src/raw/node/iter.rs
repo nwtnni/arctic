@@ -148,13 +148,13 @@ const_assert_size_align!(KeyIter, 8, 8);
 #[repr(C, align(8))]
 #[derive(Copy, Clone)]
 struct KeyIter256 {
-    iter: node_256::KeyIter,
+    iter: node_256::KeyIter256,
     _pad: [u8; 3],
     _type: Type256,
 }
 
 impl Deref for KeyIter256 {
-    type Target = node_256::KeyIter;
+    type Target = node_256::KeyIter256;
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.iter
@@ -262,7 +262,7 @@ impl KeyIter {
     }
 
     #[inline]
-    pub(super) fn new_256(node_256: node_256::KeyIter) -> Self {
+    pub(super) fn new_256(node_256: node_256::KeyIter256) -> Self {
         let iter = Self {
             node_256: KeyIter256 {
                 iter: node_256,

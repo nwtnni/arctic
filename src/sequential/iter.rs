@@ -30,7 +30,7 @@ where
     #[inline]
     pub fn entries<O: Order>(&self) -> EntryIter<'g, 'k, K, V, R, O> {
         EntryIter {
-            inner: self.inner.entries::<O>(),
+            inner: self.inner.entries::<O>(true),
             _value: PhantomData,
         }
     }
@@ -38,7 +38,7 @@ where
     #[inline]
     pub fn values<O: Order>(&self) -> ValueIter<'g, 'k, K, V, R, O> {
         ValueIter {
-            inner: self.inner.values::<O>(),
+            inner: self.inner.values::<O>(true),
             _value: PhantomData,
         }
     }
@@ -60,7 +60,7 @@ where
     #[inline]
     pub fn entries_mut<O: Order>(&mut self) -> EntryIterMut<'g, 'k, K, V, R, O> {
         EntryIterMut {
-            inner: self.0.inner.entries::<O>(),
+            inner: self.0.inner.entries::<O>(true),
             _value: PhantomData,
         }
     }
@@ -68,7 +68,7 @@ where
     #[inline]
     pub fn values_mut<O: Order>(&mut self) -> ValueIterMut<'g, 'k, K, V, R, O> {
         ValueIterMut {
-            inner: self.0.inner.values::<O>(),
+            inner: self.0.inner.values::<O>(true),
             _value: PhantomData,
         }
     }

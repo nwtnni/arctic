@@ -11,6 +11,7 @@ use ribbit::Atomic;
 use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::Edge;
+use crate::raw::node::KeyIndex;
 use crate::raw::node::Node;
 
 #[repr(C, align(64))]
@@ -64,10 +65,10 @@ where
     }
 
     #[inline]
-    fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U) -> Self::KeyIter {
+    fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U, iter: &mut Self::KeyIter) {
         self.header
             .load_packed(Ordering::Relaxed)
-            .keys(lower, upper)
+            .keys(lower, upper, iter)
     }
 
     #[inline]
@@ -165,7 +166,7 @@ where
 pub(super) trait Header: ribbit::Unpack + core::fmt::Debug {
     const TYPE: node::Type;
     const CAPACITY: usize;
-    type KeyIter: Iterator<Item = node::iter::KeyIndex> + Into<node::KeyIter>;
+    type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
 
     unsafe fn new_unchecked(keys: &[u8]) -> Self;
 
@@ -183,7 +184,8 @@ pub(super) trait Header: ribbit::Unpack + core::fmt::Debug {
         self,
         lower: L,
         upper: U,
-    ) -> Self::KeyIter;
+        iter: &mut Self::KeyIter,
+    );
 
     fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex>;
     fn max<U: node::Upper>(self, upper: U) -> Option<node::KeyIndex>;
@@ -288,3 +290,17 @@ macro_rules! impl_key_iter {
 impl_key_iter!(KeyIter3, 3, new_3);
 impl_key_iter!(KeyIter15, 15);
 impl_key_iter!(KeyIter63, 63);
+
+impl KeyIter3 {
+    #[inline]
+    pub(super) fn sort(&mut self) {
+        node::simd::sort_3(self)
+    }
+}
+
+impl KeyIter15 {
+    #[inline]
+    pub(super) fn sort(&mut self) {
+        node::simd::sort_15(self)
+    }
+}

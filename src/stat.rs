@@ -47,7 +47,7 @@ pub fn process<K: Key, V: Value, S: Smr>(map: &mut crate::concurrent::Map<K, V, 
                     };
 
                     let children =
-                        unsafe { node.entries(Unbound::<()>::default(), Unbound::<()>::default()) }
+                        unsafe { node.entries(false, Unbound::<()>::default(), Unbound::<()>::default()) }
                             .filter(|(_, edge)| {
                                 !unsafe { edge.as_ref() }
                                     .load_packed(Ordering::Relaxed)

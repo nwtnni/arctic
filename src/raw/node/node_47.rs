@@ -18,7 +18,7 @@ use crate::raw::iter::Unbound;
 use crate::raw::node;
 use crate::raw::node::Node;
 use crate::raw::node::iter::KeyIndex;
-use crate::raw::node::linear;
+use crate::raw::node::linear::KeyIter63;
 use crate::stat;
 
 /// [`Node`] representation that contains at most 47 key-edge pairs.
@@ -48,7 +48,7 @@ where
 {
     const TYPE: node::Type = node::Type::Node47;
     const CAPACITY: usize = 47;
-    type KeyIter = Box<linear::KeyIter63>;
+    type KeyIter = KeyIter63;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
@@ -67,8 +67,9 @@ where
         &self,
         lower: L,
         upper: U,
-    ) -> Self::KeyIter {
-        self.header.keys(lower, upper)
+        iter: &mut Self::KeyIter,
+    ) {
+        self.header.keys(lower, upper, iter)
     }
 
     #[inline]
@@ -246,11 +247,10 @@ impl Header {
         &self,
         lower: L,
         upper: U,
-    ) -> Box<linear::KeyIter63> {
+        iter: &mut KeyIter63,
+    ) {
         let len = self.meta_consistent().len().value();
-        let mut iter = Box::new(linear::KeyIter63::default());
-        node::simd::keys_47(&self.data, lower, upper, len, &mut iter);
-        iter
+        node::simd::keys_47(&self.data, lower, upper, len, iter);
     }
 
     fn min<L: node::Lower>(&self, _lower: L) -> Option<KeyIndex> {
@@ -326,19 +326,18 @@ impl Header {
 impl Debug for Header {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let meta = self.meta.load_packed(Ordering::Relaxed);
-        let iter = self.keys(Unbound::<()>::default(), Unbound::<()>::default());
-
-        let len = meta.len().value();
-        let mut keys = [0u8; 47];
-        keys.iter_mut()
-            .zip(iter)
-            .for_each(|(out, KeyIndex { key, .. })| *out = key);
+        let mut iter = KeyIter63::default();
+        self.keys(
+            Unbound::<()>::default(),
+            Unbound::<()>::default(),
+            &mut iter,
+        );
 
         f.debug_struct("Header")
-            .field("len", &len)
+            .field("len", &iter.0.tail)
             .field("frozen", &meta.frozen())
             .field("last", &meta.last())
-            .field("keys", &&keys[..len as usize])
+            .field("keys", &iter)
             .finish()
     }
 }
@@ -361,9 +360,9 @@ impl Default for MetaPacked {
     }
 }
 
-impl From<Box<linear::KeyIter63>> for node::KeyIter {
+impl From<Box<KeyIter63>> for node::KeyIter {
     #[inline]
-    fn from(iter: Box<linear::KeyIter63>) -> Self {
+    fn from(iter: Box<KeyIter63>) -> Self {
         node::KeyIter::new_47(iter)
     }
 }

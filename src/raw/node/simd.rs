@@ -116,11 +116,12 @@ pub(super) fn keys_3<L: node::Lower, U: node::Upper>(
     len: u2,
     lower: L,
     upper: U,
-) -> KeyIter3 {
+    iter: &mut KeyIter3,
+) {
     simd!(
         "opt-no-node3-keys",
-        avx2::keys_3(keys, len, lower, upper),
-        keys_3_fallback(keys, len, lower, upper),
+        avx2::keys_3(keys, len, lower, upper, iter),
+        keys_3_fallback(keys, len, lower, upper, iter),
     )
 }
 
@@ -130,13 +131,27 @@ fn keys_3_fallback<L: node::Lower, U: node::Upper>(
     len: u2,
     lower: L,
     upper: U,
-) -> KeyIter3 {
-    let mut buffer = [KeyIndex::DEFAULT; 3];
-    let len = core::iter::zip(&mut buffer, iter_3(keys, len, lower, upper))
+    iter: &mut KeyIter3,
+) {
+    let len = core::iter::zip(&mut iter.0.entries, iter_3(keys, len, lower, upper))
         .map(|(out, r#in)| *out = r#in)
         .count();
-    buffer[..len].sort_unstable();
-    KeyIter3::new_3(buffer, len as u8)
+    iter.0.head = 0;
+    iter.0.tail = len as u8;
+}
+
+#[inline]
+pub(super) fn sort_3(iter: &mut KeyIter3) {
+    simd!(
+        "opt-no-node3-keys",
+        avx2::sort_3(iter),
+        sort_3_fallback(iter),
+    )
+}
+
+#[inline]
+fn sort_3_fallback(iter: &mut KeyIter3) {
+    iter.0.entries[..iter.0.tail as usize].sort_unstable();
 }
 
 #[inline]
@@ -165,9 +180,22 @@ pub(super) fn keys_15_fallback<L: node::Lower, U: node::Upper>(
     let len = core::iter::zip(&mut out.0.entries, iter_15(keys, len, lower, upper))
         .map(|(out, r#in)| *out = r#in)
         .count();
-    out.0.entries[..len].sort_unstable();
     out.0.head = 0;
     out.0.tail = len as u8;
+}
+
+#[inline]
+pub(super) fn sort_15(iter: &mut KeyIter15) {
+    simd!(
+        "opt-no-node15-keys",
+        avx2::sort_15(iter),
+        sort_15_fallback(iter),
+    )
+}
+
+#[inline]
+fn sort_15_fallback(iter: &mut KeyIter15) {
+    iter.0.entries[..iter.0.tail as usize].sort_unstable();
 }
 
 #[inline]

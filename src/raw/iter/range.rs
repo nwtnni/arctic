@@ -54,6 +54,7 @@ where
     pub(crate) unsafe fn new_unchecked(
         root: *mut Atomic<Edge<K::Edge>>,
         prefix: K,
+        sort: bool,
         range: &R,
     ) -> Self {
         let Some(root) = NonNull::new(root) else {
@@ -85,10 +86,11 @@ where
             edge::Child::Node(node) => {
                 let mut stack = Vec::with_capacity(7);
                 stack.push((len, lower_byte, upper_byte, unsafe {
-                    node.entries(lower_byte, upper_byte)
+                    node.entries(sort, lower_byte, upper_byte)
                 }));
 
                 Self::Node(NodeIter {
+                    sort,
                     lower,
                     upper,
                     writer,
@@ -136,6 +138,7 @@ where
     W: key::Write<K>,
     R: Range<K>,
 {
+    sort: bool,
     lower: R::Lower,
     upper: R::Upper,
     writer: W,
@@ -247,7 +250,7 @@ where
                             upper = upper_next;
 
                             // Avoid pushing and popping iterators with only one child
-                            match unsafe { node.entry_or_entries(lower, upper) } {
+                            match unsafe { node.entry_or_entries(self.sort, lower, upper) } {
                                 Ok((byte_, edge_)) => {
                                     byte = byte_;
                                     edge = edge_;

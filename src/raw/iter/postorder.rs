@@ -59,6 +59,7 @@ where
                         edge::Child::Node(node) if first => {
                             match unsafe {
                                 node.entry_or_entries::<_, _>(
+                                    false,
                                     Unbound::<()>::default(),
                                     Unbound::<()>::default(),
                                 )

@@ -36,7 +36,7 @@ where
 {
     const TYPE: node::Type = node::Type::Node256;
     const CAPACITY: usize = 256;
-    type KeyIter = KeyIter;
+    type KeyIter = KeyIter256;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
@@ -55,8 +55,9 @@ where
         &self,
         lower: L,
         upper: U,
-    ) -> Self::KeyIter {
-        KeyIter::new(lower, upper)
+        iter: &mut Self::KeyIter,
+    ) {
+        *iter = KeyIter256::new(lower, upper)
     }
 
     #[inline]
@@ -132,13 +133,13 @@ where
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
-pub(crate) struct KeyIter {
+#[derive(Copy, Clone, Default, Debug)]
+pub(crate) struct KeyIter256 {
     head: u16,
     tail: u16,
 }
 
-impl KeyIter {
+impl KeyIter256 {
     #[inline]
     fn new<L: node::iter::Lower, U: node::iter::Upper>(lower: L, upper: U) -> Self {
         Self {
@@ -148,7 +149,7 @@ impl KeyIter {
     }
 }
 
-impl Iterator for KeyIter {
+impl Iterator for KeyIter256 {
     type Item = KeyIndex;
 
     #[inline]
@@ -172,7 +173,7 @@ impl Iterator for KeyIter {
     }
 }
 
-impl ExactSizeIterator for KeyIter {
+impl ExactSizeIterator for KeyIter256 {
     #[inline]
     fn len(&self) -> usize {
         let (lower, upper) = self.size_hint();
@@ -181,7 +182,7 @@ impl ExactSizeIterator for KeyIter {
     }
 }
 
-impl DoubleEndedIterator for KeyIter {
+impl DoubleEndedIterator for KeyIter256 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.head == self.tail {
@@ -196,9 +197,9 @@ impl DoubleEndedIterator for KeyIter {
     }
 }
 
-impl From<KeyIter> for node::KeyIter {
+impl From<KeyIter256> for node::KeyIter {
     #[inline]
-    fn from(iter: KeyIter) -> Self {
+    fn from(iter: KeyIter256) -> Self {
         node::KeyIter::new_256(iter)
     }
 }

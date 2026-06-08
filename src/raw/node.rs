@@ -43,6 +43,10 @@ use crate::raw::Smo;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::iter::Unbound;
+use crate::raw::node::linear::KeyIter3;
+use crate::raw::node::linear::KeyIter15;
+use crate::raw::node::linear::KeyIter63;
+use crate::raw::node::node_256::KeyIter256;
 use crate::stat;
 use linear::Linear;
 
@@ -52,7 +56,7 @@ use linear::Linear;
 ///
 /// Implementations must ensure that all returned key indices are within
 /// `self.edges()` and `self.edges_mut()`.
-unsafe trait Node<M>: Default
+unsafe trait Node<M>: Default + core::fmt::Debug
 where
     M: ribbit::Pack<Packed: edge::Meta>,
 {
@@ -62,7 +66,7 @@ where
     /// The maximum number of entries this node can contain.
     const CAPACITY: usize;
 
-    type KeyIter: Iterator<Item = iter::KeyIndex> + Into<KeyIter>;
+    type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
 
     /// Returns a new node populated with `keys` and `edges`.
     ///
@@ -75,8 +79,8 @@ where
     /// - Edges are unique
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self>;
 
-    /// Returns a sorted iterator over this node's keys.
-    fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U) -> Self::KeyIter;
+    /// Initializes an unsorted iterator over this node's keys.
+    fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U, iter: &mut Self::KeyIter);
 
     fn edges(&self) -> &[Atomic<Edge<M>>];
 
@@ -118,8 +122,14 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M
     // Can only call replace on nodes
     validate!(!meta.is_value());
 
-    let len = node
-        .keys(Unbound::<()>::default(), Unbound::<()>::default())
+    let mut iter = N::KeyIter::default();
+    node.keys(
+        Unbound::<()>::default(),
+        Unbound::<()>::default(),
+        &mut iter,
+    );
+
+    let len = iter
         .map(|iter::KeyIndex { key, index }| {
             let index = index as usize;
             let edge = if_validate!(&node.edges()[index], unsafe {
@@ -148,8 +158,8 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M
     }
 
     // Heuristic: assume a full node should be expanded
-    let node = unsafe { Ptr::new_unchecked(len == N::CAPACITY, &keys[..len], &edges[..len]) };
-    let edge = Edge::new_node(meta, node);
+    let new = unsafe { Ptr::new_unchecked(len == N::CAPACITY, &keys[..len], &edges[..len]) };
+    let edge = Edge::new_node(meta, new);
     (Smo::ReplaceNode, edge)
 }
 
@@ -395,47 +405,91 @@ where
 
     pub(crate) unsafe fn entries<'g, L: Lower, U: Upper>(
         self,
+        sort: bool,
         lower: L,
         upper: U,
     ) -> EntryIter<'g, M> {
-        let (keys, edges) = impl_forward!(self, |node| {
-            let node = unsafe { node.as_ref() };
-            (KeyIter::from(node.keys(lower, upper)), node.edges())
-        });
+        let (keys, edges) = self.dispatch(
+            |node| {
+                let node = unsafe { node.as_ref() };
+                let mut iter = KeyIter3::default();
+                node.keys(lower, upper, &mut iter);
+                if sort {
+                    iter.sort();
+                }
+                (iter.into(), node.edges())
+            },
+            |node| {
+                let node = unsafe { node.as_ref() };
+                let mut iter = Box::new(KeyIter15::default());
+                node.keys(lower, upper, &mut iter);
+                if sort {
+                    iter.sort();
+                }
+                (iter.into(), node.edges())
+            },
+            |node| {
+                let node = unsafe { node.as_ref() };
+                let mut iter = Box::new(KeyIter63::default());
+                node.keys(lower, upper, &mut iter);
+                (iter.into(), node.edges())
+            },
+            |node| {
+                let node = unsafe { node.as_ref() };
+                let mut iter = KeyIter256::default();
+                node.keys(lower, upper, &mut iter);
+                (iter.into(), node.edges())
+            },
+        );
 
         unsafe { EntryIter::new(keys, edges) }
     }
 
     pub(crate) unsafe fn entry_or_entries<'g, L: Lower, U: Upper>(
         self,
+        sort: bool,
         lower: L,
         upper: U,
     ) -> Result<(u8, NonNull<ribbit::Atomic<Edge<M>>>), EntryIter<'g, M>> {
+        // Deduplicate with `entries`?
         let iter = self
             .dispatch(
                 |node| {
                     let node = unsafe { node.as_ref() };
-                    let mut keys = node.keys(lower, upper);
+                    let mut iter = KeyIter3::default();
+                    node.keys(lower, upper, &mut iter);
+                    if sort {
+                        iter.sort();
+                    }
                     let edges = node.edges();
-                    match keys.size_hint().1 {
-                        Some(1) => {
-                            let pair = keys.next().expect("Size hint is exact");
-                            Ok((pair.key, NonNull::from(&edges[pair.index as usize])))
+                    match iter.0.tail {
+                        1 => {
+                            let KeyIndex { key, index } = iter.0.entries[0];
+                            Ok((key, NonNull::from(&edges[index as usize])))
                         }
-                        _ => Err((keys.into(), edges)),
+                        _ => Err((iter.into(), edges)),
                     }
                 },
                 |node| {
                     let node = unsafe { node.as_ref() };
-                    Err((node.keys(lower, upper).into(), node.edges()))
+                    let mut iter = Box::new(KeyIter15::default());
+                    node.keys(lower, upper, &mut iter);
+                    if sort {
+                        iter.sort();
+                    }
+                    Err((iter.into(), node.edges()))
                 },
                 |node| {
                     let node = unsafe { node.as_ref() };
-                    Err((node.keys(lower, upper).into(), node.edges()))
+                    let mut iter = Box::new(KeyIter63::default());
+                    node.keys(lower, upper, &mut iter);
+                    Err((iter.into(), node.edges()))
                 },
                 |node| {
                     let node = unsafe { node.as_ref() };
-                    Err((node.keys(lower, upper).into(), node.edges()))
+                    let mut iter = KeyIter256::default();
+                    node.keys(lower, upper, &mut iter);
+                    Err((iter.into(), node.edges()))
                 },
             )
             .map_err(|(keys, edges)| unsafe { EntryIter::new(keys, edges) });

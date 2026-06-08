@@ -83,12 +83,12 @@ where
     }
 
     #[inline]
-    pub(crate) fn entries<O: Order>(&self) -> EntryIter<'g, 'k, K, R, O> {
-        EntryIter(unsafe { RangeIter::new_unchecked(self.root, self.prefix, &self.range) })
+    pub(crate) fn entries<O: Order>(&self, sort: bool) -> EntryIter<'g, 'k, K, R, O> {
+        EntryIter(unsafe { RangeIter::new_unchecked(self.root, self.prefix, sort, &self.range) })
     }
 
     #[inline]
-    pub(crate) fn values<O: Order>(&self) -> ValueIter<'g, 'k, K, R, O> {
-        ValueIter(unsafe { RangeIter::new_unchecked(self.root, self.prefix, &self.range) })
+    pub(crate) fn values<O: Order>(&self, sort: bool) -> ValueIter<'g, 'k, K, R, O> {
+        ValueIter(unsafe { RangeIter::new_unchecked(self.root, self.prefix, sort, &self.range) })
     }
 }

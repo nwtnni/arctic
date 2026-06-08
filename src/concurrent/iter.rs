@@ -43,7 +43,7 @@ where
     #[inline]
     pub fn entries<O: Order>(&self) -> EntryIter<'_, 'k, K, V, R, O, G> {
         EntryIter {
-            inner: self.inner.entries::<O>(),
+            inner: self.inner.entries::<O>(true),
             value: 0,
             _guard: PhantomData,
             _value: PhantomData,
@@ -53,7 +53,7 @@ where
     #[inline]
     pub fn values<O: Order>(&self) -> ValueIter<'_, 'k, K, V, R, O, G> {
         ValueIter {
-            inner: self.inner.values::<O>(),
+            inner: self.inner.values::<O>(true),
             value: 0,
             _guard: PhantomData,
             _value: PhantomData,

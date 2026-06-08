@@ -16,6 +16,7 @@ use crate::raw::node::Linear;
 #[cfg_attr(not(doc), expect(unused_imports))]
 use crate::raw::node::Node;
 use crate::raw::node::linear;
+use crate::raw::node::linear::KeyIter3;
 use crate::raw::node::simd;
 
 /// [`Node`] representation that contains at most 3 key-edge pairs.
@@ -47,7 +48,7 @@ impl Default for HeaderPacked {
 impl linear::Header for ribbit::Packed<Header> {
     const TYPE: node::Type = node::Type::Node3;
     const CAPACITY: usize = 3;
-    type KeyIter = linear::KeyIter3;
+    type KeyIter = KeyIter3;
 
     #[expect(clippy::get_first)]
     unsafe fn new_unchecked(keys: &[u8]) -> Self {
@@ -100,9 +101,9 @@ impl linear::Header for ribbit::Packed<Header> {
         Err(Some(unsafe { Self::new_unchecked(value) }))
     }
 
-    fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U) -> Self::KeyIter {
+    fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U, iter: &mut Self::KeyIter) {
         let len = self.len();
-        node::simd::keys_3(self.value, len, lower, upper)
+        node::simd::keys_3(self.value, len, lower, upper, iter)
     }
 
     fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex> {
@@ -178,9 +179,9 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
     }
 }
 
-impl From<linear::KeyIter3> for node::KeyIter {
+impl From<KeyIter3> for node::KeyIter {
     #[inline]
-    fn from(iter: linear::KeyIter3) -> Self {
+    fn from(iter: KeyIter3) -> Self {
         node::KeyIter::new_3(iter)
     }
 }
