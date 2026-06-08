@@ -10,10 +10,10 @@ use ribbit::u2;
 use ribbit::u4;
 
 use crate::raw::node;
+use crate::raw::node::KeyIter3;
+use crate::raw::node::KeyIter15;
+use crate::raw::node::KeyIter63;
 use crate::raw::node::iter::KeyIndex;
-use crate::raw::node::linear::KeyIter3;
-use crate::raw::node::linear::KeyIter15;
-use crate::raw::node::linear::KeyIter63;
 
 #[inline]
 pub(super) fn get_3(array: u64, key: u8) -> u8 {

@@ -4,11 +4,11 @@ use ribbit::u4;
 use ribbit::u120;
 
 use crate::raw::node;
+use crate::raw::node::KeyIter15;
 use crate::raw::node::Linear;
 #[cfg_attr(not(doc), expect(unused_imports))]
 use crate::raw::node::Node;
 use crate::raw::node::linear;
-use crate::raw::node::linear::KeyIter15;
 
 /// [`Node`] representation that contains at most 15 key-edge pairs.
 pub(crate) type Node15<M> = Linear<15, Header, M>;

@@ -11,9 +11,9 @@ use ribbit::Atomic;
 use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::Edge;
+use crate::raw::node::KeyIter256;
 use crate::raw::node::Node;
 use crate::raw::node::iter;
-use crate::raw::node::iter::KeyIndex;
 
 /// [`Node`] representation that contains exactly 256 key-edge pairs.
 #[repr(C, align(4096))]
@@ -129,77 +129,5 @@ where
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Node256").field("edges", &self.0).finish()
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Default, Debug)]
-pub(crate) struct KeyIter256 {
-    head: u16,
-    tail: u16,
-}
-
-impl KeyIter256 {
-    #[inline]
-    fn new<L: node::iter::Lower, U: node::iter::Upper>(lower: L, upper: U) -> Self {
-        Self {
-            head: lower.get() as u16,
-            tail: upper.get() as u16 + 1,
-        }
-    }
-}
-
-impl Iterator for KeyIter256 {
-    type Item = KeyIndex;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.head == self.tail {
-            return None;
-        }
-
-        let next = self.head as u8;
-        self.head += 1;
-        Some(KeyIndex {
-            key: next,
-            index: next,
-        })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = (self.tail - self.head) as usize;
-        (len, Some(len))
-    }
-}
-
-impl ExactSizeIterator for KeyIter256 {
-    #[inline]
-    fn len(&self) -> usize {
-        let (lower, upper) = self.size_hint();
-        validate_eq!(upper, Some(lower));
-        lower
-    }
-}
-
-impl DoubleEndedIterator for KeyIter256 {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.head == self.tail {
-            return None;
-        }
-
-        self.tail -= 1;
-        Some(KeyIndex {
-            key: self.tail as u8,
-            index: self.tail as u8,
-        })
-    }
-}
-
-impl From<KeyIter256> for node::KeyIter {
-    #[inline]
-    fn from(iter: KeyIter256) -> Self {
-        node::KeyIter::new_256(iter)
     }
 }

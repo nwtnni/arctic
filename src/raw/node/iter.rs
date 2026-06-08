@@ -3,8 +3,6 @@
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
-use core::ops::Deref;
-use core::ops::DerefMut;
 use core::ptr::NonNull;
 
 use ribbit::Atomic;
@@ -15,8 +13,6 @@ use ribbit::u2;
 use crate::raw::Edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
-use crate::raw::node::linear;
-use crate::raw::node::node_256;
 
 /// Iterator over key-edge pairs.
 pub(crate) struct EntryIter<'g, M: ribbit::Pack> {
@@ -99,6 +95,68 @@ impl<'g, M: ribbit::Pack> ExactSizeIterator for EntryIter<'g, M> {
     }
 }
 
+/// Byte lower bound for range iteration.
+pub(crate) trait Lower: Copy + Default + Debug {
+    const UNBOUND: bool = false;
+    fn get(self) -> u8;
+    fn check(self, byte: u8) -> bool;
+}
+
+/// Byte upper bound for range iteration.
+pub(crate) trait Upper: Copy + Default + Debug {
+    const UNBOUND: bool = false;
+    fn get(self) -> u8;
+    fn check(self, byte: u8) -> bool;
+}
+
+impl<T> Lower for Unbound<T> {
+    const UNBOUND: bool = true;
+
+    #[inline]
+    fn get(self) -> u8 {
+        0
+    }
+    #[inline]
+    fn check(self, _byte: u8) -> bool {
+        false
+    }
+}
+
+impl<T> Upper for Unbound<T> {
+    const UNBOUND: bool = true;
+
+    #[inline]
+    fn get(self) -> u8 {
+        255
+    }
+    #[inline]
+    fn check(self, _byte: u8) -> bool {
+        false
+    }
+}
+
+impl Lower for Option<u8> {
+    #[inline]
+    fn get(self) -> u8 {
+        self.unwrap_or(0)
+    }
+    #[inline]
+    fn check(self, byte: u8) -> bool {
+        self == Some(byte)
+    }
+}
+
+impl Upper for Option<u8> {
+    #[inline]
+    fn get(self) -> u8 {
+        self.unwrap_or(255)
+    }
+    #[inline]
+    fn check(self, byte: u8) -> bool {
+        self == Some(byte)
+    }
+}
+
 /// Iterator over (key byte, edge index). Heavily optimized for space because
 /// (a) range iteration requires keeping a stack of `KeyIter`s, and
 /// (b) most of them are `KeyIter3`, which is 8 bytes.
@@ -117,7 +175,7 @@ pub(crate) union KeyIter {
     ///   the highest byte address, and its value is <= 3.
     ///
     /// This leaves bits 3..8 at the highest byte address available.
-    node_3: linear::KeyIter3,
+    node_3: KeyIter3,
 
     /// Stored in `Box`.
     ///
@@ -125,12 +183,12 @@ pub(crate) union KeyIter {
     /// are 56 bytes or less, leaving bits 0..5 and 56..64 available (addresses are
     /// endian-dependent). Combined with the `node_3` constraint, this leaves us
     /// with exactly bits 3..5 of the highest byte, endian-independent.
-    node_15: NonNull<linear::KeyIter15>,
+    node_15: NonNull<KeyIter15>,
 
     /// Stored in `Box`.
     ///
     /// Same reasoning as `node_15`.
-    node_47: NonNull<linear::KeyIter63>,
+    node_47: NonNull<KeyIter63>,
 
     /// Stored inline.
     ///
@@ -143,31 +201,6 @@ pub(crate) union KeyIter {
 
 const_assert_size_align!(KeyIter, 8, 8);
 
-/// Wrapper around [`crate::raw::node::node_256::KeyIter`] that
-/// includes discriminant at highest byte address.
-#[repr(C, align(8))]
-#[derive(Copy, Clone)]
-struct KeyIter256 {
-    iter: node_256::KeyIter256,
-    _pad: [u8; 3],
-    _type: Type256,
-}
-
-impl Deref for KeyIter256 {
-    type Target = node_256::KeyIter256;
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.iter
-    }
-}
-
-impl DerefMut for KeyIter256 {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.iter
-    }
-}
-
 /// Discriminant offset within a single byte.
 const TYPE_SHIFT_BYTE: usize = 3;
 
@@ -179,23 +212,24 @@ const TYPE_SHIFT_PTR: usize = if cfg!(target_endian = "little") {
     TYPE_SHIFT_BYTE
 };
 
-const _: () = assert!(align_of::<linear::KeyIter15>() == 32);
+const _: () = assert!(align_of::<KeyIter15>() == 32);
 const TYPE_15: usize = (node::Type::Node15 as usize) << TYPE_SHIFT_PTR;
 
-const _: () = assert!(align_of::<linear::KeyIter63>() == 32);
+const _: () = assert!(align_of::<KeyIter63>() == 32);
 const TYPE_47: usize = (node::Type::Node47 as usize) << TYPE_SHIFT_PTR;
 
 /// Enum with a single possible bit representation.
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default, Debug)]
 enum Type256 {
+    #[default]
     Type = (node::Type::Node256 as u8) << TYPE_SHIFT_BYTE,
 }
 
 impl KeyIter {
     // HACK: used for postorder traversal
     pub(crate) const ROOT: Self = Self {
-        node_3: linear::KeyIter3::new_3([KeyIndex::DEFAULT; 3], 1),
+        node_3: KeyIter3::new([KeyIndex::DEFAULT; 3], 1),
     };
 
     #[inline]
@@ -217,14 +251,14 @@ impl KeyIter {
     }
 
     #[inline]
-    pub(super) fn new_3(node_3: linear::KeyIter3) -> Self {
+    pub(super) fn new_3(node_3: KeyIter3) -> Self {
         let iter = Self { node_3 };
         validate_eq!(iter.r#type(), node::Type::Node3.pack());
         iter
     }
 
     #[inline]
-    pub(super) fn new_15(node_15: Box<linear::KeyIter15>) -> Self {
+    pub(super) fn new_15(node_15: Box<KeyIter15>) -> Self {
         let iter = Self {
             node_15: NonNull::from(Box::leak(node_15)).map_addr(|addr| {
                 validate_eq!(
@@ -243,7 +277,7 @@ impl KeyIter {
     }
 
     #[inline]
-    pub(super) fn new_47(node_47: Box<linear::KeyIter63>) -> Self {
+    pub(super) fn new_47(node_47: Box<KeyIter63>) -> Self {
         let iter = Self {
             node_47: NonNull::from(Box::leak(node_47)).map_addr(|addr| {
                 validate_eq!(
@@ -262,21 +296,14 @@ impl KeyIter {
     }
 
     #[inline]
-    pub(super) fn new_256(node_256: node_256::KeyIter256) -> Self {
-        let iter = Self {
-            node_256: KeyIter256 {
-                iter: node_256,
-                _pad: [0; 3],
-                _type: Type256::Type,
-            },
-        };
-
+    pub(super) fn new_256(node_256: KeyIter256) -> Self {
+        let iter = Self { node_256 };
         validate_eq!(iter.r#type(), node::Type::Node256.pack());
         iter
     }
 
     #[inline]
-    unsafe fn as_node_15_unchecked(&self) -> NonNull<linear::KeyIter15> {
+    unsafe fn as_node_15_unchecked(&self) -> NonNull<KeyIter15> {
         validate_eq!(self.r#type(), node::Type::Node15.pack());
 
         unsafe {
@@ -288,7 +315,7 @@ impl KeyIter {
     }
 
     #[inline]
-    unsafe fn as_node_47_unchecked(&self) -> NonNull<linear::KeyIter63> {
+    unsafe fn as_node_47_unchecked(&self) -> NonNull<KeyIter63> {
         validate_eq!(self.r#type(), node::Type::Node47.pack());
 
         unsafe {
@@ -360,6 +387,192 @@ impl Drop for KeyIter {
     }
 }
 
+/// NOTE: We order `head` and `tail` fields at the end
+/// to allow `entries` to be filled in with a single
+/// aligned SIMD write.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) struct KeyIterN<const N: usize> {
+    pub(super) entries: [node::iter::KeyIndex; N],
+    pub(super) head: u8,
+    pub(super) tail: u8,
+}
+
+impl<const N: usize> Default for KeyIterN<N> {
+    fn default() -> Self {
+        Self {
+            entries: [node::iter::KeyIndex { key: 0, index: 0 }; N],
+            head: 0,
+            tail: 0,
+        }
+    }
+}
+
+#[repr(C, align(8))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct KeyIter3(pub(super) KeyIterN<3>);
+
+#[repr(C, align(32))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct KeyIter15(pub(super) KeyIterN<15>);
+
+#[repr(C, align(32))]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct KeyIter63(pub(super) KeyIterN<63>);
+
+const_assert_size_align!(KeyIter3, 8, 8);
+const_assert_size_align!(KeyIter15, 32, 32);
+const_assert_size_align!(KeyIter63, 128, 32);
+
+macro_rules! impl_key_iter {
+    ($ty:ty, $len:expr $(,)?) => {
+        impl Iterator for $ty {
+            type Item = node::iter::KeyIndex;
+            #[inline]
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.0.head == self.0.tail {
+                    return None;
+                }
+
+                let next = self.0.entries.get(self.0.head as usize).copied()?;
+                self.0.head += 1;
+                Some(next)
+            }
+
+            #[inline]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let len = (self.0.tail - self.0.head) as usize;
+                (len, Some(len))
+            }
+        }
+
+        impl DoubleEndedIterator for $ty {
+            #[inline]
+            fn next_back(&mut self) -> Option<Self::Item> {
+                if self.0.head == self.0.tail {
+                    return None;
+                }
+
+                self.0.tail -= 1;
+                self.0.entries.get(self.0.tail as usize).copied()
+            }
+        }
+
+        impl ExactSizeIterator for $ty {
+            #[inline]
+            fn len(&self) -> usize {
+                let (lower, upper) = self.size_hint();
+                validate_eq!(upper, Some(lower));
+                lower
+            }
+        }
+    };
+}
+
+impl_key_iter!(KeyIter3, 3);
+impl_key_iter!(KeyIter15, 15);
+impl_key_iter!(KeyIter63, 63);
+
+impl KeyIter3 {
+    #[inline]
+    pub(super) const fn new(entries: [node::iter::KeyIndex; 3], len: u8) -> Self {
+        validate!(len as usize <= entries.len());
+        Self(KeyIterN {
+            head: 0,
+            tail: len,
+            entries,
+        })
+    }
+
+    #[inline]
+    pub(super) fn sort(&mut self) {
+        node::simd::sort_3(self)
+    }
+}
+
+impl KeyIter15 {
+    #[inline]
+    pub(super) fn sort(&mut self) {
+        node::simd::sort_15(self)
+    }
+}
+
+#[repr(C, align(8))]
+#[derive(Copy, Clone, Default, Debug)]
+pub(crate) struct KeyIter256 {
+    head: u16,
+    tail: u16,
+    _pad: [u8; 3],
+    _type: Type256,
+}
+
+impl KeyIter256 {
+    #[inline]
+    pub(super) fn new<L: node::iter::Lower, U: node::iter::Upper>(lower: L, upper: U) -> Self {
+        Self {
+            head: lower.get() as u16,
+            tail: upper.get() as u16 + 1,
+            _pad: [0; 3],
+            _type: Type256::Type,
+        }
+    }
+}
+
+impl Iterator for KeyIter256 {
+    type Item = KeyIndex;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.head == self.tail {
+            return None;
+        }
+
+        let next = self.head as u8;
+        self.head += 1;
+        Some(KeyIndex {
+            key: next,
+            index: next,
+        })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = (self.tail - self.head) as usize;
+        (len, Some(len))
+    }
+}
+
+impl ExactSizeIterator for KeyIter256 {
+    #[inline]
+    fn len(&self) -> usize {
+        let (lower, upper) = self.size_hint();
+        validate_eq!(upper, Some(lower));
+        lower
+    }
+}
+
+impl DoubleEndedIterator for KeyIter256 {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.head == self.tail {
+            return None;
+        }
+
+        self.tail -= 1;
+        Some(KeyIndex {
+            key: self.tail as u8,
+            index: self.tail as u8,
+        })
+    }
+}
+
+impl From<KeyIter256> for node::KeyIter {
+    #[inline]
+    fn from(iter: KeyIter256) -> Self {
+        node::KeyIter::new_256(iter)
+    }
+}
+
 /// A key byte and the edge index it is mapped to.
 ///
 /// NOTE: These fields are ordered so that interpreting the struct
@@ -409,67 +622,5 @@ impl Ord for KeyIndex {
 impl Debug for KeyIndex {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:#.02X}:{:#.02X}", self.key, self.index)
-    }
-}
-
-/// Byte lower bound for range iteration.
-pub(crate) trait Lower: Copy + Default + Debug {
-    const UNBOUND: bool = false;
-    fn get(self) -> u8;
-    fn check(self, byte: u8) -> bool;
-}
-
-/// Byte upper bound for range iteration.
-pub(crate) trait Upper: Copy + Default + Debug {
-    const UNBOUND: bool = false;
-    fn get(self) -> u8;
-    fn check(self, byte: u8) -> bool;
-}
-
-impl<T> Lower for Unbound<T> {
-    const UNBOUND: bool = true;
-
-    #[inline]
-    fn get(self) -> u8 {
-        0
-    }
-    #[inline]
-    fn check(self, _byte: u8) -> bool {
-        false
-    }
-}
-
-impl<T> Upper for Unbound<T> {
-    const UNBOUND: bool = true;
-
-    #[inline]
-    fn get(self) -> u8 {
-        255
-    }
-    #[inline]
-    fn check(self, _byte: u8) -> bool {
-        false
-    }
-}
-
-impl Lower for Option<u8> {
-    #[inline]
-    fn get(self) -> u8 {
-        self.unwrap_or(0)
-    }
-    #[inline]
-    fn check(self, byte: u8) -> bool {
-        self == Some(byte)
-    }
-}
-
-impl Upper for Option<u8> {
-    #[inline]
-    fn get(self) -> u8 {
-        self.unwrap_or(255)
-    }
-    #[inline]
-    fn check(self, byte: u8) -> bool {
-        self == Some(byte)
     }
 }

@@ -315,7 +315,7 @@ fn test_map<'k, K: Workload>(key_set: &'k K, thread_count: usize, key_count: usi
 where
     for<'a> &'a <K::Key<'k> as Key>::Borrowed: Sync + core::fmt::Debug,
     <K::Value as arctic::concurrent::Value>::Target: core::fmt::Debug,
-    K::Key<'k>: Clone + Ord,
+    K::Key<'k>: Clone + Ord + core::fmt::Debug,
 {
     assert_eq!(key_count % thread_count, 0);
 

@@ -15,8 +15,8 @@ use crate::raw::node;
 use crate::raw::node::Linear;
 #[cfg_attr(not(doc), expect(unused_imports))]
 use crate::raw::node::Node;
+use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::linear;
-use crate::raw::node::linear::KeyIter3;
 use crate::raw::node::simd;
 
 /// [`Node`] representation that contains at most 3 key-edge pairs.

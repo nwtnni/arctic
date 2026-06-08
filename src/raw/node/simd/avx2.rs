@@ -38,10 +38,10 @@ use ribbit::Atomic;
 use ribbit::u2;
 use ribbit::u4;
 
+use crate::raw::node::KeyIter3;
+use crate::raw::node::KeyIter15;
+use crate::raw::node::KeyIter63;
 use crate::raw::node::iter::KeyIndex;
-use crate::raw::node::linear::KeyIter3;
-use crate::raw::node::linear::KeyIter15;
-use crate::raw::node::linear::KeyIter63;
 
 /// https://richardstartin.github.io/posts/finding-bytes
 /// https://orlp.net/blog/extracting-depositing-bits/
@@ -640,8 +640,8 @@ mod tests {
     use ribbit::u2;
     use ribbit::u4;
 
-    use crate::raw::node::linear::KeyIter3;
-    use crate::raw::node::linear::KeyIter15;
+    use crate::raw::node::KeyIter3;
+    use crate::raw::node::KeyIter15;
     use crate::raw::node::simd;
     use crate::raw::node::simd::avx2::bitonic_sort_16;
 
