@@ -155,21 +155,6 @@ mod tests {
     use crate::NonPrefixVec;
     use crate::concurrent::Map;
     use crate::raw::key::Read as _;
-    use crate::sequential;
-
-    // https://users.rust-lang.org/t/testing-if-a-type-is-implementing-an-auto-trait/90871/6
-    #[test]
-    const fn assert_not_sync() {
-        #[allow(dead_code)]
-        trait AmbiguousIfSync<T> {
-            const ASSERT_NOT_SYNC: () = ();
-        }
-
-        impl<T: ?Sized> AmbiguousIfSync<((), ())> for T {}
-        impl<T: ?Sized + Sync> AmbiguousIfSync<()> for T {}
-
-        const _: () = <sequential::Map<u64, u64>>::ASSERT_NOT_SYNC;
-    }
 
     #[test]
     fn smoke() {

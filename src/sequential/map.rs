@@ -1,4 +1,3 @@
-use core::cell::Cell;
 use core::marker::PhantomData;
 use core::ops::RangeFull;
 use core::ptr::NonNull;
@@ -21,7 +20,6 @@ use crate::stat;
 #[repr(transparent)]
 pub struct Map<K: Key, V: Value> {
     pub(crate) raw: raw::Map<K>,
-    _not_sync: PhantomData<Cell<()>>,
     _value: PhantomData<V>,
 }
 
@@ -33,7 +31,6 @@ where
     fn default() -> Self {
         Self {
             raw: raw::Map::default(),
-            _not_sync: PhantomData,
             _value: PhantomData,
         }
     }
