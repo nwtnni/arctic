@@ -68,6 +68,8 @@ pub trait Key: Borrow<Self::Borrowed> {
     unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
     where
         Self: 'k;
+
+    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8);
 }
 
 pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {

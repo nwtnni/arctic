@@ -49,6 +49,16 @@ macro_rules! impl_key {
                 unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k> where Self: 'k{
                     writer.0
                 }
+
+                #[inline]
+                fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8) {
+                    let reader = Reader {
+                        buffer: insert,
+                        len: Len(<$ty as Int>::BITS - 8),
+                    };
+                    let byte = insert as u8;
+                    (reader, byte)
+                }
             }
 
             impl From<$ty> for Reader<$ty> {

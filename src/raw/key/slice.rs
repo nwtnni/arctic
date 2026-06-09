@@ -108,6 +108,14 @@ impl Key for &'_ NonPrefixSlice {
             ))
         }
     }
+
+    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8)
+    where
+        Self: 'k,
+    {
+        let (byte, slice) = insert.split_last().expect("NonPrefixSlice is non-empty");
+        (Reader(slice), *byte)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]

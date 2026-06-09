@@ -99,6 +99,12 @@ impl Key for NonPrefixVec {
     {
         unsafe { NonPrefixSlice::new_unchecked(&writer.0) }
     }
+
+    #[inline]
+    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8) {
+        let (byte, slice) = insert.split_last().expect("NonPrefixVec is non-empty");
+        (Reader(slice), *byte)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
