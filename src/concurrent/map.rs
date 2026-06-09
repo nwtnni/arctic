@@ -242,94 +242,6 @@ where
         self.update_with_pessimistic(key, initial, update)
     }
 
-    #[inline]
-    fn update_with_optimistic<'g, F>(
-        &'g self,
-        key: &K::Borrowed,
-        initial: Option<V>,
-        update: F,
-    ) -> Result<Update<'g, K, V, S>, Option<V>>
-    where
-        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
-    {
-        self.update_with_impl::<path::Discard, _>(key, initial, update)
-    }
-
-    #[cold]
-    fn update_with_pessimistic<'g, F>(
-        &'g self,
-        key: &K::Borrowed,
-        initial: Option<V>,
-        update: F,
-    ) -> Update<'g, K, V, S>
-    where
-        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
-    {
-        stat::increment(stat::Counter::UpdatePessimistic);
-        match self.update_with_impl::<path::Retain<_>, _>(key, initial, update) {
-            Ok(update) => update,
-            Err(_) => unreachable!(),
-        }
-    }
-
-    #[inline]
-    fn update_with_impl<'g, 'k, P, F>(
-        &'g self,
-        key: &'k K::Borrowed,
-        mut initial: Option<V>,
-        mut update: F,
-    ) -> Result<Update<'g, K, V, S>, Option<V>>
-    where
-        P: Path<K::Read<'k>>,
-        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
-    {
-        let reader = K::Read::from(key);
-        let mut guard = self.smr.guard(reader);
-        let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-
-        loop {
-            let updated = match cursor.traverse_update() {
-                None => return Ok(Update::Absent { new: initial }),
-                Some(Ok(old)) => old,
-                Some(Err(Frozen)) => match cursor.freeze() {
-                    Err(_) => return Err(initial),
-                    Ok(None) => continue,
-                    Ok(Some(node)) => unsafe {
-                        guard.retire_node(cursor.len().bits(), node);
-                        continue;
-                    },
-                },
-            };
-
-            let new_value =
-                match update(unsafe { V::target_from_raw(&updated.value) }, &mut initial) {
-                    ControlFlow::Continue(new) => V::into_raw(new),
-                    ControlFlow::Break(()) => {
-                        return Ok(Update::Break {
-                            old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
-                            new: initial,
-                        });
-                    }
-                };
-
-            match cursor.edge().compare_exchange_packed(
-                updated.edge,
-                Edge::new_value(updated.edge.meta(), new_value),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    return Ok(Update::Success(unsafe {
-                        Updated::<K, V, S>::wrap(guard, updated.value, new_value)
-                    }));
-                }
-                Err(_) => {
-                    initial = Some(unsafe { V::from_raw(new_value) });
-                }
-            }
-        }
-    }
-
     pub fn remove_non_recursive(&self, key: &K::Borrowed) -> Option<Owned<'_, K, V, S>> {
         match self.remove_non_recursive_with(key, |_| ControlFlow::Continue(())) {
             Remove::Absent => None,
@@ -352,31 +264,6 @@ where
         }
     }
 
-    #[inline]
-    fn remove_non_recursive_with_optimistic<F>(
-        &self,
-        key: &K::Borrowed,
-        with: &mut F,
-    ) -> Result<Remove<'_, K, V, S>, ()>
-    where
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
-    {
-        self.remove_with_impl::<false, path::Discard, _>(key, with)
-    }
-
-    #[cold]
-    fn remove_non_recursive_with_pessimistic<F>(
-        &self,
-        key: &K::Borrowed,
-        with: &mut F,
-    ) -> Remove<'_, K, V, S>
-    where
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
-    {
-        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(key, with);
-        remove
-    }
-
     pub fn remove<'g>(&'g self, key: &K::Borrowed) -> Option<Owned<'g, K, V, S>> {
         match self.remove_with(key, |_| ControlFlow::Continue(())) {
             Remove::Absent => None,
@@ -391,122 +278,6 @@ where
     {
         let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(key, &mut with);
         remove
-    }
-
-    #[inline]
-    fn remove_with_impl<'g, 'k, const RECURSIVE: bool, P, F>(
-        &'g self,
-        key: &'k K::Borrowed,
-        remove: &mut F,
-    ) -> Result<Remove<'g, K, V, S>, P::PopError>
-    where
-        P: Path<K::Read<'k>>,
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
-    {
-        let reader = K::Read::from(key);
-        let mut guard = self.smr.guard(reader);
-        let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-
-        let updated = loop {
-            let updated = match cursor.traverse_update() {
-                None => return Ok(Remove::Absent),
-                Some(Ok(old)) => old,
-                Some(Err(Frozen)) => match cursor.freeze()? {
-                    None => continue,
-                    Some(node) => unsafe {
-                        guard.retire_node(cursor.len().bits(), node);
-                        continue;
-                    },
-                },
-            };
-
-            match remove(unsafe { V::target_from_raw(&updated.value) }) {
-                ControlFlow::Continue(()) => (),
-                ControlFlow::Break(()) => {
-                    return Ok(Remove::Break {
-                        old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
-                    });
-                }
-            }
-
-            if cursor
-                .edge()
-                .compare_exchange_packed(
-                    updated.edge,
-                    Edge::NULL,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
-                .is_ok()
-            {
-                break updated;
-            }
-        };
-
-        if RECURSIVE {
-            let mut trim = updated.edge.meta().len();
-
-            'outer: while let Some(target) = cursor
-                .pop()
-                .unwrap_or_else(|_| panic!("Recursive remove requires path"))
-            {
-                if unsafe { target.len() } > 0 {
-                    break 'outer;
-                }
-
-                cursor.trim(K::Len::BYTE + trim.into());
-
-                loop {
-                    let old = match cursor.traverse_prefix() {
-                        None => break 'outer,
-                        Some(old) if !old.meta().is_frozen() => old,
-                        Some(_) => match cursor.freeze() {
-                            Err(_) => unreachable!("Recursive remove requires path"),
-                            Ok(None) => continue,
-                            Ok(Some(node)) => unsafe {
-                                guard.retire_node(cursor.len().bits(), node);
-                                continue;
-                            },
-                        },
-                    };
-
-                    let (smo, new) = match old.child() {
-                        None => break 'outer,
-                        Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
-                        Some(edge::Child::Node(node)) if node == target => unsafe {
-                            node.freeze();
-                            node.replace(old.meta())
-                        },
-                        // Must have been replaced by someone else
-                        Some(edge::Child::Node(_)) => break 'outer,
-                    };
-
-                    match cursor.edge().compare_exchange_packed(
-                        old,
-                        new,
-                        Ordering::AcqRel,
-                        Ordering::Acquire,
-                    ) {
-                        Ok(old) => {
-                            unsafe { guard.retire_node(cursor.len().bits(), target) };
-                            trim = old.meta().len();
-                            continue 'outer;
-                        }
-                        Err(_) => {
-                            if smo.is_allocate()
-                                && let Some(node) = new.as_node()
-                            {
-                                unsafe { node.deallocate(stat::Counter::FreeConflict) };
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(Remove::Success {
-            old: unsafe { Owned::<K, V, S>::wrap(guard, updated.value) },
-        })
     }
 
     /// Insert a key-value pair whether or not `self` contains `key`.
@@ -626,6 +397,265 @@ where
         };
 
         self.upsert_with_pessimistic(key, initial, upsert)
+    }
+
+    pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
+        let guard = self.smr.guard(K::Read::default());
+        unsafe { Shard::new(guard, self.seq.raw.all()) }
+    }
+
+    pub fn prefix<'g, 'k>(
+        &'g self,
+        prefix: impl Into<K::Read<'k>>,
+    ) -> iter::Shard<'g, 'k, K, V, RangeFull, Guard<'g, K, V, S>> {
+        let prefix = prefix.into();
+        let guard = self.smr.guard(prefix);
+        unsafe { Shard::new(guard, self.seq.raw.prefix(prefix)) }
+    }
+
+    pub fn range<'g, 'k, R>(&'g self, range: R) -> iter::Shard<'g, 'k, K, V, R, Guard<'g, K, V, S>>
+    where
+        R: crate::raw::iter::Range<K::Read<'k>>,
+    {
+        let prefix = range.common_prefix();
+        let guard = self.smr.guard(prefix);
+        unsafe { Shard::new(guard, self.seq.raw.range(range, prefix)) }
+    }
+}
+
+impl<K, V, S> Map<K, V, S>
+where
+    K: Key,
+    V: Value + Send + Sync,
+    S: Smr,
+{
+    #[inline]
+    fn update_with_optimistic<'g, F>(
+        &'g self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        update: F,
+    ) -> Result<Update<'g, K, V, S>, Option<V>>
+    where
+        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        self.update_with_impl::<path::Discard, _>(key, initial, update)
+    }
+
+    #[cold]
+    fn update_with_pessimistic<'g, F>(
+        &'g self,
+        key: &K::Borrowed,
+        initial: Option<V>,
+        update: F,
+    ) -> Update<'g, K, V, S>
+    where
+        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        stat::increment(stat::Counter::UpdatePessimistic);
+        match self.update_with_impl::<path::Retain<_>, _>(key, initial, update) {
+            Ok(update) => update,
+            Err(_) => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn update_with_impl<'g, 'k, P, F>(
+        &'g self,
+        key: &'k K::Borrowed,
+        mut initial: Option<V>,
+        mut update: F,
+    ) -> Result<Update<'g, K, V, S>, Option<V>>
+    where
+        P: Path<K::Read<'k>>,
+        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+    {
+        let reader = K::Read::from(key);
+        let mut guard = self.smr.guard(reader);
+        let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+
+        loop {
+            let updated = match cursor.traverse_update() {
+                None => return Ok(Update::Absent { new: initial }),
+                Some(Ok(old)) => old,
+                Some(Err(Frozen)) => match cursor.freeze() {
+                    Err(_) => return Err(initial),
+                    Ok(None) => continue,
+                    Ok(Some(node)) => unsafe {
+                        guard.retire_node(cursor.len().bits(), node);
+                        continue;
+                    },
+                },
+            };
+
+            let new_value =
+                match update(unsafe { V::target_from_raw(&updated.value) }, &mut initial) {
+                    ControlFlow::Continue(new) => V::into_raw(new),
+                    ControlFlow::Break(()) => {
+                        return Ok(Update::Break {
+                            old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
+                            new: initial,
+                        });
+                    }
+                };
+
+            match cursor.edge().compare_exchange_packed(
+                updated.edge,
+                Edge::new_value(updated.edge.meta(), new_value),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    return Ok(Update::Success(unsafe {
+                        Updated::<K, V, S>::wrap(guard, updated.value, new_value)
+                    }));
+                }
+                Err(_) => {
+                    initial = Some(unsafe { V::from_raw(new_value) });
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn remove_non_recursive_with_optimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        with: &mut F,
+    ) -> Result<Remove<'_, K, V, S>, ()>
+    where
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        self.remove_with_impl::<false, path::Discard, _>(key, with)
+    }
+
+    #[cold]
+    fn remove_non_recursive_with_pessimistic<F>(
+        &self,
+        key: &K::Borrowed,
+        with: &mut F,
+    ) -> Remove<'_, K, V, S>
+    where
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(key, with);
+        remove
+    }
+
+    #[inline]
+    fn remove_with_impl<'g, 'k, const RECURSIVE: bool, P, F>(
+        &'g self,
+        key: &'k K::Borrowed,
+        remove: &mut F,
+    ) -> Result<Remove<'g, K, V, S>, P::PopError>
+    where
+        P: Path<K::Read<'k>>,
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        let reader = K::Read::from(key);
+        let mut guard = self.smr.guard(reader);
+        let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+
+        let updated = loop {
+            let updated = match cursor.traverse_update() {
+                None => return Ok(Remove::Absent),
+                Some(Ok(old)) => old,
+                Some(Err(Frozen)) => match cursor.freeze()? {
+                    None => continue,
+                    Some(node) => unsafe {
+                        guard.retire_node(cursor.len().bits(), node);
+                        continue;
+                    },
+                },
+            };
+
+            match remove(unsafe { V::target_from_raw(&updated.value) }) {
+                ControlFlow::Continue(()) => (),
+                ControlFlow::Break(()) => {
+                    return Ok(Remove::Break {
+                        old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
+                    });
+                }
+            }
+
+            if cursor
+                .edge()
+                .compare_exchange_packed(
+                    updated.edge,
+                    Edge::NULL,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+            {
+                break updated;
+            }
+        };
+
+        if RECURSIVE {
+            let mut trim = updated.edge.meta().len();
+
+            'outer: while let Some(target) = cursor
+                .pop()
+                .unwrap_or_else(|_| panic!("Recursive remove requires path"))
+            {
+                if unsafe { target.len() } > 0 {
+                    break 'outer;
+                }
+
+                cursor.trim(K::Len::BYTE + trim.into());
+
+                loop {
+                    let old = match cursor.traverse_prefix() {
+                        None => break 'outer,
+                        Some(old) if !old.meta().is_frozen() => old,
+                        Some(_) => match cursor.freeze() {
+                            Err(_) => unreachable!("Recursive remove requires path"),
+                            Ok(None) => continue,
+                            Ok(Some(node)) => unsafe {
+                                guard.retire_node(cursor.len().bits(), node);
+                                continue;
+                            },
+                        },
+                    };
+
+                    let (smo, new) = match old.child() {
+                        None => break 'outer,
+                        Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
+                        Some(edge::Child::Node(node)) if node == target => unsafe {
+                            node.freeze();
+                            node.replace(old.meta())
+                        },
+                        // Must have been replaced by someone else
+                        Some(edge::Child::Node(_)) => break 'outer,
+                    };
+
+                    match cursor.edge().compare_exchange_packed(
+                        old,
+                        new,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(old) => {
+                            unsafe { guard.retire_node(cursor.len().bits(), target) };
+                            trim = old.meta().len();
+                            continue 'outer;
+                        }
+                        Err(_) => {
+                            if smo.is_allocate()
+                                && let Some(node) = new.as_node()
+                            {
+                                unsafe { node.deallocate(stat::Counter::FreeConflict) };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Remove::Success {
+            old: unsafe { Owned::<K, V, S>::wrap(guard, updated.value) },
+        })
     }
 
     #[inline]
@@ -765,29 +795,6 @@ where
                 Ok(Some(node)) => unsafe { guard.retire_node(cursor.len().bits(), node) },
             }
         }
-    }
-
-    pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
-        let guard = self.smr.guard(K::Read::default());
-        unsafe { Shard::new(guard, self.seq.raw.all()) }
-    }
-
-    pub fn prefix<'g, 'k>(
-        &'g self,
-        prefix: impl Into<K::Read<'k>>,
-    ) -> iter::Shard<'g, 'k, K, V, RangeFull, Guard<'g, K, V, S>> {
-        let prefix = prefix.into();
-        let guard = self.smr.guard(prefix);
-        unsafe { Shard::new(guard, self.seq.raw.prefix(prefix)) }
-    }
-
-    pub fn range<'g, 'k, R>(&'g self, range: R) -> iter::Shard<'g, 'k, K, V, R, Guard<'g, K, V, S>>
-    where
-        R: crate::raw::iter::Range<K::Read<'k>>,
-    {
-        let prefix = range.common_prefix();
-        let guard = self.smr.guard(prefix);
-        unsafe { Shard::new(guard, self.seq.raw.range(range, prefix)) }
     }
 }
 
