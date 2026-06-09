@@ -138,6 +138,22 @@ impl key::Read for Reader {
         }
     }
 
+    fn split_last(self) -> Option<(Self, u8)> {
+        let len = self
+            .len
+            .0
+            .checked_sub(Self::Len::BYTE.0)
+            .map(key::vec::Len)?;
+
+        Some((
+            Self {
+                buffer: self.buffer,
+                len,
+            },
+            self.buffer[len.bytes()],
+        ))
+    }
+
     // fn expand(
     //     &self,
     //     edge: ribbit::Packed<Self::Edge>,

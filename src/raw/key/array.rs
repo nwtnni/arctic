@@ -43,11 +43,6 @@ impl<const N: usize> Key for [u8; N] {
     {
         &writer.0
     }
-
-    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8) {
-        let (byte, reader) = insert.split_last().expect("Array must be non-empty");
-        (key::vec::Reader(reader), *byte)
-    }
 }
 
 impl<'k, const N: usize> From<&'k [u8; N]> for key::vec::Reader<'k, N> {

@@ -68,8 +68,6 @@ pub trait Key: Borrow<Self::Borrowed> {
     unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
     where
         Self: 'k;
-
-    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8);
 }
 
 pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
@@ -117,6 +115,8 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     fn prefix(self, end: Self::Len) -> Self;
     fn suffix(self, start: Self::Len) -> Self;
     fn common_prefix(self, other: Self) -> Self;
+
+    fn split_last(self) -> Option<(Self, u8)>;
 }
 
 pub(crate) trait Write<R: Read>: fmt::Debug + Default {

@@ -99,12 +99,6 @@ impl Key for NonPrefixVec {
     {
         unsafe { NonPrefixSlice::new_unchecked(&writer.0) }
     }
-
-    #[inline]
-    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8) {
-        let (byte, slice) = insert.split_last().expect("NonPrefixVec is non-empty");
-        (Reader(slice), *byte)
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -187,6 +181,11 @@ impl<const N: usize> key::Read for Reader<'_, N> {
     fn common_prefix(self, other: Self) -> Self {
         let index = key::common_prefix(self.0, other.0);
         Self(&self.0[..index])
+    }
+
+    fn split_last(self) -> Option<(Self, u8)> {
+        let (byte, slice) = self.0.split_last()?;
+        Some((Reader(slice), *byte))
     }
 }
 

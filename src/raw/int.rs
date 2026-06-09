@@ -35,6 +35,8 @@ pub(crate) trait Int:
 
     fn from_most_significant_u64(value: u64) -> Self;
     fn from_u8(value: u8) -> Self;
+
+    fn least_significant_u8(self) -> u8;
 }
 
 macro_rules! impl_int {
@@ -82,6 +84,11 @@ macro_rules! impl_int {
                 #[inline]
                 fn from_u8(value: u8) -> Self {
                     (value as $ty).rotate_right(8)
+                }
+
+                #[inline]
+                fn least_significant_u8(self) -> u8 {
+                    self as u8
                 }
             }
         )*

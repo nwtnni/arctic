@@ -108,14 +108,6 @@ impl Key for &'_ NonPrefixSlice {
             ))
         }
     }
-
-    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8)
-    where
-        Self: 'k,
-    {
-        let (byte, slice) = insert.split_last().expect("NonPrefixSlice is non-empty");
-        (Reader(slice), *byte)
-    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -171,6 +163,11 @@ impl key::Read for Reader<'_> {
     fn common_prefix(self, other: Self) -> Self {
         let index = key::common_prefix(self.0, other.0);
         Self(&self.0[..index])
+    }
+
+    fn split_last(self) -> Option<(Self, u8)> {
+        let (byte, slice) = self.0.split_last()?;
+        Some((Reader(slice), *byte))
     }
 }
 

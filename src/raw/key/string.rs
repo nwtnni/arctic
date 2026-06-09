@@ -208,21 +208,6 @@ impl Key for NonNullString {
             unsafe { NonNullStr::new_unchecked(str::from_utf8_unchecked(key)) }
         )
     }
-
-    fn split<'k>(insert: Self::Insert<'k>) -> (Self::Read<'k>, u8) {
-        let (byte, slice) = insert
-            .as_bytes()
-            .split_last()
-            .expect("NonNullString is non-empty");
-
-        (
-            Reader {
-                slice,
-                terminate: true,
-            },
-            *byte,
-        )
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -339,6 +324,17 @@ impl key::Read for Reader<'_> {
             slice: &self.slice[..index],
             terminate: false,
         }
+    }
+
+    fn split_last(self) -> Option<(Self, u8)> {
+        let (byte, slice) = self.slice.split_last()?;
+        Some((
+            Reader {
+                slice,
+                terminate: self.terminate,
+            },
+            *byte,
+        ))
     }
 }
 
