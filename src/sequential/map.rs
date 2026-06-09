@@ -73,12 +73,12 @@ where
         }
     }
 
-    pub fn upsert<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<&mut V, (V, &mut V)> {
+    pub fn upsert<'k>(&mut self, key: K::Insert<'k>, value: V) -> Result<(V, &mut V), &mut V> {
         match self.entry(key) {
-            Entry::Vacant(entry) => Ok(entry.insert(value)),
+            Entry::Vacant(entry) => Err(entry.insert(value)),
             Entry::Occupied(mut entry) => {
                 let old = entry.insert(value);
-                Err((old, entry.into_mut()))
+                Ok((old, entry.into_mut()))
             }
         }
     }

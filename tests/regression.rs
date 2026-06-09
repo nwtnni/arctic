@@ -18,7 +18,7 @@ fn turso_range_24230c111c599daff93a7abc11c5c72b33d0ebfd() {
         .collect::<Vec<_>>();
 
     for (row_id, index) in &entries {
-        assert!(map.upsert(*row_id, *index).is_ok());
+        assert!(map.upsert(*row_id, *index).is_err());
     }
 
     for (row_id, index) in &entries {
