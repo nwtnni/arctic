@@ -53,17 +53,12 @@ where
 {
     pub(crate) unsafe fn new_unchecked(
         root: *mut Atomic<Edge<K::Edge>>,
+        edge: ribbit::Packed<Edge<K::Edge>>,
         prefix: K,
         sort: bool,
         range: &R,
     ) -> Self {
-        let Some(root) = NonNull::new(root) else {
-            return Self::default();
-        };
-
-        let edge = unsafe { root.as_ref() }.load_packed(Ordering::Acquire);
-
-        let Some(child) = edge.child() else {
+        let Some((root, child)) = NonNull::new(root).zip(edge.child()) else {
             return Self::default();
         };
 

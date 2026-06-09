@@ -1,5 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::RangeFull;
+use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
 
@@ -20,6 +21,7 @@ where
     K: Key,
 {
     root: *mut Atomic<Edge<K::Edge>>,
+    edge: ribbit::Packed<Edge<K::Edge>>,
     prefix: K::Read<'k>,
     range: R,
     _global: PhantomData<&'g Atomic<Edge<K::Edge>>>,
@@ -32,7 +34,8 @@ where
 {
     #[inline]
     pub(crate) unsafe fn new_all(root: &'g Atomic<Edge<K::Edge>>) -> Shard<'g, 'k, K, RangeFull> {
-        unsafe { Shard::new(root as *const _ as *mut _, K::Read::default(), ..) }
+        let edge = root.load_packed(Ordering::Relaxed);
+        unsafe { Shard::new(root as *const _ as *mut _, edge, K::Read::default(), ..) }
     }
 
     pub(crate) unsafe fn new_prefix(
@@ -40,13 +43,12 @@ where
         prefix: K::Read<'k>,
     ) -> Shard<'g, 'k, K, RangeFull> {
         let mut cursor = unsafe { Cursor::<_, path::Discard>::new(root, prefix) };
-        let Some(_) = cursor.traverse_prefix() else {
-            return unsafe { Shard::new(core::ptr::null_mut(), prefix, ..) };
+        let Some(edge) = cursor.traverse_prefix() else {
+            return unsafe { Shard::new(core::ptr::null_mut(), Edge::NULL, prefix, ..) };
         };
-        let root = cursor.edge();
         let len = cursor.len();
         let prefix = prefix.prefix(len);
-        unsafe { Shard::new(root as *const _ as *mut _, prefix, ..) }
+        unsafe { Shard::new(cursor.edge() as *const _ as *mut _, edge, prefix, ..) }
     }
 
     pub(crate) unsafe fn new_range(
@@ -59,23 +61,24 @@ where
     {
         validate_eq!(prefix, range.common_prefix());
         let mut cursor = unsafe { Cursor::<_, path::Discard>::new(root, prefix) };
-        let Some(_) = cursor.traverse_prefix() else {
-            return unsafe { Shard::new(core::ptr::null_mut(), prefix, range) };
+        let Some(edge) = cursor.traverse_prefix() else {
+            return unsafe { Shard::new(core::ptr::null_mut(), Edge::NULL, prefix, range) };
         };
-        let root = cursor.edge();
         let len = cursor.len();
         let prefix = prefix.prefix(len);
-        unsafe { Shard::new(root as *const _ as *mut _, prefix, range) }
+        unsafe { Shard::new(cursor.edge() as *const _ as *mut _, edge, prefix, range) }
     }
 
     #[inline]
     unsafe fn new(
         root: *mut Atomic<Edge<K::Edge>>,
+        edge: ribbit::Packed<Edge<K::Edge>>,
         prefix: K::Read<'k>,
         range: R,
     ) -> Shard<'g, 'k, K, R> {
         Shard {
             root,
+            edge,
             prefix,
             range,
             _global: PhantomData,
@@ -84,11 +87,15 @@ where
 
     #[inline]
     pub(crate) fn entries<O: Order>(&self, sort: bool) -> EntryIter<'g, 'k, K, R, O> {
-        EntryIter(unsafe { RangeIter::new_unchecked(self.root, self.prefix, sort, &self.range) })
+        EntryIter(unsafe {
+            RangeIter::new_unchecked(self.root, self.edge, self.prefix, sort, &self.range)
+        })
     }
 
     #[inline]
     pub(crate) fn values<O: Order>(&self, sort: bool) -> ValueIter<'g, 'k, K, R, O> {
-        ValueIter(unsafe { RangeIter::new_unchecked(self.root, self.prefix, sort, &self.range) })
+        ValueIter(unsafe {
+            RangeIter::new_unchecked(self.root, self.edge, self.prefix, sort, &self.range)
+        })
     }
 }
