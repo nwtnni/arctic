@@ -171,14 +171,7 @@ where
     /// ```
     pub fn get<'g>(&'g self, key: &K::Borrowed) -> Option<Shared<'g, K, V, S>> {
         let reader = K::Read::from(key);
-        let guard = self.smr.guard(reader);
-        let value = unsafe {
-            self.seq
-                .raw
-                .cursor::<path::Discard>(reader)
-                .traverse_get()?
-        };
-        Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
+        self.get_impl(reader)
     }
 
     /// Update an existing key-value pair.
@@ -230,16 +223,17 @@ where
     where
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
+        let reader = K::Read::from(key);
         let initial = if cfg!(feature = "opt-no-path") {
             initial
         } else {
-            match self.update_with_optimistic(key, initial, &mut update) {
+            match self.update_with_optimistic(reader, initial, &mut update) {
                 Ok(update) => return update,
                 Err(initial) => initial,
             }
         };
 
-        self.update_with_pessimistic(key, initial, update)
+        self.update_with_pessimistic(reader, initial, update)
     }
 
     pub fn remove_non_recursive(&self, key: &K::Borrowed) -> Option<Owned<'_, K, V, S>> {
@@ -258,9 +252,10 @@ where
     where
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
-        match self.remove_non_recursive_with_optimistic(key, &mut with) {
+        let reader = K::Read::from(key);
+        match self.remove_non_recursive_with_optimistic(reader, &mut with) {
             Ok(remove) => remove,
-            Err(()) => self.remove_non_recursive_with_pessimistic(key, &mut with),
+            Err(()) => self.remove_non_recursive_with_pessimistic(reader, &mut with),
         }
     }
 
@@ -276,7 +271,8 @@ where
     where
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
-        let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(key, &mut with);
+        let reader = K::Read::from(key);
+        let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(reader, &mut with);
         remove
     }
 
@@ -387,16 +383,17 @@ where
     where
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
+        let reader = K::insert_as_read(key);
         let initial = if cfg!(feature = "opt-no-path") {
             initial
         } else {
-            match self.upsert_with_optimistic(key, initial, &mut upsert) {
+            match self.upsert_with_optimistic(reader, initial, &mut upsert) {
                 Ok(update) => return update,
                 Err(initial) => initial,
             }
         };
 
-        self.upsert_with_pessimistic(key, initial, upsert)
+        self.upsert_with_pessimistic(reader, initial, upsert)
     }
 
     pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
@@ -430,22 +427,34 @@ where
     S: Smr,
 {
     #[inline]
+    fn get_impl<'g>(&'g self, reader: K::Read<'_>) -> Option<Shared<'g, K, V, S>> {
+        let guard = self.smr.guard(reader);
+        let value = unsafe {
+            self.seq
+                .raw
+                .cursor::<path::Discard>(reader)
+                .traverse_get()?
+        };
+        Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
+    }
+
+    #[inline]
     fn update_with_optimistic<'g, F>(
         &'g self,
-        key: &K::Borrowed,
+        reader: K::Read<'_>,
         initial: Option<V>,
         update: F,
     ) -> Result<Update<'g, K, V, S>, Option<V>>
     where
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
-        self.update_with_impl::<path::Discard, _>(key, initial, update)
+        self.update_with_impl::<path::Discard, _>(reader, initial, update)
     }
 
     #[cold]
     fn update_with_pessimistic<'g, F>(
         &'g self,
-        key: &K::Borrowed,
+        reader: K::Read<'_>,
         initial: Option<V>,
         update: F,
     ) -> Update<'g, K, V, S>
@@ -453,7 +462,7 @@ where
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
         stat::increment(stat::Counter::UpdatePessimistic);
-        match self.update_with_impl::<path::Retain<_>, _>(key, initial, update) {
+        match self.update_with_impl::<path::Retain<_>, _>(reader, initial, update) {
             Ok(update) => update,
             Err(_) => unreachable!(),
         }
@@ -462,7 +471,7 @@ where
     #[inline]
     fn update_with_impl<'g, 'k, P, F>(
         &'g self,
-        key: &'k K::Borrowed,
+        reader: K::Read<'k>,
         mut initial: Option<V>,
         mut update: F,
     ) -> Result<Update<'g, K, V, S>, Option<V>>
@@ -470,7 +479,6 @@ where
         P: Path<K::Read<'k>>,
         F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
     {
-        let reader = K::Read::from(key);
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
@@ -520,39 +528,38 @@ where
     #[inline]
     fn remove_non_recursive_with_optimistic<F>(
         &self,
-        key: &K::Borrowed,
+        reader: K::Read<'_>,
         with: &mut F,
     ) -> Result<Remove<'_, K, V, S>, ()>
     where
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
-        self.remove_with_impl::<false, path::Discard, _>(key, with)
+        self.remove_with_impl::<false, path::Discard, _>(reader, with)
     }
 
     #[cold]
     fn remove_non_recursive_with_pessimistic<F>(
         &self,
-        key: &K::Borrowed,
+        reader: K::Read<'_>,
         with: &mut F,
     ) -> Remove<'_, K, V, S>
     where
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
-        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(key, with);
+        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(reader, with);
         remove
     }
 
     #[inline]
     fn remove_with_impl<'g, 'k, const RECURSIVE: bool, P, F>(
         &'g self,
-        key: &'k K::Borrowed,
+        reader: K::Read<'k>,
         remove: &mut F,
     ) -> Result<Remove<'g, K, V, S>, P::PopError>
     where
         P: Path<K::Read<'k>>,
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
-        let reader = K::Read::from(key);
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
@@ -661,20 +668,20 @@ where
     #[inline]
     fn upsert_with_optimistic<'g, 'k, F>(
         &'g self,
-        key: K::Insert<'k>,
+        reader: K::Read<'k>,
         initial: Option<V>,
         upsert: F,
     ) -> Result<Upsert<'g, K, V, S>, Option<V>>
     where
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
-        self.upsert_with_impl::<path::Discard, _>(key, initial, upsert)
+        self.upsert_with_impl::<path::Discard, _>(reader, initial, upsert)
     }
 
     #[cold]
     fn upsert_with_pessimistic<'g, 'k, F>(
         &'g self,
-        key: K::Insert<'k>,
+        reader: K::Read<'k>,
         initial: Option<V>,
         upsert: F,
     ) -> Upsert<'g, K, V, S>
@@ -682,7 +689,7 @@ where
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
         stat::increment(stat::Counter::InsertPessimistic);
-        match self.upsert_with_impl::<path::Retain<_>, _>(key, initial, upsert) {
+        match self.upsert_with_impl::<path::Retain<_>, _>(reader, initial, upsert) {
             Ok(upsert) => upsert,
             Err(_) => unreachable!(),
         }
@@ -691,7 +698,7 @@ where
     #[inline]
     fn upsert_with_impl<'g, 'k, P, F>(
         &'g self,
-        key: K::Insert<'k>,
+        reader: K::Read<'k>,
         mut initial: Option<V>,
         mut upsert: F,
     ) -> Result<Upsert<'g, K, V, S>, Option<V>>
@@ -699,7 +706,6 @@ where
         P: Path<K::Read<'k>>,
         F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
     {
-        let reader = K::insert_as_read(key);
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
