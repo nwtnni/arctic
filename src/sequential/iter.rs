@@ -8,6 +8,8 @@ use crate::raw::Edge;
 use crate::raw::Key;
 use crate::sequential::Value;
 
+/// Immutable reference to a subtree rooted at a key prefix,
+/// optionally bounded by a key range.
 pub struct Shard<'g, 'k, K: Key, V, R> {
     inner: raw::Shard<'g, 'k, K, R>,
     _value: PhantomData<&'g V>,
@@ -27,6 +29,7 @@ where
         }
     }
 
+    /// Get an iterator over keys and immutable references to values in `O` order.
     #[inline]
     pub fn entries<O: Order>(&self) -> EntryIter<'g, 'k, K, V, R, O> {
         EntryIter {
@@ -35,6 +38,7 @@ where
         }
     }
 
+    /// Get an iterator over immutable references to values in `O` order.
     #[inline]
     pub fn values<O: Order>(&self) -> ValueIter<'g, 'k, K, V, R, O> {
         ValueIter {
@@ -44,6 +48,8 @@ where
     }
 }
 
+/// Mutable reference to a subtree rooted at a key prefix,
+/// optionally bounded by a key range.
 pub struct ShardMut<'g, 'k, K: Key, V, R>(Shard<'g, 'k, K, V, R>);
 
 impl<'g, 'k, K, V, R> ShardMut<'g, 'k, K, V, R>
@@ -57,6 +63,7 @@ where
         Self(prefix)
     }
 
+    /// Get an iterator over keys and mutable references to values in `O` order.
     #[inline]
     pub fn entries_mut<O: Order>(&mut self) -> EntryIterMut<'g, 'k, K, V, R, O> {
         EntryIterMut {
@@ -65,6 +72,7 @@ where
         }
     }
 
+    /// Get an iterator over mutable references to values in `O` order.
     #[inline]
     pub fn values_mut<O: Order>(&mut self) -> ValueIterMut<'g, 'k, K, V, R, O> {
         ValueIterMut {

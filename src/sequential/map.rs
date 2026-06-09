@@ -233,16 +233,19 @@ where
     K: Key,
     V: Value,
 {
+    /// Get an immutable reference to the entire tree.
     #[inline]
     pub fn all(&self) -> Shard<'_, 'static, K, V, RangeFull> {
         unsafe { Shard::new(self.raw.all()) }
     }
 
+    /// Get an immutable reference to the subtree of keys beginning with `prefix`.
     #[inline]
     pub fn prefix<'k>(&self, prefix: K::Read<'k>) -> Shard<'_, 'k, K, V, RangeFull> {
         unsafe { Shard::new(self.raw.prefix(prefix)) }
     }
 
+    /// Get an immutable reference to the subtree of keys within `range`.
     #[inline]
     pub fn range<'k, R>(&self, range: R) -> Shard<'_, 'k, K, V, R>
     where
@@ -252,16 +255,19 @@ where
         unsafe { Shard::new(self.raw.range(range, prefix)) }
     }
 
+    /// Get a mutable reference to the entire tree.
     #[inline]
     pub fn all_mut(&mut self) -> ShardMut<'_, 'static, K, V, RangeFull> {
         unsafe { ShardMut::new(self.all()) }
     }
 
+    /// Get a mutable reference to the subtree of keys beginning with `prefix`.
     #[inline]
     pub fn prefix_mut<'k>(&mut self, prefix: K::Read<'k>) -> ShardMut<'_, 'k, K, V, RangeFull> {
         unsafe { ShardMut::new(self.prefix(prefix)) }
     }
 
+    /// Get a mutable reference to the subtree of keys within `range`.
     #[inline]
     pub fn range_mut<'k, R>(&mut self, range: R) -> ShardMut<'_, 'k, K, V, R>
     where
