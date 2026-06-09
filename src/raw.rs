@@ -31,7 +31,6 @@ pub(crate) use cursor::Cursor;
 pub(crate) use edge::Edge;
 pub use key::Key;
 pub(crate) use map::Map;
-#[cfg_attr(not(test), expect(unused_imports))]
 pub(crate) use set::Set;
 pub(crate) use shard::Shard;
 

@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), expect(dead_code))]
-
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicU64;

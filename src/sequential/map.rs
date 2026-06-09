@@ -46,9 +46,8 @@ where
     }
 
     pub fn get(&self, key: &K::Borrowed) -> Option<&V> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(key) };
-        cursor.traverse_get()?;
-        Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_ref() })
+        let reader = K::Read::from(key);
+        self.get_impl(reader)
     }
 
     pub fn get_mut(&mut self, key: &K::Borrowed) -> Option<&mut V> {
@@ -86,35 +85,6 @@ where
 
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
         self.entry_impl(K::insert_as_read(key))
-    }
-
-    fn entry_impl<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
-
-        match cursor.traverse_insert() {
-            raw::cursor::Insert::Value {
-                value: Some(_),
-                edge: _,
-            } => Entry::Occupied(Occupied {
-                value: unsafe { cursor.as_value_unchecked().cast::<V>() },
-                _value: PhantomData,
-            }),
-
-            raw::cursor::Insert::Value {
-                value: None,
-                edge: _,
-            } => Entry::Vacant(Vacant {
-                cursor,
-                replace: false,
-                _value: PhantomData,
-            }),
-
-            raw::cursor::Insert::Replace { .. } => Entry::Vacant(Vacant {
-                cursor,
-                replace: true,
-                _value: PhantomData,
-            }),
-        }
     }
 
     #[inline]
@@ -155,6 +125,49 @@ where
         R: raw::iter::Range<K::Read<'k>>,
     {
         unsafe { ShardMut::new(self.range(range)) }
+    }
+}
+
+impl<K, V> Map<K, V>
+where
+    K: Key,
+    V: Value,
+{
+    #[inline]
+    pub(super) fn get_impl(&self, reader: K::Read<'_>) -> Option<&V> {
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
+        cursor.traverse_get()?;
+        Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_ref() })
+    }
+
+    #[inline]
+    pub(super) fn entry_impl<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
+
+        match cursor.traverse_insert() {
+            raw::cursor::Insert::Value {
+                value: Some(_),
+                edge: _,
+            } => Entry::Occupied(Occupied {
+                value: unsafe { cursor.as_value_unchecked().cast::<V>() },
+                _value: PhantomData,
+            }),
+
+            raw::cursor::Insert::Value {
+                value: None,
+                edge: _,
+            } => Entry::Vacant(Vacant {
+                cursor,
+                replace: false,
+                _value: PhantomData,
+            }),
+
+            raw::cursor::Insert::Replace { .. } => Entry::Vacant(Vacant {
+                cursor,
+                replace: true,
+                _value: PhantomData,
+            }),
+        }
     }
 }
 
