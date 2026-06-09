@@ -29,20 +29,23 @@ where
     V: Value,
 {
     fn default() -> Self {
-        Self {
-            raw: raw::Map::default(),
-            _value: PhantomData,
-        }
+        Self::new()
     }
 }
 
+/// # Point operations
 impl<K, V> Map<K, V>
 where
     K: Key,
     V: Value,
 {
-    pub fn new() -> Self {
-        Self::default()
+    /// Constructs a new empty map. Does not allocate.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            raw: raw::Map::new(),
+            _value: PhantomData,
+        }
     }
 
     pub fn get(&self, key: &K::Borrowed) -> Option<&V> {
@@ -86,14 +89,21 @@ where
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
         self.entry_impl(K::insert_as_read(key))
     }
+}
 
+/// # Range and prefix operations
+impl<K, V> Map<K, V>
+where
+    K: Key,
+    V: Value,
+{
     #[inline]
     pub fn all(&self) -> Shard<'_, 'static, K, V, RangeFull> {
         unsafe { Shard::new(self.raw.all()) }
     }
 
     #[inline]
-    pub fn prefix<'k>(&self, prefix: impl Into<K::Read<'k>>) -> Shard<'_, 'k, K, V, RangeFull> {
+    pub fn prefix<'k>(&self, prefix: K::Read<'k>) -> Shard<'_, 'k, K, V, RangeFull> {
         unsafe { Shard::new(self.raw.prefix(prefix)) }
     }
 
@@ -112,10 +122,7 @@ where
     }
 
     #[inline]
-    pub fn prefix_mut<'k>(
-        &mut self,
-        prefix: impl Into<K::Read<'k>>,
-    ) -> ShardMut<'_, 'k, K, V, RangeFull> {
+    pub fn prefix_mut<'k>(&mut self, prefix: K::Read<'k>) -> ShardMut<'_, 'k, K, V, RangeFull> {
         unsafe { ShardMut::new(self.prefix(prefix)) }
     }
 

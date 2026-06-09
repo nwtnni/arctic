@@ -13,9 +13,7 @@ where
     K: Key,
 {
     fn default() -> Self {
-        Self {
-            map: Default::default(),
-        }
+        Self::new()
     }
 }
 
@@ -23,8 +21,10 @@ impl<K> Set<K>
 where
     K: Key,
 {
-    pub fn new() -> Self {
-        Self::default()
+    /// Constructs a new empty set. Does not allocate.
+    #[inline]
+    pub const fn new() -> Self {
+        Self { map: Map::new() }
     }
 
     pub fn contains_key(&self, key: &K::Borrowed) -> bool {

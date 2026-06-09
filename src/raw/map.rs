@@ -13,6 +13,12 @@ use crate::raw::iter::PostorderIter;
 pub(crate) struct Map<K: Key>(Atomic<Edge<K::Edge>>);
 
 impl<K: Key> Map<K> {
+    /// Constructs a new empty map. Does not allocate.
+    #[inline]
+    pub(crate) const fn new() -> Self {
+        Self(Atomic::new_packed(Edge::NULL))
+    }
+
     pub(crate) fn postorder<'g>(&'g mut self) -> PostorderIter<'g, K::Edge> {
         unsafe { PostorderIter::new(self.root()) }
     }
