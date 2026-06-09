@@ -20,14 +20,14 @@ macro_rules! impl_key {
                 type Read<'k> = Reader<$ty>;
                 type Write = Writer<$ty>;
                 type Borrowed = Self;
-                type Insert<'k> = &'k Self;
+                type Insert<'k> = Self;
 
                 type Edge = edge::Be;
                 type Len = Len;
 
                 #[inline]
                 fn as_insert(&self) -> Self::Insert<'_> {
-                    self
+                    *self
                 }
 
                 #[inline]
@@ -42,12 +42,12 @@ macro_rules! impl_key {
                 where
                     Self: 'k,
                 {
-                    *insert
+                    insert
                 }
 
                 #[inline]
                 unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k> where Self: 'k{
-                    &writer.0
+                    writer.0
                 }
             }
 

@@ -182,7 +182,7 @@ mod tests {
         let map = Map::<u64, &u64>::default();
 
         for (key, value) in values.iter().enumerate() {
-            map.upsert(&(key as u64), value);
+            map.upsert(key as u64, value);
         }
 
         #[expect(clippy::needless_range_loop)]
@@ -198,7 +198,7 @@ mod tests {
         let map = Map::<u64, Box<u64>>::default();
 
         for (key, value) in values.iter().enumerate() {
-            map.upsert(&(key as u64), Box::new(*value));
+            map.upsert(key as u64, Box::new(*value));
         }
 
         std::thread::scope(|scope| {
@@ -227,7 +227,7 @@ mod tests {
     fn scan_value() {
         let map = Map::<u64, _>::default();
         let key = 1u64;
-        map.upsert(&key, 2u64);
+        map.upsert(key, 2u64);
         assert_eq!(
             map.range(1u64..=1u64)
                 .entries::<Ascend>()
@@ -265,7 +265,7 @@ mod tests {
         let mut map = Map::<u64, _>::default();
 
         for value in [1u64, 2, 3] {
-            map.upsert(&1, value);
+            map.upsert(1, value);
             assert_eq!(map.get(&1).as_deref().copied(), Some(value));
         }
 
@@ -275,7 +275,7 @@ mod tests {
             .all()
             .entries::<Ascend>()
             .for_each_internal(|(key, value)| {
-                assert_eq!(*key, 1);
+                assert_eq!(key, 1);
                 assert_eq!(*value, 3);
                 core::ops::ControlFlow::Continue(())
             });
@@ -326,7 +326,7 @@ mod tests {
         let map = Map::<u64, _>::default();
 
         for key in [5, 1, 4, 3, 2] {
-            map.upsert(&key, key);
+            map.upsert(key, key);
             assert_eq!(map.get(&key).as_deref().copied(), Some(key));
         }
 

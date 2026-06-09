@@ -18,7 +18,7 @@ fn turso_range_24230c111c599daff93a7abc11c5c72b33d0ebfd() {
         .collect::<Vec<_>>();
 
     for (row_id, index) in &entries {
-        assert!(map.upsert(row_id, *index).is_ok());
+        assert!(map.upsert(*row_id, *index).is_ok());
     }
 
     for (row_id, index) in &entries {
@@ -33,8 +33,8 @@ fn turso_range_24230c111c599daff93a7abc11c5c72b33d0ebfd() {
 #[test]
 fn insert_duplicate_82007770fb876db856313cebf12be21b9182f16a() {
     let map = concurrent::Map::<u64, u64>::default();
-    map.insert(&0u64, 0u64).unwrap();
-    map.insert(&0u64, 1u64).unwrap_err();
+    map.insert(0u64, 0u64).unwrap();
+    map.insert(0u64, 1u64).unwrap_err();
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn range_common_prefix_72c2fceda258b00fc2e9d4a805b28e9ad8e8107d() {
     const NEEDLE: u64 = 0xE642_3BB1_ADBB_F000;
     const LOWER: u64 = 0x39_9100;
     const UPPER: u64 = 0xFF29_D24D_7E9A_920D;
-    map.insert(&NEEDLE, 0).unwrap();
+    map.insert(NEEDLE, 0).unwrap();
     map.range(LOWER..=UPPER)
         .entries::<crate::Ascend>()
         .for_each(|(key, value)| {

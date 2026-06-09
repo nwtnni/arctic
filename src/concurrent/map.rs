@@ -159,7 +159,7 @@ where
     ///
     /// assert!(map.get(&64).is_none());
     ///
-    /// match map.insert(&64, 3) {
+    /// match map.insert(64, 3) {
     ///     Err(_) => unreachable!(),
     ///     Ok(new) => assert_eq!(*new, 3),
     /// }
@@ -198,7 +198,7 @@ where
     ///     Ok(_) => unreachable!(),
     /// }
     ///
-    /// match map.insert(&37, Box::new(3)) {
+    /// match map.insert(37, Box::new(3)) {
     ///     Err(_) => unreachable!(),
     ///     Ok(new) => assert_eq!(*new, 3),
     /// }
@@ -553,12 +553,12 @@ where
     ///
     /// let mut map = concurrent::Map::<u64, u64>::default();
     ///
-    /// match map.insert(&64, 3) {
+    /// match map.insert(64, 3) {
     ///     Err(_) => unreachable!(),
     ///     Ok(new) => assert_eq!(*new, 3),
     /// }
     ///
-    /// match map.insert(&64, 5) {
+    /// match map.insert(64, 5) {
     ///     Err((old, new)) => {
     ///         assert_eq!(*old, 3);
     ///         assert_eq!(new, 5);

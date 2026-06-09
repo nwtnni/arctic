@@ -14,11 +14,11 @@ impl crate::raw::Key for u64 {
     type Edge = edge::Le;
     type Len = key::vec::Len;
 
-    type Insert<'k> = &'k Self;
+    type Insert<'k> = Self;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
-        self
+        *self
     }
 
     #[inline]
@@ -26,21 +26,21 @@ impl crate::raw::Key for u64 {
     where
         Self: 'k,
     {
-        Reader::from(*insert)
+        Reader::from(insert)
     }
 
-    fn insert_to_key<'k>(_: Self::Insert<'k>) -> Self
+    fn insert_to_key<'k>(insert: Self::Insert<'k>) -> Self
     where
         Self: 'k,
     {
-        unimplemented!()
+        insert
     }
 
-    unsafe fn write_as_insert<'k>(_: &'k Self::Write) -> Self::Insert<'k>
+    unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
     where
         Self: 'k,
     {
-        unimplemented!("Can't get little-endian integer from big-endian slice")
+        Self::from_be_bytes(writer.0)
     }
 }
 
