@@ -1,3 +1,5 @@
+//! Support for [`String`] keys ([`NonNullString`]).
+
 use core::borrow::Borrow as _;
 use core::fmt;
 use core::num::NonZeroUsize;

@@ -1,3 +1,5 @@
+//! Benchmarking baseline for integer keys.
+
 use ribbit::u6;
 
 use crate::raw::edge;

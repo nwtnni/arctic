@@ -1,3 +1,5 @@
+//! Support for integer keys (`u16`, `u32`, `u64`, `u128`).
+
 use core::ops::Add;
 use core::ops::AddAssign;
 use core::ops::Sub;

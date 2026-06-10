@@ -1,3 +1,5 @@
+//! Implementations of [`Key`].
+
 pub mod array;
 mod discard;
 pub mod int;
@@ -19,8 +21,9 @@ use core::ops::SubAssign;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 
-/// Lexicographically ordered byte sequence that can be stored
-/// in an adaptive radix tree. Must satisfy two preconditions:
+/// Lexicographically ordered byte sequence that can be stored in an adaptive radix tree.
+///
+/// Must satisfy two preconditions:
 /// (1) keys are non-empty (for efficient set implementation),
 /// and (2) no key is a prefix of any other key (for internal invariants).
 ///
@@ -143,6 +146,7 @@ pub(crate) trait Write<R: Read>: fmt::Debug + Default {
     fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<R::Edge>) -> Self::Len;
 }
 
+/// Key length.
 pub trait Len:
     Sized
     + Copy

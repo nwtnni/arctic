@@ -1,3 +1,5 @@
+//! Support for [`Vec<u8>`] keys ([`NonPrefixVec`]).
+
 use core::borrow::Borrow as _;
 use core::fmt;
 use core::ops::Add;

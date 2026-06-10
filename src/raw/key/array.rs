@@ -1,3 +1,5 @@
+//! Support for byte array keys (`[u8; N]`).
+
 use core::fmt;
 
 use crate::raw::Key;

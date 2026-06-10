@@ -1,3 +1,5 @@
+//! Support for `&[u8]` keys (`NonPrefixSlice`).
+
 use core::num::NonZeroUsize;
 
 use ribbit::u14;
