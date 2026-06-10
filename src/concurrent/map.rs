@@ -426,9 +426,10 @@ where
 /// currently associated with a key before deciding what to do, which enables
 /// more complex coordination in a concurrent setting.
 ///
-/// For example, a concurrent counter could use [`Map::upsert_with`] to insert
-/// the current count plus one, or an index could use [`Map::remove_with`] to
-/// remove a value only if it hasn't been concurrently updated.
+/// For example, a concurrent counter could use [`Map::upsert_with`] to either
+/// insert one or update the current count by one, or an index could use
+/// [`Map::remove_with`] to remove a value only if it hasn't been concurrently
+/// updated.
 ///
 /// These operations are linearizable.
 impl<K, V, S> Map<K, V, S>
