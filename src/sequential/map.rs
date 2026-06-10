@@ -28,9 +28,9 @@ use crate::stat;
 ///
 /// In general, radix trees do not explicitly store keys; they are implicitly
 /// encoded in the structure of the tree. This means that operations on [`Map`]
-/// generally take references to keys. Operations that insert and typically
+/// generally take references to keys (see [`crate::Key`]). Operations that insert and typically
 /// would take an owned key, like [`BTreeMap::insert`][std::collections::BTreeMap::insert],
-/// instead take a [`Key::Insert<'k>`][crate::Key::Insert]. Operations that
+/// instead take a [`Key::Insert<'_>`][crate::Key::Insert]. Operations that
 /// do not insert a new key take a [`&Key::Borrowed`][crate::Key::Borrowed].
 ///
 /// ## Point operations
@@ -50,7 +50,7 @@ use crate::stat;
 /// This is in contrast to the standard library, where [`BTreeMap::range`][std::collections::BTreeMap::range]
 /// directly returns an iterator.
 ///
-/// If the key type is dynamically allocated, like [`crate::NonNullString`],
+/// If the key type (see [`crate::Key`]) is dynamically allocated, like [`crate::NonNullString`],
 /// iterating over keys can be expensive, as a key buffer must be updated
 /// during traversal, and then cloned once per key. This can be mitigated by
 /// (a) iterating over values instead of entries, (b) using the lending API

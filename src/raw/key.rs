@@ -20,8 +20,23 @@ use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 
 /// Lexicographically ordered byte sequence that can be stored
-/// in an adaptive radix tree. Must satisfy the precondition that
-/// no key is a prefix of any other key.
+/// in an adaptive radix tree. Must satisfy two preconditions:
+/// (1) keys are non-empty (for efficient set implementation),
+/// and (2) no key is a prefix of any other key (for internal invariants).
+///
+/// The following table depicts the most relevant key properties
+/// for users of this crate. Methods that can insert into the tree
+/// take `Insert<'_>`; other methods take `&'_ Borrowed`.
+/// Using the [`Iterator`] API may be expensive for dynamically
+/// allocated key types, as they need to be constructed and cloned
+/// during traversal; see [`crate::sequential::Map`] for workarounds.
+///
+/// | Key Family | Example                                       | Insert<'_>                                    | Borrowed                                  | Clone in iterator? |
+/// |------------|-----------------------------------------------|-----------------------------------------------|-------------------------------------------|--------------------|
+/// | Integer    | u64                                           | u64                                           | u64                                       | N                  |
+/// | Array      | [u8; 5]                                       | `&'_ [u8; 5]`                                 | [u8; 5]                                   | Y                  |
+/// | Slice      | [`&'a NonPrefixSlice`][crate::NonPrefixSlice] | [`&'a NonPrefixSlice`][crate::NonPrefixSlice] | [`NonPrefixSlice`][crate::NonPrefixSlice] | N                  |
+/// | Vec        | [`NonNullString`][crate::NonNullString]       | [`&'_ NonNullStr`][crate::NonNullStr]         | [`NonNullStr`][crate::NonNullStr]         | Y                  |
 pub trait Key: Borrow<Self::Borrowed> {
     /// A non-allocated byte sequence that a key can be cheaply borrowed as.
     type Borrowed: 'static + ?Sized + Debug;
@@ -29,7 +44,7 @@ pub trait Key: Borrow<Self::Borrowed> {
     /// Keys can either have edges that store bytes inline (e.g., [`string::NonNullString`]),
     /// or as references (e.g., [`slice::NonPrefixSlice`]).
     ///
-    /// The former can take any borrowed bytes with any lifetime when inserting,
+    /// The former can take borrowed bytes with any lifetime when inserting,
     /// but the latter can only take borrowed bytes that outlive the key type.
     type Insert<'k>: Copy + Borrow<Self::Borrowed>
     where
