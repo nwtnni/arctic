@@ -2,7 +2,7 @@ use core::ops::ControlFlow;
 use core::ops::RangeFull;
 use core::sync::atomic::Ordering;
 
-use crate::concurrent::Key;
+use crate::Key;
 use crate::concurrent::Shard;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;

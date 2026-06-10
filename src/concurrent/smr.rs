@@ -9,7 +9,7 @@ pub use hazard::Hazard;
 pub use no_op::NoOp;
 pub use seize::Seize;
 
-use crate::concurrent::Key;
+use crate::Key;
 use crate::concurrent::Value;
 use crate::raw::edge;
 use crate::raw::node;

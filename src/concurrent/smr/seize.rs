@@ -1,4 +1,4 @@
-use crate::concurrent::Key;
+use crate::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;

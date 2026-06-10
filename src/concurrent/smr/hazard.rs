@@ -61,6 +61,8 @@
 mod membarrier;
 pub mod prefix;
 pub(crate) use prefix::Prefix;
+mod key;
+pub use key::Key;
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -68,7 +70,6 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
-use crate::concurrent::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;

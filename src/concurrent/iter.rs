@@ -1,8 +1,8 @@
 use core::marker::PhantomData;
 use core::ops::ControlFlow;
 
+use crate::Key;
 use crate::Order;
-use crate::concurrent::Key;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
 use crate::raw;

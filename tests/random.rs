@@ -293,7 +293,7 @@ mod array {
 }
 
 trait Workload: Sized + Sync {
-    type Key<'k>: arctic::concurrent::Key + Sync
+    type Key<'k>: arctic::concurrent::smr::hazard::Key + Sync
     where
         Self: 'k;
 

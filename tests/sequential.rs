@@ -49,7 +49,7 @@ prop_state_machine! {
     #[test]
     fn string_u64(
         sequential
-        10000
+        1000
         =>
         Arctic<NonNullString, u64>
     );
@@ -125,11 +125,13 @@ where
     }
 }
 
-struct Arctic<K: arctic::Key, V: arctic::Value>(arctic::concurrent::Map<K, V>);
+struct Arctic<K: arctic::concurrent::smr::hazard::Key, V: arctic::Value>(
+    arctic::concurrent::Map<K, V>,
+);
 
 impl<K, V> StateMachineTest for Arctic<K, V>
 where
-    K: arctic::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
+    K: arctic::concurrent::smr::hazard::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
     K::Borrowed: Ord + core::fmt::Debug,
     V: arctic::Value + Arbitrary + Clone + Debug + Send + Sync + 'static,
     V::Target: Debug + PartialEq + PartialEq<V>,

@@ -84,8 +84,8 @@ pub mod raw;
 pub mod sequential;
 pub mod stat;
 
-pub use concurrent::Key;
 pub use concurrent::Value;
+pub use raw::Key;
 pub use raw::key::slice::NonPrefixSlice;
 pub use raw::key::string::NonNullStr;
 pub use raw::key::string::NonNullString;
@@ -419,7 +419,7 @@ mod tests {
     fn insert_all<I, K>(iter: I) -> Map<K, u64>
     where
         I: IntoIterator<Item = K>,
-        K: crate::Key + Clone + Ord + core::fmt::Debug,
+        K: crate::concurrent::smr::hazard::Key + Clone + Ord + core::fmt::Debug,
     {
         let mut keys = iter
             .into_iter()
