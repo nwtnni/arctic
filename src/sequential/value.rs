@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// Values that can be stored in a [`crate::sequential::Map`].
@@ -44,7 +45,7 @@ unsafe impl<T: Sized> Value for Box<T> {
     }
 }
 
-// NOTE: `Sized` is required so that Box<T> is not a fat pointer and fits in 8 bytes
+// NOTE: `Sized` is required so that Arc<T> is not a fat pointer and fits in 8 bytes
 unsafe impl<T: Sized> Value for Arc<T> {
     #[inline]
     unsafe fn from_raw(raw: u64) -> Self {
@@ -54,6 +55,19 @@ unsafe impl<T: Sized> Value for Arc<T> {
     #[inline]
     fn into_raw(self) -> u64 {
         Arc::into_raw(self).expose_provenance() as u64
+    }
+}
+
+// NOTE: `Sized` is required so that Rc<T> is not a fat pointer and fits in 8 bytes
+unsafe impl<T: Sized> Value for Rc<T> {
+    #[inline]
+    unsafe fn from_raw(raw: u64) -> Self {
+        unsafe { Rc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
+    }
+
+    #[inline]
+    fn into_raw(self) -> u64 {
+        Rc::into_raw(self).expose_provenance() as u64
     }
 }
 
