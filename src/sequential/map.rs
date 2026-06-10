@@ -49,6 +49,7 @@ where
     }
 
     /// Returns an immutable reference to the value associated with `key`.
+    ///
     /// For a mutable reference, see [`Map::get_mut`].
     ///
     /// # Examples
@@ -67,6 +68,7 @@ where
     }
 
     /// Returns a mutable reference to the value associated with `key`.
+    ///
     /// For an immutable reference, see [`Map::get`].
     ///
     /// # Examples
@@ -75,10 +77,11 @@ where
     /// use arctic::sequential::Map;
     ///
     /// let mut map = Map::<u64, u64>::new();
-    /// map.insert(1, 2).expect("Key is not present");
-    /// let value = map.get_mut(&1).expect("Key is present");
+    /// let key = 1;
+    /// map.insert(key, 2).expect("Key is not present");
+    /// let value = map.get_mut(&key).expect("Key is present");
     /// *value = 3;
-    /// assert_eq!(map.get(&1), Some(&3));
+    /// assert_eq!(map.get(&key), Some(&3));
     /// ```
     pub fn get_mut(&mut self, key: &K::Borrowed) -> Option<&mut V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(key) };
@@ -86,47 +89,15 @@ where
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_mut() })
     }
 
-    /// If there is a value associated with `key`, update it to `value`.
-    ///
-    /// Returns `Ok((old_value, &mut new_value))` if the update succeeded,
-    /// or else `Err(new_value)` if there was no old value associated with `key`.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use arctic::sequential::Map;
-    ///
-    /// let mut map = Map::<[u8; 3], Box<u64>>::new();
-    ///
-    /// match map.update(&[0, 1, 2], Box::new(5)) {
-    ///     Ok(_) => unreachable!(),
-    ///     Err(new) => assert_eq!(*new, 5),
-    /// }
-    ///
-    /// map.insert(&[0, 1, 2], Box::new(9));
-    ///
-    /// match map.update(&[0, 1, 2], Box::new(10)) {
-    ///     Ok((old, new)) => {
-    ///         assert_eq!(*old, 9);
-    ///         assert_eq!(**new, 10);
-    ///     },
-    ///     Err(_) => unreachable!(),
-    /// }
-    /// ```
-    pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
-        match self.entry_impl(K::Read::from(key)) {
-            Entry::Vacant(_) => Err(value),
-            Entry::Occupied(mut entry) => {
-                let old = entry.insert(value);
-                Ok((old, entry.into_mut()))
-            }
-        }
-    }
-
     /// If there is no value associated with `key`, associate it with `value`.
-    /// Note that this is **not** the same behavior as the standard library
+    ///
+    /// <div class="warning">
+    ///
+    /// This is **not** the same behavior as the standard library
     /// (e.g., [`std::collections::BTreeMap::insert`]); see [`Map::upsert`] if
     /// an existing value should be updated instead.
+    ///
+    /// </div>
     ///
     /// Returns `Ok(&mut new_value)` if the insert succeeded,
     /// or else `Err((&mut old_value, new_value))` if there is an existing
@@ -140,13 +111,16 @@ where
     /// use arctic::NonNullString;
     ///
     /// let mut map = Map::<NonNullString, Box<u64>>::new();
+    /// let key = NonNullStr::new("regent").expect("Non-empty and no null byte");
     ///
-    /// match map.insert(NonNullStr::new("regent").unwrap(), Box::new(3)) {
+    /// // Key not present, insert succeeds
+    /// match map.insert(key, Box::new(3)) {
     ///     Ok(new) => assert_eq!(**new, 3),
     ///     Err(_) => unreachable!(),
     /// }
     ///
-    /// match map.insert(NonNullStr::new("regent").unwrap(), Box::new(26)) {
+    /// // Key not present, insert fails
+    /// match map.insert(key, Box::new(26)) {
     ///     Ok(_) => unreachable!(),
     ///     Err((old, new)) => {
     ///         assert_eq!(**old, 3);
@@ -174,13 +148,16 @@ where
     /// use arctic::NonNullString;
     ///
     /// let mut map = Map::<NonNullString, u64>::new();
+    /// let key = NonNullStr::new("silent").expect("Non-empty and no null byte");
     ///
-    /// match map.upsert(NonNullStr::new("silent").unwrap(), 2) {
+    /// // Key not present, upsert performs insert
+    /// match map.upsert(key, 2) {
     ///     Ok(_) => unreachable!(),
     ///     Err(new) => assert_eq!(*new, 2),
     /// }
     ///
-    /// match map.upsert(NonNullStr::new("silent").unwrap(), 26) {
+    /// // Key present, upsert performs update
+    /// match map.upsert(key, 26) {
     ///     Ok((old, new)) => {
     ///         assert_eq!(old, 2);
     ///         assert_eq!(*new, 26);
@@ -198,8 +175,49 @@ where
         }
     }
 
-    /// Get a logical entry associated with `key`. This is a lazy operation, and does
-    /// not allocate or modify the tree structure. (Also see [`std::collections::BTreeMap::entry`].)
+    /// If there is a value associated with `key`, update it to `value`.
+    ///
+    /// Returns `Ok((old_value, &mut new_value))` if the update succeeded,
+    /// or else `Err(new_value)` if there was no old value associated with `key`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::sequential::Map;
+    ///
+    /// let mut map = Map::<[u8; 3], Box<u64>>::new();
+    /// let key = [0, 1, 2];
+    ///
+    /// // Key not present, update fails
+    /// match map.update(&key, Box::new(5)) {
+    ///     Ok(_) => unreachable!(),
+    ///     Err(new) => assert_eq!(*new, 5),
+    /// }
+    ///
+    /// map.insert(&key, Box::new(9));
+    ///
+    /// // Key present, update succeeds
+    /// match map.update(&key, Box::new(10)) {
+    ///     Ok((old, new)) => {
+    ///         assert_eq!(*old, 9);
+    ///         assert_eq!(**new, 10);
+    ///     },
+    ///     Err(_) => unreachable!(),
+    /// }
+    /// ```
+    pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
+        match self.entry_impl(K::Read::from(key)) {
+            Entry::Vacant(_) => Err(value),
+            Entry::Occupied(mut entry) => {
+                let old = entry.insert(value);
+                Ok((old, entry.into_mut()))
+            }
+        }
+    }
+
+    /// Get a logical entry associated with `key` (see also [`std::collections::BTreeMap::entry`]).
+    ///
+    /// This is a lazy operation, and does not allocate or modify the tree structure.
     ///
     /// # Examples
     ///
@@ -209,18 +227,17 @@ where
     /// use arctic::NonNullString;
     ///
     /// let mut counter = Map::<NonNullString, u64>::new();
+    /// let claw = NonNullStr::new("claw").expect("Non-empty and no null byte");
+    /// let hotfix = NonNullStr::new("hotfix").expect("Non-empty and no null byte");
+    /// let hologram = NonNullStr::new("hologram").expect("Non-empty and no null byte");
     ///
-    /// for key in ["claw", "claw", "hotfix", "hologram", "claw"]
-    ///     .into_iter()
-    ///     .map(NonNullStr::new)
-    ///     .map(Option::unwrap)
-    /// {
+    /// for key in [claw, claw, hotfix, hologram, claw] {
     ///     *counter.entry(key).or_default() += 1;
     /// }
     ///
-    /// assert_eq!(*counter.get(NonNullStr::new("hologram").unwrap()).unwrap(), 1);
-    /// assert_eq!(*counter.get(NonNullStr::new("hotfix").unwrap()).unwrap(), 1);
-    /// assert_eq!(*counter.get(NonNullStr::new("claw").unwrap()).unwrap(), 3);
+    /// assert_eq!(*counter.get(hologram).unwrap(), 1);
+    /// assert_eq!(*counter.get(hotfix).unwrap(), 1);
+    /// assert_eq!(*counter.get(claw).unwrap(), 3);
     /// ```
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
         self.entry_impl(K::insert_as_read(key))

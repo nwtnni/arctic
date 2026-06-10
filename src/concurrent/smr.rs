@@ -21,7 +21,7 @@ pub trait Smr {
         V: Value;
 }
 
-pub trait Global<K: Key, V: Value>: Default {
+pub trait Global<K: Key, V: Value> {
     type Guard<'g>: Guard<V>
     where
         V: 'g,
