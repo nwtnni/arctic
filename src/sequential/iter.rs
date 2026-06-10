@@ -91,7 +91,7 @@ impl<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>> Deref
     }
 }
 
-/// Iterator over keys and references to values.
+/// Iterator over keys and immutable references to values.
 pub struct EntryIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
     inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
     _value: PhantomData<&'g V>,
@@ -104,6 +104,7 @@ where
     R: raw::iter::Range<K::Read<'k>>,
     O: Order,
 {
+    /// Lending equivalent to [`Iterator::next`] that borrows the current key from this [`EntryIter`].
     #[inline]
     pub fn lend(&mut self) -> Option<(K::Insert<'_>, &'g V)> {
         self.inner.lend().map(|(key, _, edge)| {
@@ -113,6 +114,7 @@ where
         })
     }
 
+    /// Internal iteration over keys and immutable references to values.
     #[inline]
     pub fn for_each_internal<F: FnMut((K::Insert<'_>, &'g V)) -> ControlFlow<()>>(
         self,
@@ -155,6 +157,7 @@ where
     R: raw::iter::Range<K::Read<'k>>,
     O: Order,
 {
+    /// Lending equivalent to [`Iterator::next`] that borrows the current key from this [`EntryIter`].
     #[inline]
     pub fn lend(&mut self) -> Option<(K::Insert<'_>, &'g mut V)> {
         self.inner.lend().map(|(key, _, edge)| {
@@ -164,6 +167,7 @@ where
         })
     }
 
+    /// Internal iteration over keys and mutable references to values.
     #[inline]
     pub fn for_each_internal<F: FnMut((K::Insert<'_>, &'g mut V)) -> ControlFlow<()>>(
         self,
@@ -206,6 +210,7 @@ where
     R: raw::iter::Range<K::Read<'k>>,
     O: Order,
 {
+    /// Internal iteration over immutable references to values.
     #[inline]
     pub fn for_each_internal<F: FnMut(&'g V) -> ControlFlow<()>>(self, mut apply: F) {
         self.inner.for_each_internal(|(_, edge)| {
@@ -244,6 +249,7 @@ where
     R: raw::iter::Range<K::Read<'k>>,
     O: Order,
 {
+    /// Internal iteration over mutable references to values.
     #[inline]
     pub fn for_each_internal<F: FnMut(&'g mut V) -> ControlFlow<()>>(self, mut apply: F) {
         self.inner.for_each_internal(|(_, edge)| {

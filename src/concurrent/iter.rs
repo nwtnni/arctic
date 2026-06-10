@@ -41,6 +41,7 @@ where
     R: raw::iter::Range<K::Read<'k>>,
     G: smr::Guard<V>,
 {
+    /// Get an iterator over keys and immutable references to values in `O` order.
     #[inline]
     pub fn entries<O: Order>(&self) -> EntryIter<'_, 'k, K, V, R, O, G> {
         EntryIter {
@@ -51,6 +52,7 @@ where
         }
     }
 
+    /// Get an iterator over immutable references to values in `O` order.
     #[inline]
     pub fn values<O: Order>(&self) -> ValueIter<'_, 'k, K, V, R, O, G> {
         ValueIter {
@@ -78,6 +80,8 @@ where
     O: Order,
     G: smr::Guard<V>,
 {
+    /// Lending equivalent to [`Iterator::next`] that borrows the current key and
+    /// value from this [`EntryIter`].
     #[inline]
     pub fn lend(&mut self) -> Option<(K::Insert<'_>, &V::Target)> {
         self.inner.lend().map(|(key, value, _)| {
@@ -86,6 +90,7 @@ where
         })
     }
 
+    /// Internal iteration over keys and immutable references to values.
     #[inline]
     pub fn for_each_internal<F: FnMut((K::Insert<'_>, &V::Target)) -> ControlFlow<()>>(
         mut self,
@@ -109,6 +114,7 @@ where
 {
     type Item = (K, V::Target);
 
+    // FIXME: specialize for `Arc` values
     fn next(&mut self) -> Option<Self::Item> {
         self.lend()
             .map(|(key, value)| (K::insert_to_key(key), value.clone()))
@@ -131,6 +137,7 @@ where
     O: Order,
     G: smr::Guard<V>,
 {
+    /// Lending equivalent to [`Iterator::next`] that borrows the current value from this [`EntryIter`].
     #[inline]
     pub fn lend(&mut self) -> Option<&V::Target> {
         self.inner.lend().map(|(value, _)| {
@@ -139,6 +146,7 @@ where
         })
     }
 
+    /// Internal iteration over immutable references to values.
     #[inline]
     pub fn for_each_internal<F: FnMut(&V::Target) -> ControlFlow<()>>(mut self, mut apply: F) {
         self.inner.for_each_internal(|(value, _)| {
@@ -159,6 +167,7 @@ where
 {
     type Item = V::Target;
 
+    // FIXME: specialize for `Arc` values
     fn next(&mut self) -> Option<Self::Item> {
         self.lend().cloned()
     }
