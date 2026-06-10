@@ -364,22 +364,6 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
     /// there was no old value associated with `key`.
     ///
     /// See [`Map::remove_non_recursive_with`] for dynamic control flow.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use arctic::concurrent;
-    ///
-    /// let map = concurrent::Map::<u128, u64>::default();
-    /// let key = 0xabc;
-    ///
-    /// assert!(map.remove_non_recursive(&key).is_none());
-    /// map.insert(key, 5).expect("Key is not present");
-    /// match map.remove_non_recursive(&key) {
-    ///     None => unreachable!(),
-    ///     Some(removed) => assert_eq!(*removed, 5),
-    /// }
-    /// ```
     pub fn remove_non_recursive(&self, key: &K::Borrowed) -> Option<Owned<'_, K, V, S>> {
         match self.remove_non_recursive_with(key, |_| ControlFlow::Continue(())) {
             Remove::Absent => None,
@@ -430,6 +414,47 @@ where
     V: Value,
     S: Smr,
 {
+    /// If there is no value associated with `key`, call the provided `insert` closure
+    /// to compute a new value.
+    ///
+    /// The closure is called at most once, even under contention; the value will be
+    /// reused once allocated.
+    ///
+    /// Returns `Ok(&new_value)` if the insert succeeded,
+    /// or else `Err((&old_value, new_value))` if there is an existing
+    /// `old_value` associated with the key. `new_value` is `None`
+    /// if the closure was never called, or `Some` if this insert
+    /// was pre-empted by a concurrent insert to the same key.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use core::ops::ControlFlow;
+    ///
+    /// use arctic::concurrent;
+    /// use arctic::NonNullStr;
+    /// use arctic::NonNullString;
+    ///
+    /// let map = concurrent::Map::<NonNullString, Box<u64>>::default();
+    /// let key = NonNullStr::new("zipir").expect("Non-empty and no null byte");
+    ///
+    /// // Key not present, new value lazily allocated
+    /// match map.insert_with(key, || Box::new(10)) {
+    ///     Ok(new) => {
+    ///         assert_eq!(*new, 10);
+    ///     }
+    ///     Err(_) => unreachable!(),
+    /// }
+    ///
+    /// // Key present, new value not allocated
+    /// match map.insert_with(key, || Box::new(15)) {
+    ///     Ok(_) => unreachable!(),
+    ///     Err((old, new)) => {
+    ///         assert_eq!(*old, 10);
+    ///         assert!(new.is_none());
+    ///     },
+    /// }
+    /// ```
     pub fn insert_with<'g, 'k, F>(
         &'g self,
         key: K::Insert<'k>,
@@ -450,10 +475,78 @@ where
             Upsert::Success(upserted) => Ok(upserted
                 .try_into_inserted()
                 .unwrap_or_else(|_| unreachable!("Continue on `None`"))),
-            Upsert::Break { old, new: initial } => Err((old.expect("Break on `Some`"), initial)),
+            Upsert::Break { old, new } => Err((old.expect("Break on `Some`"), new)),
         }
     }
 
+    /// Associate `key` with `value`, calling the provided `upsert` closure to
+    /// break or compute a new value.
+    ///
+    /// The closure may be called multiple times under contention,
+    /// and takes an immutable reference to the current value (if there is one), as well as `initial`
+    /// (on the first call) or `Some(prev_value)` (on subsequent calls); use [`Option::take`]
+    /// to move out of the option.
+    ///
+    /// Returns an [`Upsert`] enum.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use core::ops::ControlFlow;
+    ///
+    /// use arctic::concurrent;
+    /// use arctic::concurrent::map::Upsert;
+    ///
+    /// let map = concurrent::Map::<u16, Box<u64>>::default();
+    /// let key = 20;
+    ///
+    /// // Key not present, closure continues, new value lazily allocated
+    /// match map.upsert_with(key, None, |old, new| {
+    ///     assert!(old.is_none());
+    ///     assert!(new.is_none());
+    ///     ControlFlow::Continue(Box::new(9))
+    /// }) {
+    ///     Upsert::Success(upserted) => {
+    ///         assert!(upserted.old().is_none());
+    ///         assert_eq!(*upserted.new(), 9);
+    ///     },
+    ///     Upsert::Break { .. } => unreachable!(),
+    /// }
+    ///
+    /// // Key present, closure breaks, new value not allocated
+    /// match map.upsert_with(key, None, |old, new| {
+    ///     assert!(old.copied() == Some(9));
+    ///     assert!(new.is_none());
+    ///     ControlFlow::Break(())
+    /// }) {
+    ///     Upsert::Success(_) => unreachable!(),
+    ///     Upsert::Break { old, new } => {
+    ///         assert_eq!(old.as_deref().copied(), Some(9));
+    ///         assert!(new.is_none());
+    ///     },
+    /// }
+    ///
+    /// // Key present, closure continues, new value lazily allocated (and reused under contention)
+    /// match map.upsert_with(key, None, |old, new| {
+    ///     let next = old.copied().unwrap_or(0) + 1;
+    ///
+    ///     ControlFlow::Continue(
+    ///         new.take()
+    ///             // Reuse allocation under contention
+    ///             .map(|mut new: Box<u64>| {
+    ///                 *new = next;
+    ///                 new
+    ///             })
+    ///             // Allocate new value
+    ///             .unwrap_or_else(|| Box::new(next)))
+    /// }) {
+    ///     Upsert::Success(updated) => {
+    ///         assert_eq!(updated.old().copied(), Some(9));
+    ///         assert_eq!(*updated.new(), 10);
+    ///     }
+    ///     _ => unreachable!(),
+    /// }
+    /// ```
     pub fn upsert_with<'g, 'k, F>(
         &'g self,
         key: K::Insert<'k>,
@@ -495,26 +588,27 @@ where
     /// use arctic::concurrent::map::Update;
     ///
     /// let map = concurrent::Map::<u64, Box<u64>>::default();
+    /// let key = 5;
     ///
     /// // Key not present, closure never called, new value not allocated
-    /// match map.update_with(&5, None, |_, _| unreachable!()) {
+    /// match map.update_with(&key, None, |_, _| unreachable!()) {
     ///     Update::Absent { new } => assert!(new.is_none()),
-    ///     _ => unreachable!(),
+    ///     Update::Success { .. } | Update::Break { .. } => unreachable!(),
     /// }
     ///
-    /// map.insert(5, Box::new(29)).expect("Key not present");
+    /// map.insert(key, Box::new(29)).expect("Key not present");
     ///
     /// // Key present, closure breaks, new value not allocated
-    /// match map.update_with(&5, None, |_, _| ControlFlow::Break(())) {
+    /// match map.update_with(&key, None, |_, _| ControlFlow::Break(())) {
     ///     Update::Break { old, new } => {
     ///         assert_eq!(*old, 29);
     ///         assert!(new.is_none());
     ///     }
-    ///     _ => unreachable!(),
+    ///     Update::Absent { .. } | Update::Success { .. } => unreachable!(),
     /// }
     ///
     /// // Key present, closure continues, new value lazily allocated (and reused under contention)
-    /// match map.update_with(&5, None, |old, new| {
+    /// match map.update_with(&key, None, |old, new| {
     ///     ControlFlow::Continue(
     ///         new.take()
     ///             // Reuse allocation under contention
@@ -529,7 +623,7 @@ where
     ///         assert_eq!(*updated.old(), 29);
     ///         assert_eq!(*updated.new(), 30);
     ///     }
-    ///     _ => unreachable!(),
+    ///     Update::Absent { .. } | Update::Break { .. } => unreachable!(),
     /// }
     /// ```
     pub fn update_with<'g, F>(
@@ -554,6 +648,78 @@ where
         self.update_with_pessimistic(reader, initial, update)
     }
 
+    /// If there is a value associated with `key`, call `remove` to determine whether
+    /// to remove the value, recursively removing empty tree nodes.
+    ///
+    /// Returns a [`Remove`] enum.
+    ///
+    /// See also: [`Map::remove`], [`Map::remove_non_recursive`], [`Map::remove_non_recursive_with`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use core::ops::ControlFlow;
+    ///
+    /// use arctic::concurrent;
+    /// use arctic::concurrent::map::Remove;
+    ///
+    /// let map = concurrent::Map::<u128, u64>::default();
+    /// let key = 0xfeed;
+    ///
+    /// // Key not present, closure never called
+    /// match map.remove_with(&key, |_| unreachable!()) {
+    ///     Remove::Absent => (),
+    ///     Remove::Success { .. } | Remove::Break { .. } => unreachable!(),
+    /// }
+    ///
+    /// map.insert(key, 1).expect("Key not present");
+    ///
+    /// // Key present, closure breaks, value not removed
+    /// match map.remove_with(&key, |old| {
+    ///     assert_eq!(*old, 1);
+    ///     ControlFlow::Break(())
+    /// }) {
+    ///     Remove::Break { old } => assert_eq!(*old, 1),
+    ///     Remove::Absent | Remove::Success { .. } => unreachable!(),
+    /// }
+    ///
+    /// assert_eq!(map.get(&key).as_deref().copied(), Some(1));
+    ///
+    /// // Key present, closure continues, value removed
+    /// match map.remove_with(&key, |old| {
+    ///     if *old > 0 {
+    ///         ControlFlow::Continue(())
+    ///     } else {
+    ///         ControlFlow::Break(())
+    ///     }
+    /// }) {
+    ///     Remove::Success { old } => assert_eq!(*old, 1),
+    ///     Remove::Absent | Remove::Break { .. } => unreachable!(),
+    /// }
+    ///
+    /// assert!(map.get(&key).is_none());
+    /// ```
+    pub fn remove_with<'g, F>(&'g self, key: &K::Borrowed, mut remove: F) -> Remove<'g, K, V, S>
+    where
+        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+    {
+        let reader = K::Read::from(key);
+        let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(reader, &mut remove);
+        remove
+    }
+
+    /// If there is a value associated with `key`, call `remove` to determine whether
+    /// to remove the value, **without** recursively removing empty tree nodes.
+    ///
+    /// <div class="warning">
+    ///
+    /// See warning on [`Map::remove_non_recursive`].
+    ///
+    /// </div>
+    ///
+    /// Returns a [`Remove`] enum.
+    ///
+    /// See also: [`Map::remove`], [`Map::remove_with`], [`Map::remove_non_recursive`].
     pub fn remove_non_recursive_with<F>(
         &self,
         key: &K::Borrowed,
@@ -567,15 +733,6 @@ where
             Ok(remove) => remove,
             Err(()) => self.remove_non_recursive_with_pessimistic(reader, &mut with),
         }
-    }
-
-    pub fn remove_with<'g, F>(&'g self, key: &K::Borrowed, mut with: F) -> Remove<'g, K, V, S>
-    where
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
-    {
-        let reader = K::Read::from(key);
-        let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(reader, &mut with);
-        remove
     }
 }
 
@@ -888,24 +1045,24 @@ where
     fn remove_non_recursive_with_optimistic<F>(
         &self,
         reader: K::Read<'_>,
-        with: &mut F,
+        remove: &mut F,
     ) -> Result<Remove<'_, K, V, S>, ()>
     where
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
-        self.remove_with_impl::<false, path::Discard, _>(reader, with)
+        self.remove_with_impl::<false, path::Discard, _>(reader, remove)
     }
 
     #[cold]
     fn remove_non_recursive_with_pessimistic<F>(
         &self,
         reader: K::Read<'_>,
-        with: &mut F,
+        remove: &mut F,
     ) -> Remove<'_, K, V, S>
     where
         F: FnMut(&V::Target) -> ControlFlow<(), ()>,
     {
-        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(reader, with);
+        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(reader, remove);
         remove
     }
 
