@@ -8,6 +8,7 @@ use ribbit::Unpack as _;
 use crate::Key;
 use crate::Value;
 use crate::concurrent::Smr;
+use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
@@ -51,7 +52,7 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(
                         node.entries(false, Unbound::<()>::default(), Unbound::<()>::default())
                     }
                     .filter(|(_, edge)| {
-                        !unsafe { edge.as_ref() }
+                        !unsafe { edge.cast::<ribbit::Atomic<Edge<K::Edge>>>().as_ref() }
                             .load_packed(Ordering::Relaxed)
                             .is_null()
                     })

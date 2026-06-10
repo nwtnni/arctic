@@ -71,18 +71,13 @@ impl<K: Key, V: Value> Smr<K, V> for Box<Epoch> {
 }
 
 impl<V: Value> smr::Guard<V> for crossbeam_epoch::Guard {
-    #[expect(private_bounds)]
-    #[expect(private_interfaces)]
-    unsafe fn retire_node<M: ribbit::Pack<Packed: crate::raw::edge::Meta>>(
-        &mut self,
-        _bits: usize,
-        node: ribbit::Packed<node::Ptr<M>>,
-    ) {
+    unsafe fn retire_node(&mut self, _bits: usize, node: ribbit::Packed<node::Ptr>) {
         stat::increment(stat::Counter::Retire);
 
         unsafe {
             self.defer_unchecked(move || {
-                node.deallocate(stat::Counter::FreeRetire);
+                stat::increment(stat::Counter::FreeRetire);
+                node.deallocate();
             });
         }
     }

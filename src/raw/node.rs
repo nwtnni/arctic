@@ -11,7 +11,6 @@
 //! `&dyn Node` that fits in 8 bytes (and hence within a [`crate::raw::Edge`]).
 
 use core::fmt::Debug;
-use core::marker::PhantomData;
 use core::num::NonZeroU32;
 use core::num::NonZeroU64;
 use core::ptr::NonNull;
@@ -50,16 +49,13 @@ use crate::raw::node::iter::KeyIter256;
 use crate::stat;
 use linear::Linear;
 
-/// A node is a partial mapping from `u8` to [`crate::raw::Edge`].
+/// A node is a partial mapping from `u8` to [`edge::Raw`].
 ///
 /// # Safety
 ///
 /// Implementations must ensure that all returned key indices are within
 /// `self.edges()` and `self.edges_mut()`.
-unsafe trait Node<M>: Default + core::fmt::Debug
-where
-    M: ribbit::Pack<Packed: edge::Meta>,
-{
+unsafe trait Node: Default + core::fmt::Debug {
     /// A runtime representation of the node type.
     const TYPE: Type;
 
@@ -77,14 +73,14 @@ where
     /// - `keys.len() <= Self::CAPACITY`
     /// - Keys are unique
     /// - Edges are unique
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self>;
+    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self>;
 
     /// Initializes an unsorted iterator over this node's keys.
     fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U, iter: &mut Self::KeyIter);
 
-    fn edges(&self) -> &[Atomic<Edge<M>>];
+    fn edges(&self) -> &[Atomic<edge::Raw>];
 
-    fn edges_mut(&mut self) -> &mut [Atomic<Edge<M>>];
+    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>];
 
     /// # Safety
     ///
@@ -105,7 +101,7 @@ where
     fn max<U: Upper>(&self, upper: U) -> Option<KeyIndex>;
 }
 
-fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M>>(
+fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node>(
     node: &N,
     meta: ribbit::Packed<M>,
     keys: &mut [u8; CAPACITY],
@@ -132,10 +128,10 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M
     let len = iter
         .map(|iter::KeyIndex { key, index }| {
             let index = index as usize;
-            let edge = if_validate!(&node.edges()[index], unsafe {
+            let raw = if_validate!(&node.edges()[index], unsafe {
                 node.edges().get_unchecked(index)
-            })
-            .load_packed(Ordering::Relaxed);
+            });
+            let edge = unsafe { Edge::from_raw_ref(raw) }.load_packed(Ordering::Relaxed);
             (key, edge)
         })
         .filter(|(_, edge)| !edge.is_null())
@@ -158,7 +154,15 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node<M
     }
 
     // Heuristic: assume a full node should be expanded
-    let new = unsafe { Ptr::new_unchecked(len == N::CAPACITY, &keys[..len], &edges[..len]) };
+    let new = unsafe {
+        Ptr::new_unchecked(
+            len == N::CAPACITY,
+            &keys[..len],
+            core::mem::transmute::<&[ribbit::Packed<Edge<M>>], &[ribbit::Packed<edge::Raw>]>(
+                &edges[..len],
+            ),
+        )
+    };
     let edge = Edge::new_node(meta, new);
     (Smo::ReplaceNode, edge)
 }
@@ -217,48 +221,36 @@ pub(super) use dispatch;
 /// Conceptually the same as the following type:
 ///
 /// ```ignore
-/// enum Ptr<M> {
-///     Node3(NonNull<Node3<M>>),
-///     Node15(NonNull<Node15<M>>),
-///     Node47(NonNull<Node47<M>>),
-///     Node256(NonNull<Node256<M>>),
+/// enum Ptr {
+///     Node3(NonNull<Node3>),
+///     Node15(NonNull<Node15>),
+///     Node47(NonNull<Node47>),
+///     Node256(NonNull<Node256>),
 /// }
 /// ```
 ///
 /// But takes up 8 bytes, is compatible with `ribbit`, and avoids
 /// jump tables when dispatching (see [`crate::raw::node::dispatch`]).
-#[derive(ribbit::Pack)]
+#[derive(Copy, Clone, ribbit::Pack)]
 #[ribbit(size = 64, packed(rename = PtrPacked), eq, nonzero)]
-pub(crate) struct Ptr<M> {
+pub struct Ptr {
     #[ribbit(size = 2, get(vis = "pub(crate)"))]
     r#type: Type,
 
     #[ribbit(with(skip))]
     _placeholder: NonZeroU32,
-
-    _meta: PhantomData<M>,
 }
 
-impl<M> Copy for Ptr<M> {}
-impl<M> Clone for Ptr<M> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<M> Ptr<M> {
+impl Ptr {
     const MASK_TYPE: u64 = 0b111;
     const MASK_PTR: u64 = !Self::MASK_TYPE;
 }
 
-impl<M> Ptr<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta>,
-{
+impl Ptr {
     unsafe fn new_unchecked(
         grow: bool,
         keys: &[u8],
-        edges: &[ribbit::Packed<Edge<M>>],
+        edges: &[ribbit::Packed<edge::Raw>],
     ) -> ribbit::Packed<Self> {
         validate_eq!(keys.len(), edges.len());
 
@@ -277,18 +269,18 @@ where
     }
 
     #[inline]
-    pub(crate) unsafe fn from_raw_unchecked(raw: u64) -> ribbit::Packed<Self> {
-        let node = unsafe { ribbit::Packed::<Option<Ptr<M>>>::new_unchecked(raw) };
+    pub unsafe fn from_raw_unchecked(raw: NonZeroU64) -> ribbit::Packed<Self> {
+        let node = unsafe { ribbit::Packed::<Option<Ptr>>::new_unchecked(raw.get()) };
         if_validate!(node.unwrap(), unsafe { node.unwrap_unchecked() })
     }
 
     // The only way a larger node can be created is through node replacement.
     #[inline]
-    pub(crate) fn new_node_3(node: Box<Node3<M>>) -> ribbit::Packed<Self> {
+    pub(crate) fn new_node_3(node: Box<Node3>) -> ribbit::Packed<Self> {
         Self::new(node)
     }
 
-    fn new<N: Node<M>>(node: Box<N>) -> ribbit::Packed<Self> {
+    fn new<N: Node>(node: Box<N>) -> ribbit::Packed<Self> {
         // NOTE: we rely on address (usize) <-> u64 conversions here
         const _: () = assert!(size_of::<usize>() == size_of::<u64>());
 
@@ -302,32 +294,23 @@ where
     }
 }
 
-/// Reduce dispatch boilerplate when every branch is identical.
-macro_rules! impl_forward {
+/// Reduce dispatch boilerplate for identical branches.
+macro_rules! dispatch_all {
     ($ptr:expr, $closure:expr) => {
         $ptr.dispatch($closure, $closure, $closure, $closure)
     };
 }
 
-impl<M> PtrPacked<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta>,
-{
+/// # Edge metadata independent methods
+impl PtrPacked {
     #[inline]
-    pub(crate) fn raw(self) -> NonZeroU64 {
+    pub fn raw(self) -> NonZeroU64 {
         self.value
     }
 
-    pub(crate) unsafe fn len(self) -> u8 {
-        impl_forward!(self, |node| unsafe { node.as_ref() }.edges())
-            .iter()
-            .filter(|edge| !edge.load_packed(Ordering::Relaxed).is_null())
-            .count() as u8
-    }
-
     #[inline]
-    pub(crate) unsafe fn get<'g>(self, key: u8) -> Option<&'g Atomic<Edge<M>>> {
-        let (index, edges) = impl_forward!(self, |node| {
+    pub(crate) unsafe fn get<'g>(self, key: u8) -> Option<&'g Atomic<edge::Raw>> {
+        let (index, edges) = dispatch_all!(self, |node| {
             let node = unsafe { node.as_ref() };
             let index = node.get_key(key);
             let edges = node.edges();
@@ -341,8 +324,8 @@ where
     }
 
     #[inline]
-    pub(crate) unsafe fn get_or_insert<'g>(self, key: u8) -> Option<&'g Atomic<Edge<M>>> {
-        let (index, edges) = impl_forward!(self, |node| {
+    pub(crate) unsafe fn get_or_insert<'g>(self, key: u8) -> Option<&'g Atomic<edge::Raw>> {
+        let (index, edges) = dispatch_all!(self, |node| {
             let node = unsafe { node.as_ref() };
             let index = node.get_or_insert_key(key);
             let edges = node.edges();
@@ -355,60 +338,12 @@ where
         }))
     }
 
-    pub(crate) unsafe fn freeze(self) {
-        impl_forward!(self, |node| {
-            let node = unsafe { node.as_ref() };
-            let len = node.freeze_header();
-            node.edges().iter().take(len).for_each(Edge::freeze)
-        });
-    }
-
-    pub(crate) unsafe fn replace(
-        self,
-        parent: ribbit::Packed<M>,
-    ) -> (Smo, ribbit::Packed<Edge<M>>) {
-        self.dispatch(
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 3],
-                    &mut [Edge::NULL; 3],
-                )
-            },
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 15],
-                    &mut [Edge::NULL; 15],
-                )
-            },
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 47],
-                    &mut [Edge::NULL; 47],
-                )
-            },
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 256],
-                    &mut [Edge::NULL; 256],
-                )
-            },
-        )
-    }
-
     pub(crate) unsafe fn entries<'g, L: Lower, U: Upper>(
         self,
         sort: bool,
         lower: L,
         upper: U,
-    ) -> EntryIter<'g, M> {
+    ) -> EntryIter<'g> {
         let (keys, edges) = self.dispatch(
             |node| {
                 let node = unsafe { node.as_ref() };
@@ -450,7 +385,7 @@ where
         sort: bool,
         lower: L,
         upper: U,
-    ) -> Result<(u8, NonNull<ribbit::Atomic<Edge<M>>>), EntryIter<'g, M>> {
+    ) -> Result<(u8, NonNull<ribbit::Atomic<edge::Raw>>), EntryIter<'g>> {
         // Deduplicate with `entries`?
         let iter = self
             .dispatch(
@@ -505,20 +440,110 @@ where
 
     #[expect(unused)]
     pub(crate) fn min<L: Lower>(self, lower: L) -> Option<KeyIndex> {
-        impl_forward!(self, |node| unsafe { node.as_ref().min(lower) })
+        dispatch_all!(self, |node| unsafe { node.as_ref().min(lower) })
     }
 
     #[expect(unused)]
     pub(crate) fn max<U: Upper>(self, upper: U) -> Option<KeyIndex> {
-        impl_forward!(self, |node| unsafe { node.as_ref().max(upper) })
+        dispatch_all!(self, |node| unsafe { node.as_ref().max(upper) })
     }
 
     /// # Safety
     ///
     /// Caller must ensure there are no other references to this node.
-    pub(crate) unsafe fn deallocate(self, counter: stat::Counter) {
-        stat::increment(counter);
-        impl_forward!(self, |node| drop(unsafe { Box::from_raw(node.as_ptr()) }))
+    pub unsafe fn deallocate(self) {
+        dispatch_all!(self, |node| drop(unsafe { Box::from_raw(node.as_ptr()) }))
+    }
+
+    #[inline(always)]
+    pub(crate) fn dispatch<N3, N15, N47, N256, T>(
+        self,
+        node_3: N3,
+        node_15: N15,
+        node_47: N47,
+        node_256: N256,
+    ) -> T
+    where
+        N3: FnOnce(NonNull<Node3>) -> T,
+        N15: FnOnce(NonNull<Node15>) -> T,
+        N47: FnOnce(NonNull<Node47>) -> T,
+        N256: FnOnce(NonNull<Node256>) -> T,
+    {
+        let ptr = NonNull::<u8>::new(core::ptr::with_exposed_provenance_mut(
+            (self.value.get() & Ptr::MASK_PTR) as usize,
+        ));
+        let ptr = if_validate!(ptr.unwrap(), unsafe { ptr.unwrap_unchecked() });
+
+        dispatch!(
+            self.r#type(),
+            node_3(ptr.cast()),
+            node_15(ptr.cast()),
+            node_47(ptr.cast()),
+            node_256(ptr.cast()),
+        )
+    }
+}
+
+/// # Edge metadata dependent methods
+impl PtrPacked {
+    pub(crate) unsafe fn len<M: ribbit::Pack<Packed: edge::Meta>>(self) -> u8 {
+        dispatch_all!(self, |node| unsafe { node.as_ref() }.edges())
+            .iter()
+            .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
+            .filter(|edge| !edge.load_packed(Ordering::Relaxed).is_null())
+            .count() as u8
+    }
+
+    pub(crate) unsafe fn freeze<M: ribbit::Pack<Packed: edge::Meta>>(self) {
+        dispatch_all!(self, |node| {
+            let node = unsafe { node.as_ref() };
+            let len = node.freeze_header();
+            node.edges()
+                .iter()
+                .take(len)
+                .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
+                .for_each(Edge::freeze)
+        });
+    }
+
+    pub(crate) unsafe fn replace<M: ribbit::Pack<Packed: edge::Meta>>(
+        self,
+        parent: ribbit::Packed<M>,
+    ) -> (Smo, ribbit::Packed<Edge<M>>) {
+        self.dispatch(
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    &mut [0u8; 3],
+                    &mut [Edge::NULL; 3],
+                )
+            },
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    &mut [0u8; 15],
+                    &mut [Edge::NULL; 15],
+                )
+            },
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    &mut [0u8; 47],
+                    &mut [Edge::NULL; 47],
+                )
+            },
+            |node| {
+                replace(
+                    unsafe { node.as_ref() },
+                    parent,
+                    &mut [0u8; 256],
+                    &mut [Edge::NULL; 256],
+                )
+            },
+        )
     }
 
     /// Deallocate recursive `Node3`s created by [`crate::raw::Edge::new_path`].
@@ -529,18 +554,21 @@ where
     /// Caller must ensure:
     /// - There are no other references to this node.
     /// - This is a Node3 created by [`crate::raw::Edge::new_path`].
-    pub(crate) unsafe fn deallocate_recursive(self, counter: stat::Counter) {
-        stat::increment(counter);
-
-        let mut prev: Option<NonNull<Node3<_>>> = None;
+    pub(crate) unsafe fn deallocate_recursive<M>(self)
+    where
+        M: ribbit::Pack<Packed: edge::Meta>,
+    {
+        let mut prev: Option<NonNull<Node3>> = None;
         let mut next = self;
         let mut done = false;
 
         while !done {
             next.dispatch(
-                |mut node_3| match unsafe { node_3.as_mut() }.edges_mut()[0]
-                    .get_packed()
-                    .child()
+                |mut node_3| match unsafe {
+                    Edge::<M>::from_raw_mut(&mut node_3.as_mut().edges_mut()[0])
+                }
+                .get_packed()
+                .child()
                 {
                     None => unreachable!(),
                     Some(edge::Child::Value(_)) => {
@@ -560,41 +588,13 @@ where
             );
         }
     }
-
-    #[inline(always)]
-    pub(crate) fn dispatch<N3, N15, N47, N256, T>(
-        self,
-        node_3: N3,
-        node_15: N15,
-        node_47: N47,
-        node_256: N256,
-    ) -> T
-    where
-        N3: FnOnce(NonNull<Node3<M>>) -> T,
-        N15: FnOnce(NonNull<Node15<M>>) -> T,
-        N47: FnOnce(NonNull<Node47<M>>) -> T,
-        N256: FnOnce(NonNull<Node256<M>>) -> T,
-    {
-        let ptr = NonNull::<u8>::new(core::ptr::with_exposed_provenance_mut(
-            (self.value.get() & Ptr::<M>::MASK_PTR) as usize,
-        ));
-        let ptr = if_validate!(ptr.unwrap(), unsafe { ptr.unwrap_unchecked() });
-
-        dispatch!(
-            self.r#type(),
-            node_3(ptr.cast()),
-            node_15(ptr.cast()),
-            node_47(ptr.cast()),
-            node_256(ptr.cast()),
-        )
-    }
 }
 
-impl<M> Debug for PtrPacked<M> {
+impl Debug for PtrPacked {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Node")
             .field("type", &self.r#type())
-            .field("ptr", &(self.value.get() & Ptr::<M>::MASK_PTR))
+            .field("ptr", &(self.value.get() & Ptr::MASK_PTR))
             .finish()
     }
 }

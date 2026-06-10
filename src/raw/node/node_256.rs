@@ -4,41 +4,34 @@
 //! It is not linear because it has no header metadata at all.
 
 use core::fmt::Debug;
-use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
 
 use crate::raw::edge;
 use crate::raw::node;
-use crate::raw::node::Edge;
 use crate::raw::node::KeyIter256;
 use crate::raw::node::Node;
-use crate::raw::node::iter;
 
 /// [`Node`] representation that contains exactly 256 key-edge pairs.
 #[repr(C, align(4096))]
-pub(crate) struct Node256<M: ribbit::Pack>([Atomic<Edge<M>>; 256]);
+pub(crate) struct Node256([Atomic<edge::Raw>; 256]);
 
-const_assert_size_align!(Node256::<()>, 4096, 4096);
+const_assert_size_align!(Node256, 4096, 4096);
 
-impl<M> Default for Node256<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta>,
-{
+impl Default for Node256 {
     fn default() -> Self {
-        Self(core::array::from_fn(|_| Atomic::new_packed(Edge::NULL)))
+        Self(core::array::from_fn(|_| {
+            Atomic::new_packed(edge::Raw::NULL)
+        }))
     }
 }
 
-unsafe impl<M> Node<M> for Node256<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta>,
-{
+unsafe impl Node for Node256 {
     const TYPE: node::Type = node::Type::Node256;
     const CAPACITY: usize = 256;
     type KeyIter = KeyIter256;
 
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
+    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= Self::CAPACITY);
@@ -61,12 +54,12 @@ where
     }
 
     #[inline]
-    fn edges(&self) -> &[Atomic<Edge<M>>] {
+    fn edges(&self) -> &[Atomic<edge::Raw>] {
         &self.0
     }
 
     #[inline]
-    fn edges_mut(&mut self) -> &mut [Atomic<Edge<M>>] {
+    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>] {
         &mut self.0
     }
 
@@ -86,47 +79,46 @@ where
     }
 
     #[inline]
-    fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {
-        self.0
-            .iter()
-            .enumerate()
-            .skip(lower.get() as usize)
-            .find_map(|(index, edge)| {
-                if edge.load_packed(Ordering::Relaxed).is_null() {
-                    return None;
-                } else {
-                    Some(iter::KeyIndex {
-                        index: index as u8,
-                        key: index as u8,
-                    })
-                }
-            })
+    fn min<L: node::Lower>(&self, _lower: L) -> Option<node::KeyIndex> {
+        todo!()
+        // self.0
+        //     .iter()
+        //     .enumerate()
+        //     .skip(lower.get() as usize)
+        //     .find_map(|(index, edge)| {
+        //         if edge.load_packed(Ordering::Relaxed).is_null() {
+        //             return None;
+        //         } else {
+        //             Some(iter::KeyIndex {
+        //                 index: index as u8,
+        //                 key: index as u8,
+        //             })
+        //         }
+        //     })
     }
 
     #[inline]
-    fn max<U: node::Upper>(&self, upper: U) -> Option<node::KeyIndex> {
-        self.0
-            .iter()
-            .enumerate()
-            .rev()
-            .skip(upper.get() as usize)
-            .find_map(|(index, edge)| {
-                if edge.load_packed(Ordering::Relaxed).is_null() {
-                    return None;
-                } else {
-                    Some(iter::KeyIndex {
-                        index: index as u8,
-                        key: index as u8,
-                    })
-                }
-            })
+    fn max<U: node::Upper>(&self, _upper: U) -> Option<node::KeyIndex> {
+        todo!()
+        // self.0
+        //     .iter()
+        //     .enumerate()
+        //     .rev()
+        //     .skip(upper.get() as usize)
+        //     .find_map(|(index, edge)| {
+        //         if edge.load_packed(Ordering::Relaxed).is_null() {
+        //             return None;
+        //         } else {
+        //             Some(iter::KeyIndex {
+        //                 index: index as u8,
+        //                 key: index as u8,
+        //             })
+        //         }
+        //     })
     }
 }
 
-impl<M> Debug for Node256<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta + Debug>,
-{
+impl Debug for Node256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Node256").field("edges", &self.0).finish()
     }

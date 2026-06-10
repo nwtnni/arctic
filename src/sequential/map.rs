@@ -396,7 +396,8 @@ where
             match child {
                 edge::Child::Value(value) => drop(unsafe { V::from_raw(value) }),
                 edge::Child::Node(node) => unsafe {
-                    node.deallocate(stat::Counter::FreeDrop);
+                    stat::increment(stat::Counter::FreeDrop);
+                    node.deallocate();
                 },
             }
         })
@@ -478,7 +479,8 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
             // No concurrent operations, so must be node replacement with larger node
             validate_eq!(smo, crate::raw::Smo::ReplaceNode);
             unsafe { self.cursor.edge_mut() }.set_packed(new);
-            unsafe { old_node.deallocate(stat::Counter::FreeRetire) };
+            stat::increment(stat::Counter::FreeRetire);
+            unsafe { old_node.deallocate() };
         }
 
         match self.cursor.traverse_insert() {

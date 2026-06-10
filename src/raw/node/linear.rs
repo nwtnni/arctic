@@ -10,44 +10,41 @@ use ribbit::Atomic;
 
 use crate::raw::edge;
 use crate::raw::node;
-use crate::raw::node::Edge;
 use crate::raw::node::KeyIndex;
 use crate::raw::node::Node;
 
 #[repr(C, align(64))]
-pub(crate) struct Linear<const LEN: usize, H: ribbit::Pack, M: ribbit::Pack>
+pub(crate) struct Linear<const LEN: usize, H: ribbit::Pack>
 where
     <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
 {
     pub(super) header: Atomic<H>,
-    pub(super) edges: [Atomic<Edge<M>>; LEN],
+    pub(super) edges: [Atomic<edge::Raw>; LEN],
 }
 
-impl<const LEN: usize, H, M> Default for Linear<LEN, H, M>
+impl<const LEN: usize, H> Default for Linear<LEN, H>
 where
     H: ribbit::Pack<Packed: Default>,
     <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
-    M: ribbit::Pack<Packed: edge::Meta>,
 {
     fn default() -> Self {
         Self {
             header: Atomic::new_packed(H::Packed::default()),
-            edges: core::array::from_fn(|_| Atomic::new_packed(Edge::NULL)),
+            edges: core::array::from_fn(|_| Atomic::new_packed(edge::Raw::NULL)),
         }
     }
 }
 
-unsafe impl<const LEN: usize, H, M> Node<M> for Linear<LEN, H, M>
+unsafe impl<const LEN: usize, H> Node for Linear<LEN, H>
 where
     H: ribbit::Pack<Packed: Header + Default>,
     <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
-    M: ribbit::Pack<Packed: edge::Meta>,
 {
     const TYPE: node::Type = <H::Packed as Header>::TYPE;
     const CAPACITY: usize = <H::Packed as Header>::CAPACITY;
     type KeyIter = <H::Packed as Header>::KeyIter;
 
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
+    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= Self::CAPACITY);
@@ -72,12 +69,12 @@ where
     }
 
     #[inline]
-    fn edges(&self) -> &[Atomic<Edge<M>>] {
+    fn edges(&self) -> &[Atomic<edge::Raw>] {
         &self.edges
     }
 
     #[inline]
-    fn edges_mut(&mut self) -> &mut [Atomic<Edge<M>>] {
+    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>] {
         &mut self.edges
     }
 
@@ -139,11 +136,10 @@ where
     }
 }
 
-impl<const LEN: usize, H, M> Debug for Linear<LEN, H, M>
+impl<const LEN: usize, H> Debug for Linear<LEN, H>
 where
     H: ribbit::Pack<Packed: Debug>,
     <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
-    M: ribbit::Pack<Packed: edge::Meta + Debug>,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let name = const {

@@ -141,7 +141,7 @@ where
         W::Len,
         <R::Lower as Lower<K::Edge>>::Bound,
         <R::Upper as Upper<K::Edge>>::Bound,
-        raw::node::EntryIter<'g, K::Edge>,
+        raw::node::EntryIter<'g>,
     )>,
     _order: PhantomData<O>,
 }
@@ -193,7 +193,8 @@ where
 
                 'flatten: loop {
                     let (meta, child) = {
-                        let edge = unsafe { edge.as_ref() }.load_packed(Ordering::Acquire);
+                        let edge = unsafe { edge.cast::<ribbit::Atomic<Edge<K::Edge>>>().as_ref() }
+                            .load_packed(Ordering::Acquire);
                         let Some(child) = edge.child() else {
                             continue 'horizontal;
                         };
@@ -231,15 +232,17 @@ where
 
                     match child {
                         edge::Child::Value(value) if YIELD => {
-                            return Some((&self.writer, value, edge));
+                            return Some((&self.writer, value, edge.cast()));
                         }
-                        edge::Child::Value(value) => match apply((&self.writer, value, edge)) {
-                            ControlFlow::Continue(()) => continue 'horizontal,
-                            ControlFlow::Break(()) => {
-                                self.stack.clear();
-                                return None;
+                        edge::Child::Value(value) => {
+                            match apply((&self.writer, value, edge.cast())) {
+                                ControlFlow::Continue(()) => continue 'horizontal,
+                                ControlFlow::Break(()) => {
+                                    self.stack.clear();
+                                    return None;
+                                }
                             }
-                        },
+                        }
                         edge::Child::Node(node) => {
                             lower = lower_next;
                             upper = upper_next;

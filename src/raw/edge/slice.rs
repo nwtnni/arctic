@@ -29,6 +29,11 @@ impl SlicePacked {
     #[inline]
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
         let ptr = self.ptr().value() as *const u8;
+
+        if ptr.is_null() {
+            return &[];
+        }
+
         let len = self.len().value() as usize;
         unsafe { core::slice::from_raw_parts(ptr, len) }
     }
@@ -49,7 +54,7 @@ impl IntoIterator for SlicePacked {
 }
 
 impl edge::Meta for SlicePacked {
-    const NULL: Self = Self::new(u48::new(1), u14::new(0), false, false);
+    const NULL: Self = Self::new(u48::new(0), u14::new(0), false, false);
     type Len = u14;
 
     #[inline]

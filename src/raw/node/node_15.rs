@@ -11,9 +11,9 @@ use crate::raw::node::Node;
 use crate::raw::node::linear;
 
 /// [`Node`] representation that contains at most 15 key-edge pairs.
-pub(crate) type Node15<M> = Linear<15, Header, M>;
+pub(crate) type Node15 = Linear<15, Header>;
 
-const_assert_size_align!(Node15::<()>, 256, 64);
+const_assert_size_align!(Node15, 256, 64);
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 128, packed(rename = "HeaderPacked"), debug)]

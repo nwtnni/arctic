@@ -919,7 +919,8 @@ where
                             Err(_) => {
                                 if let Some(node) = new.as_node() {
                                     unsafe {
-                                        node.deallocate_recursive(stat::Counter::FreeConflict);
+                                        stat::increment(stat::Counter::FreeConflict);
+                                        node.deallocate_recursive::<K::Edge>();
                                     }
                                 }
 
@@ -934,7 +935,7 @@ where
                     edge: old,
                 } if !old.meta().is_frozen() => {
                     let (smo, new) = unsafe {
-                        old_node.freeze();
+                        old_node.freeze::<K::Edge>();
                         old_node.replace(old.meta())
                     };
                     match cursor.edge().compare_exchange_packed(
@@ -951,7 +952,8 @@ where
                             if smo.is_allocate() {
                                 let node = new.as_node().expect("Allocating SMO creates node");
                                 unsafe {
-                                    node.deallocate(stat::Counter::FreeConflict);
+                                    stat::increment(stat::Counter::FreeConflict);
+                                    node.deallocate();
                                 }
                             }
                         }
@@ -1140,7 +1142,7 @@ where
                 .pop()
                 .unwrap_or_else(|_| panic!("Recursive remove requires path"))
             {
-                if unsafe { target.len() } > 0 {
+                if unsafe { target.len::<K::Edge>() } > 0 {
                     break 'outer;
                 }
 
@@ -1164,7 +1166,7 @@ where
                         None => break 'outer,
                         Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
                         Some(edge::Child::Node(node)) if node == target => unsafe {
-                            node.freeze();
+                            node.freeze::<K::Edge>();
                             node.replace(old.meta())
                         },
                         // Must have been replaced by someone else
@@ -1186,7 +1188,8 @@ where
                             if smo.is_allocate()
                                 && let Some(node) = new.as_node()
                             {
-                                unsafe { node.deallocate(stat::Counter::FreeConflict) };
+                                stat::increment(stat::Counter::FreeConflict);
+                                unsafe { node.deallocate() };
                             }
                         }
                     }

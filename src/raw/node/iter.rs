@@ -10,27 +10,27 @@ use ribbit::Pack as _;
 use ribbit::traits::Integer as _;
 use ribbit::u2;
 
-use crate::raw::Edge;
+use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
 
 /// Iterator over key-edge pairs.
-pub(crate) struct EntryIter<'g, M: ribbit::Pack> {
+pub(crate) struct EntryIter<'g> {
     keys: KeyIter,
-    edges: NonNull<Atomic<Edge<M>>>,
+    edges: NonNull<Atomic<edge::Raw>>,
 
     #[cfg(feature = "validate")]
     len: u16,
 
-    _slice: PhantomData<&'g [Atomic<Edge<M>>]>,
+    _slice: PhantomData<&'g [Atomic<edge::Raw>]>,
 }
 
-impl<'g, M: ribbit::Pack> EntryIter<'g, M> {
+impl<'g> EntryIter<'g> {
     /// # SAFETY
     ///
     /// Caller must guarantee all indices produced by `keys` are < `edges.len()`.
     #[inline]
-    pub(crate) unsafe fn new(keys: KeyIter, edges: &'g [Atomic<Edge<M>>]) -> Self {
+    pub(crate) unsafe fn new(keys: KeyIter, edges: &'g [Atomic<edge::Raw>]) -> Self {
         Self {
             keys,
             edges: NonNull::from(edges).cast(),
@@ -43,8 +43,8 @@ impl<'g, M: ribbit::Pack> EntryIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> Iterator for EntryIter<'g, M> {
-    type Item = (u8, NonNull<Atomic<Edge<M>>>);
+impl<'g> Iterator for EntryIter<'g> {
+    type Item = (u8, NonNull<Atomic<edge::Raw>>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -68,7 +68,7 @@ impl<'g, M: ribbit::Pack> Iterator for EntryIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> DoubleEndedIterator for EntryIter<'g, M> {
+impl<'g> DoubleEndedIterator for EntryIter<'g> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         let KeyIndex { key, index } = self.keys.next_back()?;
@@ -86,7 +86,7 @@ impl<'g, M: ribbit::Pack> DoubleEndedIterator for EntryIter<'g, M> {
     }
 }
 
-impl<'g, M: ribbit::Pack> ExactSizeIterator for EntryIter<'g, M> {
+impl<'g> ExactSizeIterator for EntryIter<'g> {
     #[inline]
     fn len(&self) -> usize {
         let (lower, upper) = self.size_hint();

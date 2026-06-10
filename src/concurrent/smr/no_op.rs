@@ -54,13 +54,7 @@ impl<G, V> Default for Guard<G, V> {
 }
 
 impl<G, V: Value> smr::Guard<V> for Guard<G, V> {
-    #[expect(private_bounds)]
-    #[expect(private_interfaces)]
-    unsafe fn retire_node<M: ribbit::Pack<Packed: crate::raw::edge::Meta>>(
-        &mut self,
-        _bits: usize,
-        _edge: ribbit::Packed<crate::raw::node::Ptr<M>>,
-    ) {
+    unsafe fn retire_node(&mut self, _bits: usize, _edge: ribbit::Packed<crate::raw::node::Ptr>) {
         if cfg!(feature = "stat-garbage") {
             GARBAGE_LOCAL.set(GARBAGE_LOCAL.get() + 1);
 

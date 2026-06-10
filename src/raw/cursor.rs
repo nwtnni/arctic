@@ -53,7 +53,7 @@ pub(crate) enum Insert<M: ribbit::Pack<Packed: edge::Meta>> {
     ///
     /// Guaranteed that `Some(Child::Node(node)) == edge.child()`.
     Replace {
-        node: ribbit::Packed<node::Ptr<M>>,
+        node: ribbit::Packed<node::Ptr>,
         edge: ribbit::Packed<Edge<M>>,
     },
 }
@@ -83,7 +83,7 @@ where
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
                     // Skip `self.push` call since `get` never back-tracks
-                    self.edge = unsafe { node.get(byte) }.map(NonNull::from)?;
+                    self.edge = unsafe { node.get(byte) }.map(NonNull::from)?.cast();
                     self.reader = self.reader.suffix(R::Len::BYTE + len.into());
                 }
                 edge::Child::Value(value) => {
@@ -303,9 +303,7 @@ where
     /// another thread won the CAS race or an edge expansion SMO pushed
     /// down the frozen node).
     #[cold]
-    pub(crate) fn freeze(
-        &mut self,
-    ) -> Result<Option<ribbit::Packed<node::Ptr<R::Edge>>>, P::PopError> {
+    pub(crate) fn freeze(&mut self) -> Result<Option<ribbit::Packed<node::Ptr>>, P::PopError> {
         let mut node = self.pop()?.expect("Root edge cannot be frozen");
         let mut edge = self.edge().load_packed(Ordering::Acquire);
         let mut pop = 1;
@@ -327,7 +325,7 @@ where
             };
 
             let (op, new) = unsafe {
-                node.freeze();
+                node.freeze::<R::Edge>();
                 node.replace(meta)
             };
 
@@ -344,7 +342,8 @@ where
                     if op.is_allocate() {
                         let node = new.as_node().expect("Allocating SMO creates node");
                         unsafe {
-                            node.deallocate(stat::Counter::FreeConflict);
+                            stat::increment(stat::Counter::FreeConflict);
+                            node.deallocate();
                         }
                     }
                     edge = conflict;
@@ -360,13 +359,13 @@ where
     fn push(
         &mut self,
         len: <ribbit::Packed<R::Edge> as edge::Meta>::Len,
-        node: ribbit::Packed<node::Ptr<R::Edge>>,
-        edge: &'g Atomic<Edge<R::Edge>>,
+        node: ribbit::Packed<node::Ptr>,
+        edge: &'g Atomic<edge::Raw>,
     ) {
         self.path.push(path::Segment {
             reader: self.reader,
             len,
-            edge: core::mem::replace(&mut self.edge, NonNull::from(edge)),
+            edge: core::mem::replace(&mut self.edge, NonNull::from(edge).cast()),
             node,
         });
 
@@ -377,9 +376,7 @@ where
     }
 
     #[inline]
-    pub(crate) fn pop(
-        &mut self,
-    ) -> Result<Option<ribbit::Packed<node::Ptr<R::Edge>>>, P::PopError> {
+    pub(crate) fn pop(&mut self) -> Result<Option<ribbit::Packed<node::Ptr>>, P::PopError> {
         let Some(segment) = self.path.pop()? else {
             return Ok(None);
         };

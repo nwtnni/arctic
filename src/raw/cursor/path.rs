@@ -20,7 +20,7 @@ pub(crate) struct Segment<R: key::Read> {
     pub(super) len: <ribbit::Packed<R::Edge> as edge::Meta>::Len,
 
     /// Node underneath `edge`
-    pub(super) node: ribbit::Packed<node::Ptr<R::Edge>>,
+    pub(super) node: ribbit::Packed<node::Ptr>,
 }
 
 pub(crate) trait Path<R>: Default

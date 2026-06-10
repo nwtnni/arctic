@@ -23,7 +23,7 @@ mod int;
 pub(crate) mod iter;
 pub mod key;
 pub(crate) mod map;
-pub(crate) mod node;
+pub mod node;
 pub(crate) mod set;
 pub(crate) mod shard;
 

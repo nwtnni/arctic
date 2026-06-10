@@ -23,13 +23,16 @@ where
         // so we can use an arbitrary byte.
         Self {
             stack: vec![RepeatIter::new(unsafe {
-                node::EntryIter::new(node::KeyIter::ROOT, core::slice::from_ref(root))
+                node::EntryIter::new(
+                    node::KeyIter::ROOT,
+                    core::slice::from_ref(core::mem::transmute(root)),
+                )
             })],
         }
     }
 
     #[inline]
-    pub(crate) fn for_each_internal<F: FnMut(ribbit::Packed<M>, edge::Child<M>)>(
+    pub(crate) fn for_each_internal<F: FnMut(ribbit::Packed<M>, edge::Child)>(
         mut self,
         mut apply: F,
     ) {
@@ -66,7 +69,7 @@ where
                             } {
                                 Ok((_, edge_)) => {
                                     first = true;
-                                    edge = edge_;
+                                    edge = edge_.cast();
                                     continue 'flatten;
                                 }
                                 Err(iter) => {
@@ -90,7 +93,7 @@ where
 struct RepeatIter<'g, M: ribbit::Pack> {
     first: bool,
     edge: NonNull<ribbit::Atomic<Edge<M>>>,
-    iter: node::EntryIter<'g, M>,
+    iter: node::EntryIter<'g>,
 }
 
 impl<'g, M> RepeatIter<'g, M>
@@ -98,7 +101,7 @@ where
     M: ribbit::Pack<Packed: edge::Meta> + 'g,
 {
     #[inline]
-    fn new(iter: node::EntryIter<'g, M>) -> Self {
+    fn new(iter: node::EntryIter<'g>) -> Self {
         Self {
             first: true,
             edge: NonNull::dangling(),
@@ -113,7 +116,7 @@ where
 
         if first {
             let (_, edge) = self.iter.next()?;
-            self.edge = edge;
+            self.edge = edge.cast();
         }
 
         Some((first, self.edge))

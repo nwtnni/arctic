@@ -36,15 +36,36 @@ pub(crate) struct Edge<M> {
     child: u64,
 }
 
+/// An edge with its metadata type erased.
+///
+/// Used to reduce code generation, as most node logic is independent of the edge type.
+#[derive(Copy, Clone, Debug, ribbit::Pack)]
+#[ribbit(size = 128, debug)]
+pub(crate) struct Raw(u128);
+
+impl Raw {
+    pub(crate) const NULL: ribbit::Packed<Self> = ribbit::Packed::<Self>::new(0);
+}
+
 impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
     pub(crate) const NULL: ribbit::Packed<Self> =
         ribbit::Packed::<Self>::new(<M::Packed as Meta>::NULL, 0);
+
+    #[inline]
+    pub(super) unsafe fn from_raw_ref(raw: &Atomic<Raw>) -> &Atomic<Self> {
+        unsafe { core::mem::transmute(raw) }
+    }
+
+    #[inline]
+    pub(super) unsafe fn from_raw_mut(raw: &mut Atomic<Raw>) -> &mut Atomic<Self> {
+        unsafe { core::mem::transmute(raw) }
+    }
 
     /// Create an edge with the given metadata and node.
     #[inline]
     pub(super) fn new_node(
         meta: ribbit::Packed<M>,
-        node: ribbit::Packed<node::Ptr<M>>,
+        node: ribbit::Packed<node::Ptr>,
     ) -> ribbit::Packed<Self> {
         ribbit::Packed::<Self>::new(meta.with_value(false), node.raw().get())
     }
@@ -160,22 +181,22 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
 
     /// Return `Some(node)` if this edge has a node child.
     #[inline]
-    pub(crate) fn as_node(self) -> Option<ribbit::Packed<node::Ptr<M>>> {
+    pub(crate) fn as_node(self) -> Option<ribbit::Packed<node::Ptr>> {
         if self.meta().is_value() {
             return None;
         }
 
-        unsafe { ribbit::Packed::<Option<node::Ptr<M>>>::new_unchecked(self.child_raw()) }
+        unsafe { ribbit::Packed::<Option<node::Ptr>>::new_unchecked(self.child_raw()) }
     }
 
     /// Return `Some(child)` if this edge has a child.
     #[inline]
-    pub(crate) fn child(self) -> Option<Child<M>> {
+    pub(crate) fn child(self) -> Option<Child> {
         let raw = self.child_raw();
         if self.meta().is_value() {
             Some(Child::Value(raw))
         } else {
-            unsafe { ribbit::Packed::<Option<node::Ptr<M>>>::new_unchecked(raw) }.map(Child::Node)
+            unsafe { ribbit::Packed::<Option<node::Ptr>>::new_unchecked(raw) }.map(Child::Node)
         }
     }
 
@@ -183,6 +204,12 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
     #[inline]
     pub(super) fn unfreeze(self) -> Self {
         self.with_meta(self.meta().with_frozen(false))
+    }
+
+    /// Erase this edge's metadata type.
+    #[inline]
+    pub(super) fn erase(self) -> ribbit::Packed<edge::Raw> {
+        ribbit::Packed::<edge::Raw>::new(self.value)
     }
 }
 
@@ -270,18 +297,10 @@ impl Len for u6 {
 }
 
 /// Non-null child of an edge.
-pub(crate) enum Child<M> {
-    Node(ribbit::Packed<node::Ptr<M>>),
+#[derive(Debug)]
+pub(crate) enum Child {
+    Node(ribbit::Packed<node::Ptr>),
     Value(u64),
-}
-
-impl<M> Debug for Child<M> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Node(node) => f.debug_tuple("Node").field(node).finish(),
-            Self::Value(value) => f.debug_tuple("Value").field(value).finish(),
-        }
-    }
 }
 
 #[cfg(test)]

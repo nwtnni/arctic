@@ -11,7 +11,6 @@ pub use seize::Seize;
 
 use crate::Key;
 use crate::concurrent::Value;
-use crate::raw::edge;
 use crate::raw::node;
 
 /// Provides [safe memory reclamation](https://arxiv.org/abs/2509.02457) for the
@@ -38,14 +37,8 @@ pub trait Smr<K: Key, V: Value> {
 /// reclamation until it is safe.
 pub trait Guard<V: Value + ?Sized> {
     /// Retire a pointer to a node with prefix length `bits`.
-    #[expect(private_bounds)]
-    #[expect(private_interfaces)]
-    unsafe fn retire_node<M: ribbit::Pack<Packed: edge::Meta>>(
-        &mut self,
-        bits: usize,
-        edge: ribbit::Packed<node::Ptr<M>>,
-    );
+    unsafe fn retire_node(&mut self, bits: usize, node: ribbit::Packed<node::Ptr>);
 
     /// Retire a pointer to a value (can be reconstructed via [`crate::sequential::Value::from_raw`]).
-    unsafe fn retire_value(&mut self, raw: u64);
+    unsafe fn retire_value(&mut self, value: u64);
 }

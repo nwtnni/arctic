@@ -66,6 +66,7 @@ pub use key::Key;
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+use core::num::NonZeroU64;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
@@ -140,7 +141,8 @@ impl<K: Key, V: Value> Hazard<K, V> {
             .map(|local| local.get_mut())
             .flat_map(|local| local.retired.drain(..))
             .for_each(|(prefix, raw)| {
-                deallocate::<K::Prefix, V>(prefix, raw, stat::Counter::FreeReclaim);
+                stat::increment(stat::Counter::FreeReclaim);
+                deallocate::<K::Prefix, V>(prefix, raw);
             })
     }
 }
@@ -243,7 +245,8 @@ impl<K: Key, V: Value> Hazard<K, V> {
                 stat::record(record, prefix.age() as u64 + 1);
             }
 
-            deallocate::<K::Prefix, V>(*prefix, *raw, stat::Counter::FreeRetire);
+            stat::increment(stat::Counter::FreeRetire);
+            deallocate::<K::Prefix, V>(*prefix, *raw);
             false
         });
 
@@ -277,13 +280,7 @@ pub struct Guard<'g, K: Key, V: Value> {
 }
 
 impl<'g, K: Key, V: Value> smr::Guard<V> for Guard<'g, K, V> {
-    #[expect(private_bounds)]
-    #[expect(private_interfaces)]
-    unsafe fn retire_node<M: ribbit::Pack<Packed: crate::raw::edge::Meta>>(
-        &mut self,
-        _bits: usize,
-        node: ribbit::Packed<node::Ptr<M>>,
-    ) {
+    unsafe fn retire_node(&mut self, _bits: usize, node: ribbit::Packed<node::Ptr>) {
         stat::increment(stat::Counter::Retire);
 
         let prefix = self
@@ -372,20 +369,14 @@ impl<'g, K: Key, V: Value> Drop for Guard<'g, K, V> {
     }
 }
 
-fn deallocate<P: ribbit::Pack<Packed: Prefix>, V: Value>(
-    prefix: ribbit::Packed<P>,
-    raw: u64,
-    counter: stat::Counter,
-) {
+fn deallocate<P: ribbit::Pack<Packed: Prefix>, V: Value>(prefix: ribbit::Packed<P>, raw: u64) {
     if prefix.is_node() {
         unsafe {
-            // FIXME: type of edge meta is irrelevant here
-            crate::raw::node::Ptr::<crate::raw::edge::Be>::from_raw_unchecked(raw)
-                .deallocate(counter);
+            let ptr = NonZeroU64::new(raw).unwrap();
+            crate::raw::node::Ptr::from_raw_unchecked(ptr).deallocate();
         }
     } else {
         unsafe {
-            stat::increment(counter);
             drop(V::from_raw(raw));
         }
     }

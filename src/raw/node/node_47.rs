@@ -12,7 +12,6 @@ use core::sync::atomic::Ordering;
 use ribbit::Atomic;
 use ribbit::u6;
 
-use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
@@ -23,34 +22,28 @@ use crate::stat;
 
 /// [`Node`] representation that contains at most 47 key-edge pairs.
 #[repr(C, align(1024))]
-pub(crate) struct Node47<M: ribbit::Pack> {
+pub(crate) struct Node47 {
     header: Header,
-    edges: [Atomic<Edge<M>>; 47],
+    edges: [Atomic<edge::Raw>; 47],
 }
 
-const_assert_size_align!(Node47::<()>, 1024, 1024);
+const_assert_size_align!(Node47, 1024, 1024);
 
-impl<M> Default for Node47<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta>,
-{
+impl Default for Node47 {
     fn default() -> Self {
         Self {
             header: Header::default(),
-            edges: core::array::from_fn(|_| Atomic::new_packed(Edge::NULL)),
+            edges: core::array::from_fn(|_| Atomic::new_packed(edge::Raw::NULL)),
         }
     }
 }
 
-unsafe impl<M> Node<M> for Node47<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta>,
-{
+unsafe impl Node for Node47 {
     const TYPE: node::Type = node::Type::Node47;
     const CAPACITY: usize = 47;
     type KeyIter = KeyIter63;
 
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<Edge<M>>]) -> Box<Self> {
+    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
         if_validate!(crate::assert_unique(keys));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= Self::CAPACITY);
@@ -73,12 +66,12 @@ where
     }
 
     #[inline]
-    fn edges(&self) -> &[Atomic<Edge<M>>] {
+    fn edges(&self) -> &[Atomic<edge::Raw>] {
         &self.edges
     }
 
     #[inline]
-    fn edges_mut(&mut self) -> &mut [Atomic<Edge<M>>] {
+    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>] {
         &mut self.edges
     }
 
@@ -108,10 +101,7 @@ where
     }
 }
 
-impl<M> Debug for Node47<M>
-where
-    M: ribbit::Pack<Packed: edge::Meta + Debug>,
-{
+impl Debug for Node47 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Node47")
             .field("header", &self.header)

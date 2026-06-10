@@ -1,3 +1,5 @@
+use core::num::NonZeroU64;
+
 use crate::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
@@ -36,18 +38,14 @@ impl<K: Key, V: Value> Smr<K, V> for Seize {
 }
 
 impl<'g, V: Value> smr::Guard<V> for seize::LocalGuard<'g> {
-    #[expect(private_bounds)]
-    #[expect(private_interfaces)]
-    unsafe fn retire_node<M: ribbit::Pack<Packed: crate::raw::edge::Meta>>(
-        &mut self,
-        _bits: usize,
-        node: ribbit::Packed<node::Ptr<M>>,
-    ) {
+    unsafe fn retire_node(&mut self, _bits: usize, node: ribbit::Packed<node::Ptr>) {
         stat::increment(stat::Counter::Retire);
 
         unsafe {
             self.defer_retire(node.raw().get() as *mut (), |ptr, _| {
-                node::Ptr::<M>::from_raw_unchecked(ptr as u64).deallocate(stat::Counter::FreeRetire)
+                stat::increment(stat::Counter::FreeRetire);
+                let ptr = NonZeroU64::new(ptr as u64).unwrap();
+                node::Ptr::from_raw_unchecked(ptr).deallocate();
             })
         }
     }

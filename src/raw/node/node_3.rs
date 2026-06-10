@@ -20,9 +20,9 @@ use crate::raw::node::linear;
 use crate::raw::node::simd;
 
 /// [`Node`] representation that contains at most 3 key-edge pairs.
-pub(crate) type Node3<M> = Linear<3, Header, M>;
+pub(crate) type Node3 = Linear<3, Header>;
 
-const_assert_size_align!(Node3::<()>, 64, 64);
+const_assert_size_align!(Node3, 64, 64);
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, packed(rename = "HeaderPacked"), debug)]
@@ -115,8 +115,8 @@ impl linear::Header for ribbit::Packed<Header> {
     }
 }
 
-impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
-    pub(crate) fn new_expand(
+impl Linear<3, Header> {
+    pub(crate) fn new_expand<M: ribbit::Pack<Packed: edge::Meta>>(
         meta: ribbit::Packed<M>,
         keys: [u8; 2],
         edges: [ribbit::Packed<Edge<M>>; 2],
@@ -128,15 +128,15 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
             false,
             const { u2::new(2) },
         ));
-        node.edges[0].set_packed(edges[0]);
-        node.edges[1].set_packed(edges[1]);
+        node.edges[0].set_packed(edges[0].erase());
+        node.edges[1].set_packed(edges[1].erase());
 
         let tail = NonNull::from(&node.edges[0]);
         let head = Edge::new_node(meta, node::Ptr::new_node_3(node));
-        (head, tail)
+        (head, tail.cast())
     }
 
-    pub(crate) fn new_path<R: key::Read<Edge = M>>(
+    pub(crate) fn new_path<R: key::Read<Edge = M>, M: ribbit::Pack<Packed: edge::Meta>>(
         meta: ribbit::Packed<M>,
         byte: u8,
         mut reader: R,
@@ -155,7 +155,7 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
             let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
 
             let Some(byte) = reader.get_byte(edge.len()) else {
-                unsafe { tail.as_mut() }.set_packed(Edge::<M>::new_value(edge, value));
+                unsafe { tail.as_mut() }.set_packed(Edge::<M>::new_value(edge, value).erase());
                 break;
             };
 
@@ -170,12 +170,12 @@ impl<M: ribbit::Pack<Packed: edge::Meta>> Linear<3, Header, M> {
 
             let next = NonNull::from(&node.edges[0]);
             unsafe { tail.as_mut() }
-                .set_packed(Edge::<M>::new_node(edge, node::Ptr::new_node_3(node)));
+                .set_packed(Edge::<M>::new_node(edge, node::Ptr::new_node_3(node)).erase());
             tail = next;
         }
 
         let head = Edge::<M>::new_node(meta, node::Ptr::new_node_3(head));
-        (head, tail)
+        (head, tail.cast())
     }
 }
 
