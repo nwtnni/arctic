@@ -212,10 +212,25 @@ impl Key for NonNullString {
     }
 }
 
+/// Key reader that can represent byte slices of [`NonNullStr`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k> {
     pub(crate) slice: &'k [u8],
     terminate: bool,
+}
+
+impl<'k> Reader<'k> {
+    /// Construct a [`Reader`] representing `prefix`, for use in scan operations.
+    ///
+    /// Note that `prefix` does not need to satisfy any particular properties:
+    /// it may be empty, or contain null bytes, or be invalid UTF-8.
+    #[inline]
+    pub const fn new_prefix(prefix: &'k [u8]) -> Self {
+        Self {
+            slice: prefix,
+            terminate: false,
+        }
+    }
 }
 
 impl<'k> From<&'k NonNullStr> for Reader<'k> {
@@ -238,10 +253,7 @@ impl<'k> From<&'k NonNullString> for Reader<'k> {
 impl Default for Reader<'_> {
     #[inline]
     fn default() -> Self {
-        Self {
-            slice: &[],
-            terminate: false,
-        }
+        Self::new_prefix(&[])
     }
 }
 
@@ -340,6 +352,7 @@ impl key::Read for Reader<'_> {
     }
 }
 
+#[doc(hidden)]
 #[repr(transparent)]
 #[derive(Default)]
 pub struct Writer(pub(super) Vec<u8>);

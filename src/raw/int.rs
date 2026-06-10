@@ -1,4 +1,5 @@
-pub(crate) trait Int:
+/// Integer key types.
+pub trait Int:
     'static
     + Sized
     + Copy

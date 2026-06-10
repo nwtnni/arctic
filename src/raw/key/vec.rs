@@ -103,8 +103,20 @@ impl Key for NonPrefixVec {
     }
 }
 
+/// Key reader that can represent byte prefixes of [`NonPrefixSlice`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k, const N: usize>(pub(crate) &'k [u8]);
+
+impl<'k, const N: usize> Reader<'k, N> {
+    /// Construct a [`Reader`] representing `prefix`, for use in scan operations.
+    ///
+    /// Note that `prefix` does not need to satisfy any particular properties:
+    /// it may be empty, or be a prefix of another key.
+    #[inline]
+    pub const fn new_prefix(prefix: &'k [u8]) -> Self {
+        Self(prefix)
+    }
+}
 
 impl<'k> From<&'k NonPrefixSlice> for Reader<'k, { usize::MAX }> {
     #[inline]
@@ -191,6 +203,7 @@ impl<const N: usize> key::Read for Reader<'_, N> {
     }
 }
 
+#[doc(hidden)]
 #[repr(transparent)]
 #[derive(Default)]
 pub struct Writer(pub(super) Vec<u8>);

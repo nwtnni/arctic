@@ -112,8 +112,20 @@ impl Key for &'_ NonPrefixSlice {
     }
 }
 
+/// Key reader that can represent byte prefixes of [`NonPrefixSlice`].
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reader<'k>(pub(crate) &'k [u8]);
+
+impl<'k> Reader<'k> {
+    /// Construct a [`Reader`] representing `prefix`, for use in scan operations.
+    ///
+    /// Note that `prefix` does not need to satisfy any particular properties:
+    /// it may be empty, or be a prefix of another key.
+    #[inline]
+    pub const fn new_prefix(prefix: &'k [u8]) -> Self {
+        Self(prefix)
+    }
+}
 
 impl<'k> From<&'k NonPrefixSlice> for Reader<'k> {
     #[inline]
@@ -173,6 +185,7 @@ impl key::Read for Reader<'_> {
     }
 }
 
+#[doc(hidden)]
 #[derive(Clone, Default, Debug)]
 pub struct Writer {
     last: ribbit::Packed<edge::Slice>,

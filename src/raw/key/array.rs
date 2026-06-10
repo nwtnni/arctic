@@ -54,6 +54,10 @@ impl<'k, const N: usize> From<&'k [u8; N]> for key::vec::Reader<'k, N> {
     }
 }
 
+/// Key reader that can represent byte prefixes of arrays.
+pub type Reader<'k, const N: usize> = key::vec::Reader<'k, N>;
+
+#[doc(hidden)]
 #[repr(transparent)]
 pub struct Writer<const N: usize>(pub(super) [u8; N]);
 

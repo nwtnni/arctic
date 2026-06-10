@@ -78,14 +78,37 @@ impl_key!(u16, u32, u128);
 #[cfg(not(feature = "opt-no-int"))]
 impl_key!(u64);
 
-/// NOTE: `buffer` is allowed to contain arbitrary bytes beyond
-/// the most significant `len` bytes, but must clear them to
-/// zero when (a) creating an edge to insert into the tree,
-/// or (b) when creating a writer.
+/// Key reader that can represent byte prefixes of integers.
+// NOTE: `buffer` is allowed to contain arbitrary bytes beyond
+// the most significant `len` bytes, but must clear them to
+// zero when (a) creating an edge to insert into the tree,
+// or (b) when creating a writer.
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Reader<I> {
     pub(crate) buffer: I,
     len: Len,
+}
+
+impl<I: Int> Reader<I> {
+    /// Construct a `Reader` representing the `bytes` most significant bytes
+    /// of `buffer`, for use in scan operations.
+    ///
+    /// Clamps `bytes` to the size of `I`, and then ignores bytes after the
+    /// `bytes` most significant.
+    #[inline]
+    pub const fn new_prefix(buffer: I, bytes: u8) -> Self {
+        // `Ord` is not `const`, so can't use `min`
+        let bytes = if bytes < I::BITS >> 3 {
+            bytes
+        } else {
+            I::BITS >> 3
+        };
+
+        Self {
+            buffer,
+            len: Len(bytes << 3),
+        }
+    }
 }
 
 impl<I: Int> key::Read for Reader<I> {
@@ -173,6 +196,7 @@ impl<I: Int> core::fmt::Debug for Reader<I> {
     }
 }
 
+#[doc(hidden)]
 #[repr(transparent)]
 #[derive(Default)]
 pub struct Writer<I>(I);
@@ -211,6 +235,7 @@ impl<I: Int> core::fmt::Debug for Writer<I> {
     }
 }
 
+#[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Len(u8);
 

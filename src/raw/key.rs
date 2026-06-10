@@ -4,7 +4,7 @@ pub mod array;
 mod discard;
 pub mod int;
 pub mod slice;
-pub mod slow;
+mod slow;
 pub mod string;
 pub mod vec;
 

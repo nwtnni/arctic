@@ -54,7 +54,7 @@ pub struct Reader {
 
 impl Reader {
     #[inline]
-    pub unsafe fn new_unchecked(buffer: u64, bits: u8) -> Self {
+    unsafe fn new_unchecked(buffer: u64, bits: u8) -> Self {
         validate!(bits <= 64);
         validate_eq!(bits & 0b111, 0);
         validate_eq!(buffer & !u64::MAX.unbounded_shl(bits as u32), buffer);
