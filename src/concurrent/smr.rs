@@ -14,21 +14,30 @@ use crate::concurrent::Value;
 use crate::raw::edge;
 use crate::raw::node;
 
-/// Provides [safe memory reclamation](https://arxiv.org/abs/2509.02457).
+/// Provides [safe memory reclamation](https://arxiv.org/abs/2509.02457) for the
+/// given key and value type.
 pub trait Smr<K: Key, V: Value> {
     type Guard<'g>: Guard<V>
     where
         V: 'g,
         Self: 'g;
 
-    fn guard<'g>(&'g self, key: K::Read<'_>) -> Self::Guard<'g>
+    /// Construct a guard that prevents values whose keys start with `prefix`
+    /// from being reclaimed for the lifetime of the guard.
+    fn guard<'g>(&'g self, prefix: K::Read<'_>) -> Self::Guard<'g>
     where
         V: 'g;
 
-    fn garbage(&self) -> u32;
+    /// Estimate the peak number of unreclaimed allocations for benchmarking.
+    fn garbage(&self) -> u32 {
+        0
+    }
 }
 
+/// A guard that can be used to safely retire allocations, delaying their
+/// reclamation until it is safe.
 pub trait Guard<V: Value + ?Sized> {
+    /// Retire a pointer to a node with prefix length `bits`.
     #[expect(private_bounds)]
     #[expect(private_interfaces)]
     unsafe fn retire_node<M: ribbit::Pack<Packed: edge::Meta>>(
@@ -37,5 +46,6 @@ pub trait Guard<V: Value + ?Sized> {
         edge: ribbit::Packed<node::Ptr<M>>,
     );
 
+    /// Retire a pointer to a value (can be reconstructed via [`crate::sequential::Value::from_raw`]).
     unsafe fn retire_value(&mut self, raw: u64);
 }
