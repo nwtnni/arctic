@@ -4,6 +4,7 @@
 use core::fmt::Debug;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
+use std::sync::Arc;
 
 use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
@@ -48,38 +49,6 @@ pub trait Value: sequential::Value {
     unsafe fn target_from_raw(raw: &u64) -> &Self::Target;
 }
 
-impl<T: Sized> Value for Box<T> {
-    type Target = T;
-
-    type Guard<G>
-        = G
-    where
-        G: smr::Guard<Self>;
-
-    #[inline]
-    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
-        let borrow = unsafe { core::ptr::with_exposed_provenance::<T>((*raw) as usize).as_ref() };
-        if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
-    }
-}
-
-// Note: references are inline values because a
-// `&T` itself can be freely copied, even if
-// `T` is not `Copy`.
-impl<'v, T: 'v + Sized> Value for &'v T {
-    type Target = Self;
-
-    type Guard<G>
-        = smr::no_op::Guard<G, Self>
-    where
-        G: smr::Guard<Self>;
-
-    #[inline]
-    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
-        unsafe { core::mem::transmute::<&u64, &Self>(raw) }
-    }
-}
-
 macro_rules! impl_integer {
     ($($ty:ty),*) => {
         $(
@@ -101,6 +70,87 @@ macro_rules! impl_integer {
 }
 
 impl_integer!(u64, i64);
+
+// Note: references are inline values because a
+// `&T` itself can be freely copied, even if
+// `T` is not `Copy`.
+impl<'v, T: 'v + Sized> Value for &'v T {
+    type Target = Self;
+
+    type Guard<G>
+        = smr::no_op::Guard<G, Self>
+    where
+        G: smr::Guard<Self>;
+
+    #[inline]
+    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
+        unsafe { core::mem::transmute::<&u64, &Self>(raw) }
+    }
+}
+
+impl<T: Sized> Value for Box<T> {
+    type Target = T;
+
+    type Guard<G>
+        = G
+    where
+        G: smr::Guard<Self>;
+
+    #[inline]
+    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
+        let borrow = unsafe { core::ptr::with_exposed_provenance::<T>((*raw) as usize).as_ref() };
+        if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
+    }
+}
+
+impl<T: Sized> Value for Arc<T> {
+    type Target = ArcRef<T>;
+
+    type Guard<G>
+        = G
+    where
+        G: smr::Guard<Self>;
+
+    #[inline]
+    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
+        let borrow = unsafe {
+            core::ptr::with_exposed_provenance::<T>((*raw) as usize)
+                .cast::<ArcRef<T>>()
+                .as_ref()
+        };
+        if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
+    }
+}
+
+/// Wrapper type for the contents of an [`Arc<T>`] that allows
+/// an `&ArcRef<T>` reference to safely be cloned back into a
+/// owned [`Arc<T>`].
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug)]
+pub struct ArcRef<T>(T);
+
+impl<T> ArcRef<T> {
+    /// Clone into an owned `Arc` by incrementing the strong reference count.
+    #[expect(clippy::should_implement_trait)]
+    pub fn clone(inner: &Self) -> Arc<T> {
+        // SAFETY: `ArcRef` is `repr(transparent)`
+        let ptr = unsafe { core::mem::transmute::<&Self, &T>(inner) };
+
+        // SAFETY: SMR guarantees `ptr` is not yet freed,
+        // so strong count must be >= 1
+        unsafe { Arc::increment_strong_count(ptr) };
+
+        // SAFETY: `ptr` was returned from `Arc::into_raw`
+        unsafe { Arc::from_raw(ptr) }
+    }
+}
+
+impl<T> Deref for ArcRef<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 /// Guard that provides read-only access to a removed value while
 /// preventing the value from being freed. Retires the value on drop.

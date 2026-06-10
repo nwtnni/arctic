@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 /// Values that can be stored in a [`crate::sequential::Map`].
 ///
 /// # Safety
@@ -15,19 +17,6 @@ pub unsafe trait Value {
     unsafe fn from_raw(raw: u64) -> Self;
 }
 
-// NOTE: `Sized` is required so that Box<T> is not a fat pointer and fits in 8 bytes
-unsafe impl<T: Sized> Value for Box<T> {
-    #[inline]
-    unsafe fn from_raw(raw: u64) -> Self {
-        unsafe { Box::from_raw(core::ptr::with_exposed_provenance_mut::<T>(raw as usize)) }
-    }
-
-    #[inline]
-    fn into_raw(self) -> u64 {
-        Box::into_raw(self).expose_provenance() as u64
-    }
-}
-
 // NOTE: `Sized` is required so that &T is not a fat pointer and fits in 8 bytes
 unsafe impl<'v, T: 'v + Sized> Value for &'v T {
     #[inline]
@@ -39,6 +28,32 @@ unsafe impl<'v, T: 'v + Sized> Value for &'v T {
     unsafe fn from_raw(raw: u64) -> Self {
         let borrow = unsafe { core::ptr::with_exposed_provenance::<T>(raw as usize).as_ref() };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
+    }
+}
+
+// NOTE: `Sized` is required so that Box<T> is not a fat pointer and fits in 8 bytes
+unsafe impl<T: Sized> Value for Box<T> {
+    #[inline]
+    fn into_raw(self) -> u64 {
+        Box::into_raw(self).expose_provenance() as u64
+    }
+
+    #[inline]
+    unsafe fn from_raw(raw: u64) -> Self {
+        unsafe { Box::from_raw(core::ptr::with_exposed_provenance_mut::<T>(raw as usize)) }
+    }
+}
+
+// NOTE: `Sized` is required so that Box<T> is not a fat pointer and fits in 8 bytes
+unsafe impl<T: Sized> Value for Arc<T> {
+    #[inline]
+    unsafe fn from_raw(raw: u64) -> Self {
+        unsafe { Arc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
+    }
+
+    #[inline]
+    fn into_raw(self) -> u64 {
+        Arc::into_raw(self).expose_provenance() as u64
     }
 }
 

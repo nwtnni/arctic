@@ -52,6 +52,71 @@ mod u64 {
     }
 }
 
+mod arced {
+    use std::sync::Arc;
+
+    use arctic::raw::Key;
+
+    use super::Workload;
+    use super::test_map;
+
+    struct Arced;
+
+    #[test]
+    fn many() {
+        test_map(&Arced, 16, 10_000_000, false);
+    }
+
+    #[test]
+    fn two() {
+        test_map(&Arced, 2, 10_000_000, false);
+    }
+
+    #[test]
+    fn one() {
+        test_map(&Arced, 1, 10_000_000, false);
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Entry {
+        key: u32,
+        value: u64,
+    }
+
+    impl Entry {
+        fn new(index: usize) -> Self {
+            Self {
+                key: index as u32,
+                value: index as u64 + 1,
+            }
+        }
+    }
+
+    impl Workload for Arced {
+        type Key<'k> = u32;
+
+        type Value = Arc<Entry>;
+
+        fn key(&self, index: usize) -> Self::Key<'_> {
+            index as u32
+        }
+
+        fn value(&self, index: usize) -> Self::Value {
+            Arc::new(Entry::new(index))
+        }
+
+        fn validate(
+            &self,
+            index: usize,
+            key: &<Self::Key<'_> as Key>::Borrowed,
+            value: &arctic::concurrent::value::ArcRef<Entry>,
+        ) {
+            assert_eq!(*key, index as u32);
+            assert_eq!(**value, Entry::new(index));
+        }
+    }
+}
+
 mod boxed {
     use arctic::raw::Key;
 
