@@ -22,6 +22,7 @@ thread_local! {
     pub(crate) static THREAD: core::cell::RefCell<Thread> = core::cell::RefCell::new(Thread::default()) ;
 }
 
+/// Dump process-level statistics for a concurrent map instance.
 pub fn process<K: Key, V: Value, S: Smr<K, V>>(
     map: &mut crate::concurrent::Map<K, V, S>,
 ) -> Process {
@@ -73,6 +74,7 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(
     }
 }
 
+/// Dump thread-level statistics for a concurrent map instance.
 #[inline]
 pub fn thread() -> Thread {
     #[cfg(feature = "stat")]
@@ -86,6 +88,7 @@ pub fn thread() -> Thread {
     }
 }
 
+/// Start recording thread-level statistics.
 #[inline]
 pub fn start() {
     if cfg!(feature = "stat") {
@@ -93,6 +96,7 @@ pub fn start() {
     }
 }
 
+/// Stop recording thread-level statistics.
 #[inline]
 pub fn stop() {
     if cfg!(feature = "stat") {
@@ -100,12 +104,16 @@ pub fn stop() {
     }
 }
 
+/// Reset thread-level statistics.
 #[inline]
 pub fn reset() {
     #[cfg(feature = "stat")]
     THREAD.with_borrow_mut(|thread| *thread = Thread::default());
 }
 
+/// Process-level statistics for a [`crate::concurrent::Map`].
+///
+/// Can be serialized and fed into external tools.
 #[derive(Default)]
 #[cfg_attr(feature = "stat", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(not(feature = "stat"), expect(unused))]
@@ -152,6 +160,9 @@ pub(crate) enum Record {
     ReclaimAge3,
 }
 
+/// Thread-level statistics for a [`crate::concurrent::Map`].
+///
+/// Can be serialized and fed into external tools.
 #[cfg(feature = "stat")]
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Thread {
@@ -185,6 +196,9 @@ pub struct Thread {
     reclaim_age_3: Histogram,
 }
 
+/// Thread-level statistics for a [`crate::concurrent::Map`].
+///
+/// Can be serialized and fed into external tools.
 #[cfg(not(feature = "stat"))]
 pub struct Thread;
 
