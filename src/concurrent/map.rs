@@ -823,11 +823,11 @@ where
 {
     /// Value was successfully upserted.
     Success(Upserted<'g, K, V, S>),
-    /// Caller closure returned [`core::ops::ControlFlow::Break`].
+    /// Closure returned [`core::ops::ControlFlow::Break`].
     Break {
         /// Latest value observed by closure.
         old: Option<Shared<'g, K, V, S>>,
-        /// Latest value passed as argument or returned from caller closure.
+        /// Latest value passed as argument or returned from closure.
         new: Option<V>,
     },
 }
@@ -841,15 +841,16 @@ where
 {
     /// Key was not present.
     Absent {
-        /// Latest value passed as argument or returned from caller closure.
+        /// Latest value passed as argument or returned from closure.
         new: Option<V>,
     },
     /// Value was successfully updated.
     Success(Updated<'g, K, V, S>),
-    /// Caller closure returned [`core::ops::ControlFlow::Break`].
+    /// Closure returned [`core::ops::ControlFlow::Break`].
     Break {
         /// Latest value observed by closure.
         old: Shared<'g, K, V, S>,
+        /// Latest value passed as argument or returned from closure.
         new: Option<V>,
     },
 }
@@ -864,8 +865,11 @@ where
     /// Key was not present.
     Absent,
     /// Value was successfully removed.
-    Success { old: Owned<'g, K, V, S> },
-    /// Caller closure returned [`core::ops::ControlFlow::Break`].
+    Success {
+        /// Value that was removed.
+        old: Owned<'g, K, V, S>,
+    },
+    /// Closure returned [`core::ops::ControlFlow::Break`].
     Break {
         /// Latest value observed by closure.
         old: Shared<'g, K, V, S>,
