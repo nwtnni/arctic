@@ -268,6 +268,12 @@ impl Ptr {
         }
     }
 
+    /// # Safety
+    ///
+    /// Caller must guarantee the following:
+    /// - `raw` was created by a previous call to [`PtrPacked::into_raw`].
+    /// - `from_raw` is called at most once for each [`PtrPacked::into_raw`] call.
+    /// - There are no live borrows when [`Ptr::from_raw_unchecked`] is called.
     #[inline]
     pub unsafe fn from_raw_unchecked(raw: NonZeroU64) -> ribbit::Packed<Self> {
         let node = unsafe { ribbit::Packed::<Option<Ptr>>::new_unchecked(raw.get()) };
@@ -303,8 +309,9 @@ macro_rules! dispatch_all {
 
 /// # Edge metadata independent methods
 impl PtrPacked {
+    /// Erase the type of this node pointer, returning a [`NonZeroU64`].
     #[inline]
-    pub fn raw(self) -> NonZeroU64 {
+    pub fn into_raw(self) -> NonZeroU64 {
         self.value
     }
 

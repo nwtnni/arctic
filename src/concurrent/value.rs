@@ -44,9 +44,9 @@ pub trait Value: sequential::Value {
     ///
     /// Caller must guarantee the following:
     /// - `raw` was created from [`crate::sequential::Value::into_raw`]
-    /// - There are no calls to [`crate::sequential::Value::from_raw`] while `raw` is live
+    /// - There are no calls to [`crate::sequential::Value::from_raw_unchecked`] while `raw` is live
     /// - This value is not mutated while `raw` is live
-    unsafe fn target_from_raw(raw: &u64) -> &Self::Target;
+    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target;
 }
 
 macro_rules! impl_integer {
@@ -61,7 +61,7 @@ macro_rules! impl_integer {
                     G: smr::Guard<Self>;
 
                 #[inline]
-                unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
+                unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
                     unsafe { core::mem::transmute::<&u64, &Self>(raw) }
                 }
             }
@@ -83,7 +83,7 @@ impl<'v, T: 'v + Sized> Value for &'v T {
         G: smr::Guard<Self>;
 
     #[inline]
-    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
+    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
         unsafe { core::mem::transmute::<&u64, &Self>(raw) }
     }
 }
@@ -97,7 +97,7 @@ impl<T: Sized> Value for Box<T> {
         G: smr::Guard<Self>;
 
     #[inline]
-    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
+    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
         let borrow = unsafe { core::ptr::with_exposed_provenance::<T>((*raw) as usize).as_ref() };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
     }
@@ -112,7 +112,7 @@ impl<T: Sized> Value for Arc<T> {
         G: smr::Guard<Self>;
 
     #[inline]
-    unsafe fn target_from_raw(raw: &u64) -> &Self::Target {
+    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
         let borrow = unsafe {
             core::ptr::with_exposed_provenance::<T>((*raw) as usize)
                 .cast::<ArcRef<T>>()
@@ -184,7 +184,7 @@ where
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { V::target_from_raw(&self.raw) }
+        unsafe { V::target_from_raw_unchecked(&self.raw) }
     }
 }
 
@@ -234,7 +234,7 @@ where
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { V::target_from_raw(&self.raw) }
+        unsafe { V::target_from_raw_unchecked(&self.raw) }
     }
 }
 
@@ -276,14 +276,14 @@ where
     /// Return the old value before updating.
     #[inline]
     pub fn old(&self) -> &V::Target {
-        unsafe { V::target_from_raw(&self.old) }
+        unsafe { V::target_from_raw_unchecked(&self.old) }
     }
 
     /// Return the new value after updating.
     #[inline]
     #[expect(clippy::new_ret_no_self, clippy::wrong_self_convention)]
     pub fn new(&self) -> &V::Target {
-        unsafe { V::target_from_raw(&self.new) }
+        unsafe { V::target_from_raw_unchecked(&self.new) }
     }
 }
 
@@ -350,14 +350,14 @@ where
     pub fn old(&self) -> Option<&V::Target> {
         self.old
             .as_ref()
-            .map(|old| unsafe { V::target_from_raw(old) })
+            .map(|old| unsafe { V::target_from_raw_unchecked(old) })
     }
 
     /// Return the new value after upserting.
     #[inline]
     #[expect(clippy::new_ret_no_self, clippy::wrong_self_convention)]
     pub fn new(&self) -> &V::Target {
-        unsafe { V::target_from_raw(&self.new) }
+        unsafe { V::target_from_raw_unchecked(&self.new) }
     }
 }
 

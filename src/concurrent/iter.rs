@@ -86,7 +86,7 @@ where
     pub fn lend(&mut self) -> Option<(K::Insert<'_>, &V::Target)> {
         self.inner.lend().map(|(key, value, _)| {
             self.value = value;
-            (key, unsafe { V::target_from_raw(&self.value) })
+            (key, unsafe { V::target_from_raw_unchecked(&self.value) })
         })
     }
 
@@ -98,7 +98,7 @@ where
     ) {
         self.inner.for_each_internal(|(key, value, _)| {
             self.value = value;
-            apply((key, unsafe { V::target_from_raw(&self.value) }))
+            apply((key, unsafe { V::target_from_raw_unchecked(&self.value) }))
         })
     }
 }
@@ -142,7 +142,7 @@ where
     pub fn lend(&mut self) -> Option<&V::Target> {
         self.inner.lend().map(|(value, _)| {
             self.value = value;
-            unsafe { V::target_from_raw(&self.value) }
+            unsafe { V::target_from_raw_unchecked(&self.value) }
         })
     }
 
@@ -151,7 +151,7 @@ where
     pub fn for_each_internal<F: FnMut(&V::Target) -> ControlFlow<()>>(mut self, mut apply: F) {
         self.inner.for_each_internal(|(value, _)| {
             self.value = value;
-            apply(unsafe { V::target_from_raw(&self.value) })
+            apply(unsafe { V::target_from_raw_unchecked(&self.value) })
         })
     }
 }

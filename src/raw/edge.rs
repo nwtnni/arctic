@@ -67,7 +67,7 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
         meta: ribbit::Packed<M>,
         node: ribbit::Packed<node::Ptr>,
     ) -> ribbit::Packed<Self> {
-        ribbit::Packed::<Self>::new(meta.with_value(false), node.raw().get())
+        ribbit::Packed::<Self>::new(meta.with_value(false), node.into_raw().get())
     }
 
     /// Create an edge with the given metadata and value.

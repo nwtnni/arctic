@@ -23,7 +23,7 @@ unsafe impl sequential::Value for Set {
     }
 
     #[inline]
-    unsafe fn from_raw(raw: u64) -> Self {
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
         Set { raw }
     }
 }

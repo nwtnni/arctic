@@ -948,7 +948,7 @@ where
                     let new_value = match upsert(
                         old_value
                             .as_ref()
-                            .map(|old| unsafe { V::target_from_raw(old) }),
+                            .map(|old| unsafe { V::target_from_raw_unchecked(old) }),
                         &mut initial,
                     ) {
                         ControlFlow::Continue(value) => V::into_raw(value),
@@ -964,7 +964,7 @@ where
 
                     match cursor.create_path(old, new_value) {
                         // Restore value and fall through to freeze
-                        Err(Frozen) => initial = Some(unsafe { V::from_raw(new_value) }),
+                        Err(Frozen) => initial = Some(unsafe { V::from_raw_unchecked(new_value) }),
 
                         Ok((new, _)) => match cursor.edge().compare_exchange_packed(
                             old,
@@ -985,7 +985,7 @@ where
                                     }
                                 }
 
-                                initial = Some(unsafe { V::from_raw(new_value) });
+                                initial = Some(unsafe { V::from_raw_unchecked(new_value) });
                                 continue;
                             }
                         },
@@ -1093,16 +1093,18 @@ where
                 },
             };
 
-            let new_value =
-                match update(unsafe { V::target_from_raw(&updated.value) }, &mut initial) {
-                    ControlFlow::Continue(new) => V::into_raw(new),
-                    ControlFlow::Break(()) => {
-                        return Ok(Update::Break {
-                            old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
-                            new: initial,
-                        });
-                    }
-                };
+            let new_value = match update(
+                unsafe { V::target_from_raw_unchecked(&updated.value) },
+                &mut initial,
+            ) {
+                ControlFlow::Continue(new) => V::into_raw(new),
+                ControlFlow::Break(()) => {
+                    return Ok(Update::Break {
+                        old: unsafe { Shared::<K, V, S>::wrap(guard, updated.value) },
+                        new: initial,
+                    });
+                }
+            };
 
             match cursor.edge().compare_exchange_packed(
                 updated.edge,
@@ -1116,7 +1118,7 @@ where
                     }));
                 }
                 Err(_) => {
-                    initial = Some(unsafe { V::from_raw(new_value) });
+                    initial = Some(unsafe { V::from_raw_unchecked(new_value) });
                 }
             }
         }
@@ -1173,7 +1175,7 @@ where
                 },
             };
 
-            match remove(unsafe { V::target_from_raw(&updated.value) }) {
+            match remove(unsafe { V::target_from_raw_unchecked(&updated.value) }) {
                 ControlFlow::Continue(()) => (),
                 ControlFlow::Break(()) => {
                     return Ok(Remove::Break {

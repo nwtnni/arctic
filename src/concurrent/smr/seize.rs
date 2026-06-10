@@ -42,7 +42,7 @@ impl<'g, V: Value> smr::Guard<V> for seize::LocalGuard<'g> {
         stat::increment(stat::Counter::Retire);
 
         unsafe {
-            self.defer_retire(node.raw().get() as *mut (), |ptr, _| {
+            self.defer_retire(node.into_raw().get() as *mut (), |ptr, _| {
                 stat::increment(stat::Counter::FreeRetire);
                 let ptr = NonZeroU64::new(ptr as u64).unwrap();
                 node::Ptr::from_raw_unchecked(ptr).deallocate();
@@ -62,7 +62,7 @@ impl<'g, V: Value> smr::Guard<V> for seize::LocalGuard<'g> {
         unsafe {
             self.defer_retire(value as *mut (), |ptr, _| {
                 stat::increment(stat::Counter::FreeRetire);
-                drop(V::from_raw(ptr as u64))
+                drop(V::from_raw_unchecked(ptr as u64))
             });
         }
     }

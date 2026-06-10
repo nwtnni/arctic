@@ -86,7 +86,7 @@ impl<V: Value> smr::Guard<V> for crossbeam_epoch::Guard {
         stat::increment(stat::Counter::Retire);
 
         unsafe {
-            self.defer_unchecked(move || drop(V::from_raw(value)));
+            self.defer_unchecked(move || drop(V::from_raw_unchecked(value)));
         }
     }
 }

@@ -443,7 +443,7 @@ where
 
             // SAFETY: we have exclusive access to nodes and values in destructor
             match child {
-                edge::Child::Value(value) => drop(unsafe { V::from_raw(value) }),
+                edge::Child::Value(value) => drop(unsafe { V::from_raw_unchecked(value) }),
                 edge::Child::Node(node) => unsafe {
                     stat::increment(stat::Counter::FreeDrop);
                     node.deallocate();

@@ -309,7 +309,7 @@ impl<'g, K: Key, V: Value> smr::Guard<V> for Guard<'g, K, V> {
             }
         }
 
-        local.retired.push((prefix, node.raw().get()));
+        local.retired.push((prefix, node.into_raw().get()));
     }
 
     unsafe fn retire_value(&mut self, value: u64) {
@@ -377,7 +377,7 @@ fn deallocate<P: ribbit::Pack<Packed: Prefix>, V: Value>(prefix: ribbit::Packed<
         }
     } else {
         unsafe {
-            drop(V::from_raw(raw));
+            drop(V::from_raw_unchecked(raw));
         }
     }
 }

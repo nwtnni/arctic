@@ -7,6 +7,7 @@ use std::sync::Arc;
 ///
 /// Implementer must guarantee that `Self` has the same memory layout as a `u64`.
 pub unsafe trait Value {
+    /// Erase the type of this value, returning a u64.
     fn into_raw(self) -> u64;
 
     /// # Safety
@@ -14,8 +15,8 @@ pub unsafe trait Value {
     /// Caller must guarantee that:
     /// - `raw` was created by a previous [`Value::into_raw`] call.
     /// - `from_raw` is called at most once for each [`Value::into_raw`] call.
-    /// - There are no live borrows when [`Value::from_raw`] is called.
-    unsafe fn from_raw(raw: u64) -> Self;
+    /// - There are no live borrows when [`Value::from_raw_unchecked`] is called.
+    unsafe fn from_raw_unchecked(raw: u64) -> Self;
 }
 
 // NOTE: `Sized` is required so that &T is not a fat pointer and fits in 8 bytes
@@ -26,7 +27,7 @@ unsafe impl<'v, T: 'v + Sized> Value for &'v T {
     }
 
     #[inline]
-    unsafe fn from_raw(raw: u64) -> Self {
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
         let borrow = unsafe { core::ptr::with_exposed_provenance::<T>(raw as usize).as_ref() };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
     }
@@ -40,7 +41,7 @@ unsafe impl<T: Sized> Value for Box<T> {
     }
 
     #[inline]
-    unsafe fn from_raw(raw: u64) -> Self {
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
         unsafe { Box::from_raw(core::ptr::with_exposed_provenance_mut::<T>(raw as usize)) }
     }
 }
@@ -48,26 +49,26 @@ unsafe impl<T: Sized> Value for Box<T> {
 // NOTE: `Sized` is required so that Arc<T> is not a fat pointer and fits in 8 bytes
 unsafe impl<T: Sized> Value for Arc<T> {
     #[inline]
-    unsafe fn from_raw(raw: u64) -> Self {
-        unsafe { Arc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
+    fn into_raw(self) -> u64 {
+        Arc::into_raw(self).expose_provenance() as u64
     }
 
     #[inline]
-    fn into_raw(self) -> u64 {
-        Arc::into_raw(self).expose_provenance() as u64
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
+        unsafe { Arc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
     }
 }
 
 // NOTE: `Sized` is required so that Rc<T> is not a fat pointer and fits in 8 bytes
 unsafe impl<T: Sized> Value for Rc<T> {
     #[inline]
-    unsafe fn from_raw(raw: u64) -> Self {
-        unsafe { Rc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
+    fn into_raw(self) -> u64 {
+        Rc::into_raw(self).expose_provenance() as u64
     }
 
     #[inline]
-    fn into_raw(self) -> u64 {
-        Rc::into_raw(self).expose_provenance() as u64
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
+        unsafe { Rc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
     }
 }
 
@@ -76,14 +77,15 @@ macro_rules! impl_integer {
         $(
             unsafe impl Value for $ty {
                 #[inline]
-                unsafe fn from_raw(raw: u64) -> Self {
-                    raw as $ty
-                }
-
-                #[inline]
                 fn into_raw(self) -> u64 {
                     self as u64
                 }
+
+                #[inline]
+                unsafe fn from_raw_unchecked(raw: u64) -> Self {
+                    raw as $ty
+                }
+
             }
         )*
     };
