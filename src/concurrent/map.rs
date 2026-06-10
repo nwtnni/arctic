@@ -142,6 +142,10 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
 }
 
 /// # Point operations
+///
+/// This set of operations operates on a single key-value pair.
+///
+/// These operations are linearizable.
 impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
     /// Returns an immutable reference to the value associated with `key`.
     ///
@@ -374,6 +378,9 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
 }
 
 /// # Range and prefix operations
+///
+/// This set of operations allows the caller to select a subtree
+/// (by prefix or range) for non-linearizable iteration.
 impl<K, V, S> Map<K, V, S>
 where
     K: Key,
@@ -407,7 +414,19 @@ where
     }
 }
 
-/// # Advanced point operations with dynamic control flow and value construction
+/// # Advanced point operations
+///
+/// This set of operations extends the point operations to take a closure,
+/// allowing the caller to dynamically break out of an operation or lazily
+/// allocate a value. Importantly, this closure can observe the value
+/// currently associated with a key before deciding what to do, which enables
+/// more complex coordination in a concurrent setting.
+///
+/// For example, a concurrent counter could use [`Map::upsert_with`] to insert
+/// the current count plus one, or an index could use [`Map::remove_with`] to
+/// remove a value only if it hasn't been concurrently updated.
+///
+/// These operations are linearizable.
 impl<K, V, S> Map<K, V, S>
 where
     K: Key,
