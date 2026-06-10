@@ -10,7 +10,7 @@
 //! This module contains:
 //! - Structural types ([`crate::raw::edge`], [`crate::raw::node`], [`crate::raw::key`])
 //! - Traversal for point operations ([`crate::raw::cursor`])
-//! - Iteration for range operations ([`crate::raw::iter`])
+//! - Iteration for scan operations ([`crate::raw::iter`])
 //!
 //! This module is "raw" with respect to:
 //! - Safe memory reclamation ([`crate::concurrent::smr`])

@@ -1,4 +1,4 @@
-//! Single-threaded implementation of adaptive radix tree.
+//! Non-concurrent implementation of adaptive radix tree.
 
 mod iter;
 pub mod map;

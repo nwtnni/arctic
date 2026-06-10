@@ -29,11 +29,9 @@ impl SlicePacked {
     #[inline]
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
         let ptr = self.ptr().value() as *const u8;
-
         if ptr.is_null() {
             return &[];
         }
-
         let len = self.len().value() as usize;
         unsafe { core::slice::from_raw_parts(ptr, len) }
     }

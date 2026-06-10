@@ -53,7 +53,7 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 /// (e.g., [`crate::sequential::Map::upsert`]) instead use atomics to synchronize internally,
 /// allowing them to take an immutable reference (e.g., [`Map::upsert`]).
 ///
-/// Note that range and prefix scans are not linearizable. They do, however,
+/// Note that scan operations are not linearizable. They do, however,
 /// satisfy weaker guarantees: (a) scans observe keys at most once, in order;
 /// and (b) scans observe all keys within bounds that were inserted before
 /// the scan starts, and were not removed before the scan ends.

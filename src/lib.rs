@@ -10,7 +10,7 @@
 //! # Why use this crate?
 //!
 //! As far as we know (corrections welcome!), out of all index data structures that (a) are [lock-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm)
-//! and (b) support range iteration, [`concurrent::Map`] provides the highest scalability and throughput.
+//! and (b) support scan operations, [`concurrent::Map`] provides the highest scalability and throughput.
 //! In fact, under various conditions (integer keys, skewed requests, update-heavy),
 //! we even out-perform data structures without properties (a) and/or (b).
 //! Our benchmarking infrastructure is in [this repository](https://github.com/nwtnni/index-bench);
@@ -19,13 +19,12 @@
 //! Briefly comparing against some alternative data structures:
 //!
 //! - Concurrent hash maps (e.g., [DashMap](https://github.com/xacrimon/dashmap), [papaya](https://github.com/ibraheemdev/papaya))
-//!   - Solid performance characteristics
-//!   - Do not support range iteration
+//!   have excellent performance, but do not support scan operations.
 //! - Concurrent B+-trees (e.g., [scc::TreeIndex](https://codeberg.org/wvwwvwwv/scalable-concurrent-containers))
-//!   - Reliable choice overall
-//!   - Typically not lock-free
+//!   have good performance, but are typically not lock-free.
 //! - Concurrent skip lists (e.g., [crossbeam_skiplist](https://docs.rs/crossbeam-skiplist/latest/crossbeam_skiplist/))
-//!   - Perform poorly on modern hardware (low cache locality)
+//!   have poor performance on modern hardware (low cache locality),
+//!   although there are lock-free implementations.
 //!
 //! # Limitations
 //!
@@ -95,7 +94,7 @@ pub use raw::key::string::NonNullString;
 #[doc(inline)]
 pub use raw::key::vec::NonPrefixVec;
 
-/// Key order for range and prefix operations (e.g., [`concurrent::Shard::entries`]).
+/// Key order for scan operations (e.g., [`concurrent::Shard::entries`]).
 ///
 /// We take a compile-time argument rather than implementing [`core::iter::DoubleEndedIterator`]
 /// because the latter would require maintaining two stacks at runtime (for the lower and
@@ -467,7 +466,7 @@ mod tests {
             return map;
         };
 
-        // Concurrent prefix iteration, non-linearizable
+        // Concurrent prefix scan, non-linearizable
         map.prefix(K::Read::from(first.borrow()).common_prefix(K::Read::from(last.borrow())))
             .entries::<Descend>()
             .zip(keys.iter().rev())
@@ -476,7 +475,7 @@ mod tests {
                 assert_eq!(lv, *rv);
             });
 
-        // Concurrent range iteration, non-linearizable
+        // Concurrent range scan, non-linearizable
         let mut i = 0;
         map.range(first.borrow()..=last.borrow())
             .entries::<Descend>()

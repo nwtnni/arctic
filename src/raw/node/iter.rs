@@ -95,14 +95,14 @@ impl<'g> ExactSizeIterator for EntryIter<'g> {
     }
 }
 
-/// Byte lower bound for range iteration.
+/// Byte lower bound for range scans.
 pub(crate) trait Lower: Copy + Default + Debug {
     const UNBOUND: bool = false;
     fn get(self) -> u8;
     fn check(self, byte: u8) -> bool;
 }
 
-/// Byte upper bound for range iteration.
+/// Byte upper bound for range scans.
 pub(crate) trait Upper: Copy + Default + Debug {
     const UNBOUND: bool = false;
     fn get(self) -> u8;
@@ -158,7 +158,7 @@ impl Upper for Option<u8> {
 }
 
 /// Iterator over (key byte, edge index). Heavily optimized for space because
-/// (a) range iteration requires keeping a stack of `KeyIter`s, and
+/// (a) scan operations require keeping a stack of `KeyIter`s, and
 /// (b) most of them are `KeyIter3`, which is 8 bytes.
 ///
 /// We can trivially get the size down to 9-16 bytes by allocating large variants
