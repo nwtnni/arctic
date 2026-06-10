@@ -8,7 +8,6 @@ use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::iter;
 use crate::concurrent::smr;
-use crate::concurrent::smr::Global as _;
 use crate::concurrent::smr::Guard as _;
 use crate::concurrent::value;
 use crate::raw::Edge;
@@ -23,7 +22,7 @@ use crate::sequential;
 use crate::stat;
 
 /// See [`smr::Guard`].
-pub type Guard<'g, K, V, S> = <<S as Smr>::Global<K, V> as smr::Global<K, V>>::Guard<'g>;
+pub type Guard<'g, K, V, S> = <S as Smr<K, V>>::Guard<'g>;
 
 /// See [`value::Owned`].
 pub type Owned<'g, K, V, S> = value::Owned<Guard<'g, K, V, S>, V>;
@@ -37,34 +36,37 @@ pub type Updated<'g, K, V, S> = value::Updated<Guard<'g, K, V, S>, V>;
 /// See [`value::Upserted`].
 pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 
-pub struct Map<K: Key, V: Value, S: Smr = smr::Hazard> {
-    smr: S::Global<K, V>,
+/// A lock-free concurrent map that supports lexicographically ordered, non-linearizable range and prefix scans.
+pub struct Map<K: Key, V: Value, S = Box<smr::Hazard<K, V>>> {
+    smr: S,
     seq: sequential::Map<K, V>,
 }
 
-impl<K: Key, V: Value, S: Smr<Global<K, V>: Default>> Default for Map<K, V, S> {
+impl<K: Key, V: Value, S: Default> Default for Map<K, V, S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K: Key, V: Value, S: Smr<Global<K, V>: Default>> Map<K, V, S> {
+impl<K: Key, V: Value, S: Default> Map<K, V, S> {
     /// Construct an empty map with the default safe memory reclamation state.
     pub fn new() -> Self {
-        Self::with_smr(S::Global::<K, V>::default())
+        Self::with_smr(S::default())
     }
 }
 
-/// # Basic operations
-impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
+impl<K: Key, V: Value, S> Map<K, V, S> {
     /// Construct an empty map with the given safe memory reclamation state.
-    pub const fn with_smr(smr: S::Global<K, V>) -> Self {
+    pub const fn with_smr(smr: S) -> Self {
         Self {
             smr,
             seq: sequential::Map::<K, V>::new(),
         }
     }
+}
 
+/// # Basic operations
+impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// Get a mutable view as a [`sequential::Map`] for temporary access to a more
     /// efficient and flexible single-threaded API. For permanent access, use
     /// [`From`].
@@ -82,7 +84,7 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
     /// use arctic::sequential;
     /// use arctic::concurrent::smr;
     ///
-    /// let mut map = concurrent::Map::<u32, u64, smr::Hazard>::default();
+    /// let mut map = concurrent::Map::<u32, u64>::default();
     ///
     /// // Concurrently insert into map
     /// thread::scope(|scope| {
@@ -130,13 +132,13 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
 
     /// Get an immutable reference to the underlying safe memory reclamation state.
     #[inline]
-    pub fn smr(&self) -> &S::Global<K, V> {
+    pub fn smr(&self) -> &S {
         &self.smr
     }
 
     /// Get a mutable reference to the underlying safe memory reclamation state.
     #[inline]
-    pub fn smr_mut(&mut self) -> &mut S::Global<K, V> {
+    pub fn smr_mut(&mut self) -> &mut S {
         &mut self.smr
     }
 }
@@ -146,7 +148,7 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
 /// This set of operations operates on a single key-value pair.
 ///
 /// These operations are linearizable.
-impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
+impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// Returns an immutable reference to the value associated with `key`.
     ///
     /// For a mutable reference, see [`Map::as_sequential`] and [`sequential::Map::get_mut`].
@@ -385,7 +387,7 @@ impl<K, V, S> Map<K, V, S>
 where
     K: Key,
     V: Value,
-    S: Smr,
+    S: Smr<K, V>,
 {
     /// Get an immutable reference to the entire tree.
     pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
@@ -431,7 +433,7 @@ impl<K, V, S> Map<K, V, S>
 where
     K: Key,
     V: Value,
-    S: Smr,
+    S: Smr<K, V>,
 {
     /// If there is no value associated with `key`, call the provided `insert` closure
     /// to compute a new value.
@@ -760,8 +762,7 @@ pub enum Upsert<'g, K, V, S>
 where
     K: Key,
     V: Value + 'g,
-    S: Smr,
-    S::Global<K, V>: 'g,
+    S: Smr<K, V> + 'g,
 {
     /// Value was successfully upserted.
     Success(Upserted<'g, K, V, S>),
@@ -779,8 +780,7 @@ pub enum Update<'g, K, V, S>
 where
     K: Key,
     V: Value + 'g,
-    S: Smr,
-    S::Global<K, V>: 'g,
+    S: Smr<K, V> + 'g,
 {
     /// Key was not present.
     Absent {
@@ -802,8 +802,7 @@ pub enum Remove<'g, K, V, S>
 where
     K: Key,
     V: Value + 'g,
-    S: Smr,
-    S::Global<K, V>: 'g,
+    S: Smr<K, V> + 'g,
 {
     /// Key was not present.
     Absent,
@@ -821,7 +820,7 @@ impl<K, V, S> Map<K, V, S>
 where
     K: Key,
     V: Value,
-    S: Smr,
+    S: Smr<K, V>,
 {
     #[inline]
     fn get_impl<'g>(&'g self, reader: K::Read<'_>) -> Option<Shared<'g, K, V, S>> {
@@ -1205,12 +1204,12 @@ impl<K, V, S> From<sequential::Map<K, V>> for Map<K, V, S>
 where
     K: Key,
     V: Value,
-    S: Smr<Global<K, V>: Default>,
+    S: Default,
 {
     #[inline]
     fn from(seq: sequential::Map<K, V>) -> Self {
         Self {
-            smr: S::Global::default(),
+            smr: S::default(),
             seq,
         }
     }
@@ -1220,7 +1219,6 @@ impl<K, V, S> From<Map<K, V, S>> for sequential::Map<K, V>
 where
     K: Key,
     V: Value,
-    S: Smr,
 {
     #[inline]
     fn from(map: Map<K, V, S>) -> sequential::Map<K, V> {

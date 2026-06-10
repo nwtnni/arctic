@@ -20,15 +20,7 @@ const GARBAGE_THRESHOLD: u32 = 256;
 #[derive(Default)]
 pub struct NoOp;
 
-impl Smr for NoOp {
-    type Global<K, V>
-        = Self
-    where
-        K: Key,
-        V: Value;
-}
-
-impl<K: Key, V: Value> smr::Global<K, V> for NoOp {
+impl<K: Key, V: Value> Smr<K, V> for NoOp {
     type Guard<'g>
         = Guard<(), V>
     where

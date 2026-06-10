@@ -8,7 +8,6 @@ use ribbit::Unpack as _;
 use crate::Key;
 use crate::Value;
 use crate::concurrent::Smr;
-use crate::concurrent::smr::Global as _;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
@@ -22,7 +21,9 @@ thread_local! {
     pub(crate) static THREAD: core::cell::RefCell<Thread> = core::cell::RefCell::new(Thread::default()) ;
 }
 
-pub fn process<K: Key, V: Value, S: Smr>(map: &mut crate::concurrent::Map<K, V, S>) -> Process {
+pub fn process<K: Key, V: Value, S: Smr<K, V>>(
+    map: &mut crate::concurrent::Map<K, V, S>,
+) -> Process {
     let mut compression = Histogram::default();
     let mut node_3 = Histogram::default();
     let mut node_15 = Histogram::default();
@@ -46,14 +47,15 @@ pub fn process<K: Key, V: Value, S: Smr>(map: &mut crate::concurrent::Map<K, V, 
                         node::Type::Node256 => &mut node_256,
                     };
 
-                    let children =
-                        unsafe { node.entries(false, Unbound::<()>::default(), Unbound::<()>::default()) }
-                            .filter(|(_, edge)| {
-                                !unsafe { edge.as_ref() }
-                                    .load_packed(Ordering::Relaxed)
-                                    .is_null()
-                            })
-                            .count();
+                    let children = unsafe {
+                        node.entries(false, Unbound::<()>::default(), Unbound::<()>::default())
+                    }
+                    .filter(|(_, edge)| {
+                        !unsafe { edge.as_ref() }
+                            .load_packed(Ordering::Relaxed)
+                            .is_null()
+                    })
+                    .count();
 
                     histogram.record(children as u64);
                 }

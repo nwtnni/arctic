@@ -75,21 +75,11 @@ use crate::concurrent::smr;
 use crate::raw::node;
 use crate::stat;
 
-pub struct Hazard;
-
-impl Smr for Hazard {
-    type Global<K, V>
-        = Box<Global<K, V>>
-    where
-        K: Key,
-        V: Value;
-}
-
 #[repr(C, align(64))]
 #[derive(Default)]
 struct Cache<T>(T);
 
-pub struct Global<K: Key, V: Value> {
+pub struct Hazard<K: Key, V: Value> {
     garbage: AtomicU64,
 
     // FIXME: jagged/triangular array
@@ -100,10 +90,10 @@ pub struct Global<K: Key, V: Value> {
     value: PhantomData<V>,
 }
 
-unsafe impl<K: Key, V: Value> Send for Global<K, V> {}
-unsafe impl<K: Key, V: Value> Sync for Global<K, V> {}
+unsafe impl<K: Key, V: Value> Send for Hazard<K, V> {}
+unsafe impl<K: Key, V: Value> Sync for Hazard<K, V> {}
 
-impl<K: Key, V: Value> Default for Global<K, V> {
+impl<K: Key, V: Value> Default for Hazard<K, V> {
     fn default() -> Self {
         Self {
             garbage: AtomicU64::new(0),
@@ -128,7 +118,7 @@ impl<K: Key, V: Value> Default for Global<K, V> {
     }
 }
 
-impl<K: Key, V: Value> Global<K, V> {
+impl<K: Key, V: Value> Hazard<K, V> {
     #[inline]
     #[must_use]
     pub fn with_reclaim_threshold(mut self, reclaim_threshold: usize) -> Self {
@@ -154,13 +144,13 @@ impl<K: Key, V: Value> Global<K, V> {
     }
 }
 
-impl<K: Key, V: Value> Drop for Global<K, V> {
+impl<K: Key, V: Value> Drop for Hazard<K, V> {
     fn drop(&mut self) {
         self.reclaim();
     }
 }
 
-impl<K: Key, V: Value> smr::Global<K, V> for Box<Global<K, V>> {
+impl<K: Key, V: Value> Smr<K, V> for Box<Hazard<K, V>> {
     type Guard<'g>
         = Guard<'g, K, V>
     where
@@ -202,14 +192,14 @@ pub struct Local<P: ribbit::Pack<Packed: Prefix>, V> {
     _value: PhantomData<V>,
 }
 
-impl<K: Key, V: Value> Global<K, V> {
+impl<K: Key, V: Value> Hazard<K, V> {
     #[inline]
     pub fn enable_membarrier(&self) {
         self.membarrier.store(true, Ordering::Relaxed)
     }
 
     #[cold]
-    fn flush(global: &Global<K, V>, local: &mut Local<K::Prefix, V>) {
+    fn flush(global: &Hazard<K, V>, local: &mut Local<K::Prefix, V>) {
         stat::max(stat::Max::RetireCache, local.retired.len() as u64);
 
         membarrier::slow(global.membarrier.load(Ordering::Relaxed));
@@ -282,7 +272,7 @@ impl<K: Key, V: Value> Global<K, V> {
 pub struct Guard<'g, K: Key, V: Value> {
     hazard: &'g ribbit::Atomic<K::Prefix>,
     local: &'g UnsafeCell<Local<K::Prefix, V>>,
-    global: &'g Global<K, V>,
+    global: &'g Hazard<K, V>,
 }
 
 impl<'g, K: Key, V: Value> smr::Guard<V> for Guard<'g, K, V> {
@@ -369,7 +359,7 @@ impl<'g, K: Key, V: Value> Drop for Guard<'g, K, V> {
         }
 
         if local.cycle == 0 {
-            Global::flush(self.global, local)
+            Hazard::flush(self.global, local)
         }
 
         // FIXME: introduce separate configuration

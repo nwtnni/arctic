@@ -10,25 +10,15 @@ use crate::concurrent::smr;
 use crate::raw::node;
 use crate::stat;
 
-pub struct Epoch;
-
-impl Smr for Epoch {
-    type Global<K, V>
-        = Box<Global>
-    where
-        K: Key,
-        V: Value;
-}
-
-pub struct Global {
+pub struct Epoch {
     collector: crossbeam_epoch::Collector,
     locals: [UnsafeCell<Option<LocalHandle>>; smr::thread::MAX],
 }
 
-unsafe impl Send for Global {}
-unsafe impl Sync for Global {}
+unsafe impl Send for Epoch {}
+unsafe impl Sync for Epoch {}
 
-impl Default for Global {
+impl Default for Epoch {
     fn default() -> Self {
         Self {
             collector: crossbeam_epoch::Collector::default(),
@@ -37,7 +27,7 @@ impl Default for Global {
     }
 }
 
-impl Global {
+impl Epoch {
     pub fn with_bag_capacity(max_objects: usize) -> Self {
         crossbeam_epoch::set_bag_capacity(max_objects);
         Self::default()
@@ -60,7 +50,7 @@ impl Global {
     }
 }
 
-impl<K: Key, V: Value> smr::Global<K, V> for Box<Global> {
+impl<K: Key, V: Value> Smr<K, V> for Box<Epoch> {
     type Guard<'g>
         = crossbeam_epoch::Guard
     where

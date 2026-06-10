@@ -14,14 +14,8 @@ use crate::concurrent::Value;
 use crate::raw::edge;
 use crate::raw::node;
 
-pub trait Smr {
-    type Global<K, V>: Global<K, V>
-    where
-        K: Key,
-        V: Value;
-}
-
-pub trait Global<K: Key, V: Value> {
+/// Provides [safe memory reclamation](https://arxiv.org/abs/2509.02457).
+pub trait Smr<K: Key, V: Value> {
     type Guard<'g>: Guard<V>
     where
         V: 'g,

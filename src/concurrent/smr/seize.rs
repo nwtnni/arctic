@@ -7,26 +7,16 @@ use crate::stat;
 
 use seize::Guard as _;
 
-pub struct Seize;
-
-impl Smr for Seize {
-    type Global<K, V>
-        = Global
-    where
-        K: Key,
-        V: Value;
-}
-
 #[derive(Default)]
-pub struct Global(seize::Collector);
+pub struct Seize(seize::Collector);
 
-impl Global {
+impl Seize {
     pub fn with_batch_size(batch_size: usize) -> Self {
         Self(seize::Collector::new().batch_size(batch_size))
     }
 }
 
-impl<K: Key, V: Value> smr::Global<K, V> for Global {
+impl<K: Key, V: Value> Smr<K, V> for Seize {
     type Guard<'g>
         = seize::LocalGuard<'g>
     where
