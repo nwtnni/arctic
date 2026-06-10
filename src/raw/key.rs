@@ -69,17 +69,21 @@ pub trait Key: Borrow<Self::Borrowed> {
     #[expect(private_bounds)]
     type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
-    /// The key type itself always has a long enough lifetime for insertion.
+    /// Convert the key type to the insert type.
     fn as_insert(&self) -> Self::Insert<'_>;
 
+    /// Convert the insert type to a reader with appropriate lifetime.
     fn insert_as_read<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
     where
         Self: 'k;
 
+    /// Convert the insert type to the key type.
     fn insert_to_key<'k>(insert: Self::Insert<'k>) -> Self
     where
         Self: 'k;
 
+    /// Convert a reference to a writer into the insert type.
+    ///
     /// # Safety
     ///
     /// Caller must guarantee that `writer` contains a valid key.
@@ -147,7 +151,7 @@ pub(crate) trait Write<R: Read>: fmt::Debug + Default {
 }
 
 /// Key length.
-pub trait Len:
+pub(crate) trait Len:
     Sized
     + Copy
     + AddAssign
@@ -157,10 +161,16 @@ pub trait Len:
     + PartialOrd
     + fmt::Debug
 {
+    /// Length of an empty key.
     const ZERO: Self;
+
+    /// Length of a key with a single byte.
     const BYTE: Self;
 
+    /// Return the key length in bits.
     fn bits(self) -> usize;
+
+    /// Return the key length in bytes.
     fn bytes(self) -> usize;
 }
 

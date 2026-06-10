@@ -135,6 +135,7 @@ impl NonNullStr {
         self.to_owned()
     }
 
+    /// Return the length of this [`NonNullStr`] in bytes.
     #[inline]
     pub const fn len(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.0.len()).expect("NonNullStr is non-empty")

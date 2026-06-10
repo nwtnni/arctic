@@ -31,11 +31,13 @@ impl NonPrefixSlice {
         unsafe { core::mem::transmute(slice) }
     }
 
+    /// Get an owned copy of this slice.
     #[inline]
     pub fn to_non_prefix_vec(&self) -> NonPrefixVec {
         unsafe { NonPrefixVec::new_unchecked(self.0.to_owned()) }
     }
 
+    /// Return the length of this [`NonPrefixSlice`] in bytes.
     #[inline]
     pub const fn len(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.0.len()).expect("NonPrefixSlice is non-empty")

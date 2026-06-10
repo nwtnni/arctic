@@ -236,6 +236,7 @@ impl fmt::Debug for Writer {
     }
 }
 
+#[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Len(pub(super) usize);
 
