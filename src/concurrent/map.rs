@@ -435,7 +435,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     }
 }
 
-/// # Range and prefix operations
+/// # Scan operations
 ///
 /// This set of operations allows the caller to select a subtree
 /// (by prefix or range) for non-linearizable iteration.

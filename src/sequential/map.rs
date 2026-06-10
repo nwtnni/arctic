@@ -20,6 +20,47 @@ use crate::sequential::Value;
 use crate::stat;
 
 /// Non-concurrent map that supports lexicographically ordered range and prefix scans.
+///
+/// # Usage
+///
+/// [`Map`] supports both point and scan operations, and tries to be roughly
+/// compatible with the standard library's [`BTreeMap`][std::collections::BTreeMap].
+///
+/// In general, radix trees do not explicitly store keys; they are implicitly
+/// encoded in the structure of the tree. This means that operations on [`Map`]
+/// generally take references to keys. Operations that insert and typically
+/// would take an owned key, like [`BTreeMap::insert`][std::collections::BTreeMap::insert],
+/// instead take a [`Key::Insert<'k>`][crate::Key::Insert]. Operations that
+/// do not insert a new key take a [`&Key::Borrowed`][crate::Key::Borrowed].
+///
+/// ## Point operations
+///
+/// The main caveat here is that [`Map::insert`] errors if the key is present,
+/// whereas [`BTreeMap::insert`][std::collections::BTreeMap::insert]
+/// updates. (To match the standard library behavior, use [`Map::upsert`] instead.)
+/// For more complex conditional logic, the [`Map::entry`] API mimics
+/// [`BTreeMap::entry`][std::collections::BTreeMap::entry].
+///
+/// ## Scan operations
+///
+/// For scan operations, [`Map`] exposes a two-phase API: the caller first selects
+/// a subtree (e.g., [`Map::prefix`] or [`Map::range_mut`]). This returns
+/// a [`Shard`] or [`ShardMut`], which can then be iterated over
+/// (e.g., [`Shard::entries`] or [`ShardMut::values_mut`]).
+/// This is in contrast to the standard library, where [`BTreeMap::range`][std::collections::BTreeMap::range]
+/// directly returns an iterator.
+///
+/// If the key type is dynamically allocated, like [`crate::NonNullString`],
+/// iterating over keys can be expensive, as a key buffer must be updated
+/// during traversal, and then cloned once per key. This can be mitigated by
+/// (a) iterating over values instead of entries, (b) using the lending API
+/// (e.g., [`EntryIter::lend`]), which borrows from the iterator's internal
+/// buffer, or (c) using the internal iteration API[^iter] (e.g., [`EntryIterMut::for_each_internal`]),
+/// which also borrows from the iterator and can be much faster.
+///
+/// [^iter]: Should ideally replace with custom [`Iterator::try_fold`] implementation,
+/// but this currently uses the unstable Try trait.
+/// See also [this issue](https://github.com/nnethercote/perf-book/issues/70).
 #[repr(transparent)]
 pub struct Map<K: Key, V: Value> {
     pub(crate) raw: raw::Map<K>,
@@ -256,7 +297,7 @@ where
     }
 }
 
-/// # Range and prefix operations
+/// # Scan operations
 ///
 /// This set of operations allows the caller to select a subtree
 /// (by prefix or range) for iteration.
