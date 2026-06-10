@@ -39,6 +39,60 @@ pub type Updated<'g, K, V, S> = value::Updated<Guard<'g, K, V, S>, V>;
 pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 
 /// Lock-free concurrent map that supports lexicographically ordered, non-linearizable range and prefix scans.
+///
+/// # Usage
+///
+/// Refer to [`crate::sequential::Map`] for an introduction.
+/// The [`Map`] API differs in three ways: concurrent operations,
+/// safe memory reclamation, and advanced point operations.
+///
+/// ## Concurrent operations
+///
+/// Unlike [`crate::sequential::Map`], an instance of [`Map`] can be shared
+/// and modified concurrently across threads. Methods that usually require a mutable reference
+/// (e.g., [`crate::sequential::Map::upsert`]) instead use atomics to synchronize internally,
+/// allowing them to take an immutable reference (e.g., [`Map::upsert`]).
+///
+/// Note that range and prefix scans are not linearizable. They do, however,
+/// satisfy weaker guarantees: (a) scans observe keys at most once, in order;
+/// and (b) scans observe all keys within bounds that were inserted before
+/// the scan starts, and were not removed before the scan ends.
+///
+/// ## Safe memory reclamation
+///
+/// In order to provide wait-free reads, [`Map`] requires
+/// a safe memory reclamation (SMR) mechanism to detect when
+/// allocations are safe to free. This results in the following API changes:
+///
+/// 1. Values are always returned behind guards. For example,
+///    while a successful [`crate::sequential::Map::update`] returns ownership of
+///    the old value, a successful [`Map::update`] instead returns an [`Updated`]
+///    guard that allows references to the old and new value.
+///
+///    The guard may have other restrictions depending on the SMR implementation:
+///    for example, epoch-based SMR cannot free any memory while a guard is alive,
+///    and hazard keys currently only support holding a single guard at a time.
+///
+/// 2. Values behind guards are always read-only. This can be worked around by
+///    either using a value type with internal synchronization (e.g., `Box<Mutex<T>>`),
+///    or by obtaining a mutable reference to [`Map`] and then using the
+///    sequential API via [`Map::as_sequential`].
+///
+/// 3. Values distinguish between inline (e.g., integers) and indirect (e.g., `Box<T>`).
+///    In short, we return [`Value::Target`] instead of `&V`, because the memory location
+///    where `V` itself is stored may be concurrently updated.
+///    (See [`Value`] for more information.)
+///
+/// ## Advanced point operations
+///
+/// Point operations can internally fail and retry under contention.
+/// We give the caller control over retries by providing variants of point
+/// operations (ending in suffix `_with`, e.g., [`Map::update_with`]) that
+/// take a closure.
+///
+/// This can be used to efficiently implement lazy value initialization,
+/// or synchronization logic where the next value is computed from the
+/// current value, and then atomically inserted or updated.
 pub struct Map<K: Key, V: Value, S = Box<smr::Hazard<K, V>>> {
     smr: S,
     seq: sequential::Map<K, V>,

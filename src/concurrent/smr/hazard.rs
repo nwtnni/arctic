@@ -170,7 +170,7 @@ impl<K: Key, V: Value> Smr<K, V> for Box<Hazard<K, V>> {
         let hazard = &self.hazards[id].0;
         let local = &self.locals[id];
 
-        validate!(!hazard.load_packed(Ordering::Relaxed).is_active());
+        assert!(!hazard.load_packed(Ordering::Relaxed).is_active());
         hazard.store_packed(K::hazard(key), membarrier::fast_store_ordering(membarrier));
         membarrier::fast_barrier(membarrier);
 
