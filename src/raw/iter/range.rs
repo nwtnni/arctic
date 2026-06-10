@@ -293,22 +293,36 @@ impl<T> Debug for Unbound<T> {
     }
 }
 
+/// Native range types (`..`, `lower..`, `..=upper`, `lower..=upper`) that can be passed as bounds to
+/// [`crate::sequential::Map::range`] and [`crate::concurrent::Map::range`].
+///
+/// Currently, only [`RangeFull`], [`RangeFrom`], [`RangeToInclusive`], and [`RangeInclusive`] are supported.
+/// [`Range`][std::ops::Range] (with an exclusive upper bound) is not supported.
+///
+/// The endpoints of the ranges can be borrowed keys ([`&'_ Key::Borrowed`][crate::Key::Borrowed]),
+/// key prefixes (e.g., [`crate::raw::key::int::Reader`]), or, for integer keys, owned integers.
 #[expect(private_bounds)]
 pub trait Range<R>
 where
     R: key::Read,
 {
+    #[doc(hidden)]
     #[expect(private_bounds)]
     type Lower: Lower<R::Edge>;
 
+    #[doc(hidden)]
     #[expect(private_bounds)]
     type Upper: Upper<R::Edge>;
 
+    #[doc(hidden)]
     #[expect(private_interfaces)]
     fn lower(&self, start: R::Len) -> Self::Lower;
+
+    #[doc(hidden)]
     #[expect(private_interfaces)]
     fn upper(&self, start: R::Len) -> Self::Upper;
 
+    #[doc(hidden)]
     #[inline]
     fn common_prefix(&self) -> R {
         R::default()

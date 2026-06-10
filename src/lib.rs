@@ -86,6 +86,8 @@ pub mod stat;
 #[doc(inline)]
 pub use raw::Key;
 #[doc(inline)]
+pub use raw::iter::Range;
+#[doc(inline)]
 pub use raw::key::slice::NonPrefixSlice;
 #[doc(inline)]
 pub use raw::key::string::NonNullStr;
