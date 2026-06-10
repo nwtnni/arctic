@@ -37,8 +37,14 @@ pub trait Smr<K: Key, V: Value> {
 /// reclamation until it is safe.
 pub trait Guard<V: Value + ?Sized> {
     /// Retire a pointer to a node with prefix length `bits`.
+    ///
+    /// Call [`node::PtrPacked::deallocate`] to deallocate `node`.
+    /// [`node::PtrPacked::raw`] and [`node::Ptr::from_raw_unchecked`]
+    /// can be used to temporarily store the node as a [`core::num::NonZeroU64`].
     unsafe fn retire_node(&mut self, bits: usize, node: ribbit::Packed<node::Ptr>);
 
-    /// Retire a pointer to a value (can be reconstructed via [`crate::sequential::Value::from_raw`]).
+    /// Retire a value.
+    ///
+    /// Value can be reconstructed and dropped via [`crate::sequential::Value::from_raw`].
     unsafe fn retire_value(&mut self, value: u64);
 }
