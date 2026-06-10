@@ -1,3 +1,5 @@
+//! Implementations of [`Smr`].
+
 pub mod epoch;
 pub mod hazard;
 pub mod no_op;

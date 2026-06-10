@@ -84,11 +84,15 @@ pub mod raw;
 pub mod sequential;
 pub mod stat;
 
-pub use concurrent::Value;
+#[doc(inline)]
 pub use raw::Key;
+#[doc(inline)]
 pub use raw::key::slice::NonPrefixSlice;
+#[doc(inline)]
 pub use raw::key::string::NonNullStr;
+#[doc(inline)]
 pub use raw::key::string::NonNullString;
+#[doc(inline)]
 pub use raw::key::vec::NonPrefixVec;
 
 /// Key order for range and prefix operations (e.g., [`concurrent::Shard::entries`]).

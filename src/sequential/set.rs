@@ -1,8 +1,11 @@
+//! Auxiliary types for use with [`crate::sequential::Set`].
+
 use crate::raw;
 use crate::raw::Key;
 use crate::raw::key::Read as _;
 use crate::sequential::Map;
 
+/// Non-concurrent set. (TODO: support iteration.)
 #[repr(transparent)]
 pub struct Set<K: Key> {
     map: Map<K, raw::Set>,

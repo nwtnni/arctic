@@ -297,7 +297,7 @@ trait Workload: Sized + Sync {
     where
         Self: 'k;
 
-    type Value: arctic::Value + Send + Sync;
+    type Value: arctic::concurrent::Value + Send + Sync;
 
     fn key(&self, index: usize) -> Self::Key<'_>;
 

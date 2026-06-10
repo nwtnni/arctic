@@ -7,6 +7,7 @@ use crate::concurrent::Value;
 use crate::concurrent::smr;
 use crate::raw;
 
+/// Immutable reference to a subtree rooted at a key prefix, optionally bounded by a key range.
 pub struct Shard<'g, 'k, K: Key, V, R, G> {
     _guard: G,
     inner: raw::Shard<'g, 'k, K, R>,

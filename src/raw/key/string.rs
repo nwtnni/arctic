@@ -12,7 +12,7 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
-/// Newtype guaranteeing this [`std::string::String`] (a) is not empty,
+/// Newtype guaranteeing this [`String`] (a) is non-empty,
 /// and (b) does not contain any internal null bytes.
 ///
 /// Property (a) is required so our set implementation has a meaningful byte to index.

@@ -1,3 +1,5 @@
+//! Auxiliary types for use with [`crate::concurrent::Map`].
+
 use core::ops::ControlFlow;
 use core::ops::RangeFull;
 use core::sync::atomic::Ordering;
@@ -36,7 +38,7 @@ pub type Updated<'g, K, V, S> = value::Updated<Guard<'g, K, V, S>, V>;
 /// See [`value::Upserted`].
 pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 
-/// A lock-free concurrent map that supports lexicographically ordered, non-linearizable range and prefix scans.
+/// Lock-free concurrent map that supports lexicographically ordered, non-linearizable range and prefix scans.
 pub struct Map<K: Key, V: Value, S = Box<smr::Hazard<K, V>>> {
     smr: S,
     seq: sequential::Map<K, V>,

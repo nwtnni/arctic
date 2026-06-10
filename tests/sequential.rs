@@ -125,7 +125,7 @@ where
     }
 }
 
-struct Arctic<K: arctic::concurrent::smr::hazard::Key, V: arctic::Value>(
+struct Arctic<K: arctic::concurrent::smr::hazard::Key, V: arctic::concurrent::Value>(
     arctic::concurrent::Map<K, V>,
 );
 
@@ -133,7 +133,7 @@ impl<K, V> StateMachineTest for Arctic<K, V>
 where
     K: arctic::concurrent::smr::hazard::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
     K::Borrowed: Ord + core::fmt::Debug,
-    V: arctic::Value + Arbitrary + Clone + Debug + Send + Sync + 'static,
+    V: arctic::concurrent::Value + Arbitrary + Clone + Debug + Send + Sync + 'static,
     V::Target: Debug + PartialEq + PartialEq<V>,
 {
     type SystemUnderTest = Self;

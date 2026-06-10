@@ -1,4 +1,4 @@
-//! Record implementation-specific counters and histograms.
+//! Record internal counters and histograms for performance analysis.
 
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
@@ -6,8 +6,8 @@ use core::sync::atomic::Ordering;
 use ribbit::Unpack as _;
 
 use crate::Key;
-use crate::Value;
 use crate::concurrent::Smr;
+use crate::concurrent::Value;
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;

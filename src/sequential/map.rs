@@ -1,3 +1,5 @@
+//! Auxiliary types for use with [`crate::sequential::Map`].
+
 use core::marker::PhantomData;
 use core::ops::RangeFull;
 use core::ptr::NonNull;
@@ -17,6 +19,7 @@ use crate::sequential::ShardMut;
 use crate::sequential::Value;
 use crate::stat;
 
+/// Non-concurrent map that supports lexicographically ordered range and prefix scans.
 #[repr(transparent)]
 pub struct Map<K: Key, V: Value> {
     pub(crate) raw: raw::Map<K>,
@@ -50,6 +53,8 @@ where
 }
 
 /// # Point operations
+///
+/// This set of operations operates on a single key-value pair.
 impl<K, V> Map<K, V>
 where
     K: Key,
@@ -252,6 +257,9 @@ where
 }
 
 /// # Range and prefix operations
+///
+/// This set of operations allows the caller to select a subtree
+/// (by prefix or range) for iteration.
 impl<K, V> Map<K, V>
 where
     K: Key,

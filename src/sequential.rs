@@ -11,6 +11,9 @@ pub use iter::Shard;
 pub use iter::ShardMut;
 pub use iter::ValueIter;
 pub use iter::ValueIterMut;
+#[doc(inline)]
 pub use map::Map;
+#[doc(inline)]
 pub use set::Set;
+#[doc(inline)]
 pub use value::Value;

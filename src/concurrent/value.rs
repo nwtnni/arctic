@@ -1,3 +1,6 @@
+//! Guard types that retire removed or updated values
+//! via [`crate::concurrent::smr::Guard`] on drop.
+
 use core::fmt::Debug;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
