@@ -55,7 +55,7 @@ impl<K: Key, V: Value, S: Smr<Global<K, V>: Default>> Map<K, V, S> {
     }
 }
 
-/// # Point operations
+/// # Basic operations
 impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
     /// Construct an empty map with the given safe memory reclamation state.
     pub const fn with_smr(smr: S::Global<K, V>) -> Self {
@@ -139,7 +139,10 @@ impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
     pub fn smr_mut(&mut self) -> &mut S::Global<K, V> {
         &mut self.smr
     }
+}
 
+/// # Point operations
+impl<K: Key, V: Value, S: Smr> Map<K, V, S> {
     /// Returns an immutable reference to the value associated with `key`.
     ///
     /// For a mutable reference, see [`Map::as_sequential`] and [`sequential::Map::get_mut`].

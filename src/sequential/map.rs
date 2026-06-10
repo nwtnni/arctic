@@ -33,7 +33,7 @@ where
     }
 }
 
-/// # Point operations
+/// # Basic operations
 impl<K, V> Map<K, V>
 where
     K: Key,
@@ -47,7 +47,14 @@ where
             _value: PhantomData,
         }
     }
+}
 
+/// # Point operations
+impl<K, V> Map<K, V>
+where
+    K: Key,
+    V: Value,
+{
     /// Returns an immutable reference to the value associated with `key`.
     ///
     /// For a mutable reference, see [`Map::get_mut`].
@@ -294,6 +301,7 @@ where
     }
 }
 
+/// # Private implementations
 impl<K, V> Map<K, V>
 where
     K: Key,
