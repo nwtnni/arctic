@@ -1,8 +1,7 @@
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
@@ -92,7 +91,7 @@ where
 
 struct RepeatIter<'g, M: ribbit::Pack> {
     first: bool,
-    edge: NonNull<ribbit::Atomic<Edge<M>>>,
+    edge: NonNull<Atomic<Edge<M>>>,
     iter: node::EntryIter<'g>,
 }
 
@@ -110,7 +109,7 @@ where
     }
 
     #[inline]
-    fn next(&mut self) -> Option<(bool, NonNull<ribbit::Atomic<Edge<M>>>)> {
+    fn next(&mut self) -> Option<(bool, NonNull<Atomic<Edge<M>>>)> {
         let first = self.first;
         self.first ^= true;
 

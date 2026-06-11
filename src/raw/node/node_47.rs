@@ -9,9 +9,9 @@ use core::ops::Shr;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
 use ribbit::u6;
 
+use crate::Atomic;
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;

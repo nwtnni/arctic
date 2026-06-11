@@ -9,8 +9,7 @@ pub(crate) use range::Unbound;
 use core::ops::ControlFlow;
 use core::ptr::NonNull;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::Order;
 use crate::raw::Edge;
 use crate::raw::Key;

@@ -78,11 +78,13 @@ macro_rules! simd {
     }};
 }
 
+mod atomic;
 pub mod concurrent;
 pub mod raw;
 pub mod sequential;
 pub mod stat;
 
+pub(crate) use atomic::Atomic;
 #[doc(inline)]
 pub use raw::Key;
 #[doc(inline)]

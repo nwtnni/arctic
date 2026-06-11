@@ -34,10 +34,10 @@ use core::arch::x86_64::_pext_u64;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
 use ribbit::u2;
 use ribbit::u4;
 
+use crate::Atomic;
 use crate::raw::node::KeyIter3;
 use crate::raw::node::KeyIter15;
 use crate::raw::node::KeyIter63;

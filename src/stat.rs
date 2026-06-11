@@ -5,6 +5,7 @@ use core::sync::atomic::Ordering;
 
 use ribbit::Unpack as _;
 
+use crate::Atomic;
 use crate::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
@@ -53,7 +54,7 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(
                         node.entries(false, Unbound::<()>::default(), Unbound::<()>::default())
                     }
                     .filter(|(_, edge)| {
-                        !unsafe { edge.cast::<ribbit::Atomic<Edge<K::Edge>>>().as_ref() }
+                        !unsafe { edge.cast::<Atomic<Edge<K::Edge>>>().as_ref() }
                             .load_packed(Ordering::Relaxed)
                             .is_null()
                     })

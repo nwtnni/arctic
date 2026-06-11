@@ -14,9 +14,9 @@ use core::ops::Add;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
 use ribbit::Unpack as _;
 
+use crate::Atomic;
 use crate::raw::edge;
 use crate::raw::key;
 use crate::raw::key::Len as _;
@@ -117,10 +117,7 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
     pub(crate) fn new_path<R>(
         mut reader: R,
         value: u64,
-    ) -> (
-        ribbit::Packed<Self>,
-        Option<NonNull<ribbit::Atomic<Edge<M>>>>,
-    )
+    ) -> (ribbit::Packed<Self>, Option<NonNull<Atomic<Edge<M>>>>)
     where
         R: key::Read<Edge = M>,
     {

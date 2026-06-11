@@ -9,8 +9,7 @@ use core::ops::RangeToInclusive;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::Order;
 use crate::raw;
 use crate::raw::Edge;
@@ -193,7 +192,7 @@ where
 
                 'flatten: loop {
                     let (meta, child) = {
-                        let edge = unsafe { edge.cast::<ribbit::Atomic<Edge<K::Edge>>>().as_ref() }
+                        let edge = unsafe { edge.cast::<Atomic<Edge<K::Edge>>>().as_ref() }
                             .load_packed(Ordering::Acquire);
                         let Some(child) = edge.child() else {
                             continue 'horizontal;

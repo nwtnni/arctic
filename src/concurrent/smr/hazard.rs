@@ -71,6 +71,7 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
+use crate::Atomic;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
@@ -85,7 +86,7 @@ pub struct Hazard<K: Key, V: Value> {
     garbage: AtomicU64,
 
     // FIXME: jagged/triangular array
-    hazards: [Cache<ribbit::Atomic<K::Prefix>>; smr::thread::MAX],
+    hazards: [Cache<Atomic<K::Prefix>>; smr::thread::MAX],
     locals: [UnsafeCell<Local<K::Prefix, V>>; smr::thread::MAX],
     membarrier: AtomicBool,
     reclaim_threshold: usize,
@@ -100,7 +101,7 @@ impl<K: Key, V: Value> Default for Hazard<K, V> {
         Self {
             garbage: AtomicU64::new(0),
             hazards: core::array::from_fn(|_| {
-                Cache(ribbit::Atomic::new_packed(
+                Cache(Atomic::new_packed(
                     <<K::Prefix as ribbit::Pack>::Packed as Prefix>::HAZARD_NULL,
                 ))
             }),
@@ -274,7 +275,7 @@ impl<K: Key, V: Value> Hazard<K, V> {
 }
 
 pub struct Guard<'g, K: Key, V: Value> {
-    hazard: &'g ribbit::Atomic<K::Prefix>,
+    hazard: &'g Atomic<K::Prefix>,
     local: &'g UnsafeCell<Local<K::Prefix, V>>,
     global: &'g Hazard<K, V>,
 }

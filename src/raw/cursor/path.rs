@@ -1,8 +1,7 @@
 use core::convert::Infallible;
 use core::ptr::NonNull;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::key;

@@ -5,8 +5,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::Frozen;
 use crate::raw::edge;
@@ -262,7 +261,7 @@ where
     ) -> Result<
         (
             ribbit::Packed<Edge<R::Edge>>,
-            Option<NonNull<ribbit::Atomic<Edge<R::Edge>>>>,
+            Option<NonNull<Atomic<Edge<R::Edge>>>>,
         ),
         Frozen,
     > {

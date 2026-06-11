@@ -6,8 +6,7 @@
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::KeyIndex;

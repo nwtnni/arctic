@@ -2,8 +2,7 @@ use core::marker::PhantomData;
 use core::ops::RangeFull;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::Order;
 use crate::raw;
 use crate::raw::Cursor;

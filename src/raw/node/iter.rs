@@ -5,10 +5,10 @@ use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
-use ribbit::Atomic;
 use ribbit::Pack as _;
 use ribbit::u2;
 
+use crate::Atomic;
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;

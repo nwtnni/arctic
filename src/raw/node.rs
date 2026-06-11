@@ -15,8 +15,6 @@ use core::num::NonZeroU64;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use ribbit::Atomic;
-
 mod iter;
 mod linear;
 mod node_15;
@@ -35,6 +33,7 @@ pub(crate) use node_15::Node15;
 pub(crate) use node_47::Node47;
 pub(crate) use node_256::Node256;
 
+use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::Smo;
 use crate::raw::edge;
@@ -386,7 +385,7 @@ impl PtrPacked {
         sort: bool,
         lower: L,
         upper: U,
-    ) -> Result<(u8, NonNull<ribbit::Atomic<edge::Raw>>), EntryIter<'g>> {
+    ) -> Result<(u8, NonNull<Atomic<edge::Raw>>), EntryIter<'g>> {
         // Deduplicate with `entries`?
         let iter = self
             .dispatch(

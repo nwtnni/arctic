@@ -5,10 +5,10 @@ use core::sync::atomic::Ordering;
 #[cfg(target_feature = "avx2")]
 mod avx2;
 
-use ribbit::Atomic;
 use ribbit::u2;
 use ribbit::u4;
 
+use crate::Atomic;
 use crate::raw::node;
 use crate::raw::node::KeyIter3;
 use crate::raw::node::KeyIter15;

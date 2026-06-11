@@ -1,7 +1,6 @@
 use core::ops::RangeFull;
 
-use ribbit::Atomic;
-
+use crate::Atomic;
 use crate::raw;
 use crate::raw::Cursor;
 use crate::raw::Edge;

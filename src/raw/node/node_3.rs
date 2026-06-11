@@ -5,6 +5,7 @@ use core::ptr::NonNull;
 use ribbit::u2;
 use ribbit::u48;
 
+use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -120,7 +121,7 @@ impl Linear<3, Header> {
         meta: ribbit::Packed<M>,
         keys: [u8; 2],
         edges: [ribbit::Packed<Edge<M>>; 2],
-    ) -> (ribbit::Packed<Edge<M>>, NonNull<ribbit::Atomic<Edge<M>>>) {
+    ) -> (ribbit::Packed<Edge<M>>, NonNull<Atomic<Edge<M>>>) {
         let mut node = Box::new(Self::default());
 
         node.header.set_packed(ribbit::Packed::<Header>::new(
@@ -141,7 +142,7 @@ impl Linear<3, Header> {
         byte: u8,
         mut reader: R,
         value: u64,
-    ) -> (ribbit::Packed<Edge<M>>, NonNull<ribbit::Atomic<Edge<M>>>) {
+    ) -> (ribbit::Packed<Edge<M>>, NonNull<Atomic<Edge<M>>>) {
         let mut head = Box::new(Self::default());
         head.header.set_packed(ribbit::Packed::<Header>::new(
             u48::new(byte as u64),
