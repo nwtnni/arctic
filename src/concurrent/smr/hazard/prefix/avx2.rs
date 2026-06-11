@@ -9,12 +9,12 @@ impl BePacked {
         unsafe {
             // set hazard and broadcast prefix
             let h = _mm256_setr_epi64x(
-                hazards[0].value as i64,
-                hazards[1].value as i64,
-                hazards[2].value as i64,
-                hazards[3].value as i64,
+                hazards[0].into_raw() as i64,
+                hazards[1].into_raw() as i64,
+                hazards[2].into_raw() as i64,
+                hazards[3].into_raw() as i64,
             );
-            let p = _mm256_set1_epi64x(self.value as i64);
+            let p = _mm256_set1_epi64x(self.into_raw() as i64);
 
             let zeros = _mm256_setzero_si256();
             let ones = _mm256_set1_epi64x(-1);
@@ -62,12 +62,12 @@ impl LePacked {
         unsafe {
             // set hazard and broadcast prefix
             let h = _mm256_setr_epi64x(
-                hazards[0].value as i64,
-                hazards[1].value as i64,
-                hazards[2].value as i64,
-                hazards[3].value as i64,
+                hazards[0].into_raw() as i64,
+                hazards[1].into_raw() as i64,
+                hazards[2].into_raw() as i64,
+                hazards[3].into_raw() as i64,
             );
-            let p = _mm256_set1_epi64x(self.value as i64);
+            let p = _mm256_set1_epi64x(self.into_raw() as i64);
 
             let zeros = _mm256_setzero_si256();
 

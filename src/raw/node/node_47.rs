@@ -119,7 +119,9 @@ struct Header {
 impl Default for Header {
     fn default() -> Self {
         Self {
-            data: [const { Atomic::new_packed(0x7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F) }; 16],
+            data: core::array::from_fn(|_| {
+                Atomic::new_packed(0x7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F)
+            }),
             meta: Atomic::new_packed(Meta::DEFAULT),
         }
     }
@@ -337,7 +339,7 @@ impl Debug for Header {
 struct Meta {
     last: u8,
     frozen: bool,
-    len: u6,
+    len: ribbit::u6,
 }
 
 impl Meta {

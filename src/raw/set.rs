@@ -122,8 +122,8 @@ enum RefMut<'a> {
 #[derive(Copy, Clone, ribbit::Pack)]
 #[ribbit(size = 64, packed(rename = "Set8Packed"))]
 struct Set8 {
-    set: u56,
-    len: u6,
+    set: ribbit::u56,
+    len: ribbit::u6,
 }
 
 impl Set8 {
@@ -132,7 +132,7 @@ impl Set8 {
 
 impl Set8Packed {
     fn contains(&self, byte: u8) -> bool {
-        node::simd::get_15(self.value as u128, byte) < self.len().bytes() as u8
+        node::simd::get_15(self.into_raw() as u128, byte) < self.len().bytes() as u8
     }
 
     fn try_insert_mut(&mut self, byte: u8) -> Result<bool, ()> {
@@ -146,12 +146,12 @@ impl Set8Packed {
         }
 
         let byte = (byte as u64) << self.len().bits();
-        self.value = (self.value | byte) + (8 << 56);
+        *self = unsafe { Self::from_raw_unchecked((self.into_raw() | byte) + (8 << 56)) };
         Ok(true)
     }
 
     fn with_bytes<F: FnOnce(&[u8]) -> T, T>(&self, with: F) -> T {
-        let buffer = self.value.to_le_bytes();
+        let buffer = self.into_raw().to_le_bytes();
         let len = self.len().bytes();
         with(&buffer[..len])
     }

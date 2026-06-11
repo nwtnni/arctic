@@ -15,7 +15,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
-use ribbit::OptionExt as _;
+use ribbit::Unpack as _;
 
 use crate::raw::edge;
 use crate::raw::key;
@@ -186,7 +186,7 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
             return None;
         }
 
-        unsafe { ribbit::Packed::<Option<node::Ptr>>::new_unchecked(self.child_raw()) }
+        unsafe { ribbit::Packed::<Option<node::Ptr>>::from_raw_unchecked(self.child_raw()) }
     }
 
     /// Return `Some(child)` if this edge has a child.
@@ -196,7 +196,7 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
         if self.meta().is_value() {
             Some(Child::Value(raw))
         } else {
-            unsafe { ribbit::Packed::<Option<node::Ptr>>::new_unchecked(raw) }.map(Child::Node)
+            unsafe { ribbit::Packed::<Option<node::Ptr>>::from_raw_unchecked(raw) }.map(Child::Node)
         }
     }
 
@@ -209,7 +209,7 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
     /// Erase this edge's metadata type.
     #[inline]
     pub(super) fn erase(self) -> ribbit::Packed<edge::Raw> {
-        ribbit::Packed::<edge::Raw>::new(self.value)
+        ribbit::Packed::<edge::Raw>::new(self.into_raw())
     }
 }
 

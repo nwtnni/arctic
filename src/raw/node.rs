@@ -11,13 +11,11 @@
 //! `&dyn Node` that fits in 8 bytes (and hence within a [`crate::raw::Edge`]).
 
 use core::fmt::Debug;
-use core::num::NonZeroU32;
 use core::num::NonZeroU64;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use ribbit::Atomic;
-use ribbit::OptionExt as _;
 
 mod iter;
 mod linear;
@@ -200,7 +198,7 @@ macro_rules! dispatch {
                 Type::Node256 => $node256,
             }
         } else {
-            let r#type = $type.value.value();
+            let r#type = $type.into_raw().value();
             let hi = r#type & 0b10;
             let lo = r#type & 0b01;
 
@@ -235,10 +233,10 @@ pub(super) use dispatch;
 #[ribbit(size = 64, packed(rename = PtrPacked), eq, nonzero)]
 pub struct Ptr {
     #[ribbit(size = 2, get(vis = "pub(crate)"))]
-    r#type: Type,
+    r#type: crate::raw::node::Type,
 
     #[ribbit(with(skip))]
-    _placeholder: NonZeroU32,
+    _placeholder: ribbit::NonZeroU32,
 }
 
 impl Ptr {
@@ -276,7 +274,7 @@ impl Ptr {
     /// - There are no live borrows when [`Ptr::from_raw_unchecked`] is called.
     #[inline]
     pub unsafe fn from_raw_unchecked(raw: NonZeroU64) -> ribbit::Packed<Self> {
-        let node = unsafe { ribbit::Packed::<Option<Ptr>>::new_unchecked(raw.get()) };
+        let node: Option<_> = unsafe { ribbit::Unpack::from_raw_unchecked(raw.get()) };
         if_validate!(node.unwrap(), unsafe { node.unwrap_unchecked() })
     }
 
@@ -295,7 +293,9 @@ impl Ptr {
         validate_eq!(ptr & Self::MASK_TYPE, 0);
 
         unsafe {
-            ribbit::Packed::<Self>::new_unchecked(NonZeroU64::new_unchecked(N::TYPE as u64 | ptr))
+            ribbit::Packed::<Self>::from_raw_unchecked(NonZeroU64::new_unchecked(
+                N::TYPE as u64 | ptr,
+            ))
         }
     }
 }
@@ -309,12 +309,6 @@ macro_rules! dispatch_all {
 
 /// # Edge metadata independent methods
 impl PtrPacked {
-    /// Erase the type of this node pointer, returning a [`NonZeroU64`].
-    #[inline]
-    pub fn into_raw(self) -> NonZeroU64 {
-        self.value
-    }
-
     #[inline]
     pub(crate) unsafe fn get<'g>(self, key: u8) -> Option<&'g Atomic<edge::Raw>> {
         let (index, edges) = dispatch_all!(self, |node| {
@@ -477,7 +471,7 @@ impl PtrPacked {
         N256: FnOnce(NonNull<Node256>) -> T,
     {
         let ptr = NonNull::<u8>::new(core::ptr::with_exposed_provenance_mut(
-            (self.value.get() & Ptr::MASK_PTR) as usize,
+            (self.into_raw().get() & Ptr::MASK_PTR) as usize,
         ));
         let ptr = if_validate!(ptr.unwrap(), unsafe { ptr.unwrap_unchecked() });
 
@@ -601,7 +595,7 @@ impl Debug for PtrPacked {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Node")
             .field("type", &self.r#type())
-            .field("ptr", &(self.value.get() & Ptr::MASK_PTR))
+            .field("ptr", &(self.into_raw().get() & Ptr::MASK_PTR))
             .finish()
     }
 }

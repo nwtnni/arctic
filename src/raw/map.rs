@@ -16,7 +16,9 @@ impl<K: Key> Map<K> {
     /// Constructs a new empty map. Does not allocate.
     #[inline]
     pub(crate) const fn new() -> Self {
-        Self(Atomic::new_packed(Edge::NULL))
+        Self(Atomic::new_raw(ribbit::atomic::AtomicU128::new(
+            Edge::<K::Edge>::NULL.into_raw(),
+        )))
     }
 
     pub(crate) fn postorder<'g>(&'g mut self) -> PostorderIter<'g, K::Edge> {

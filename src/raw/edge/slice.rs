@@ -8,8 +8,8 @@ use crate::raw::edge::Meta as _;
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, debug)]
 pub struct Slice {
-    ptr: u48,
-    len: u14,
+    ptr: ribbit::u48,
+    len: ribbit::u14,
     value: bool,
     frozen: bool,
 }

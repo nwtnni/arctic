@@ -63,7 +63,7 @@ pub trait Key: Borrow<Self::Borrowed> {
 
     /// Edge metadata.
     #[expect(private_bounds)]
-    type Edge: ribbit::Pack<Packed: edge::Meta>;
+    type Edge: ribbit::Pack<Packed: edge::Meta> + Send + Sync;
 
     /// Key length.
     #[expect(private_bounds)]

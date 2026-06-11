@@ -18,9 +18,9 @@ const_assert_size_align!(Node15, 256, 64);
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 128, packed(rename = "HeaderPacked"), debug)]
 pub(crate) struct Header {
-    keys: u120,
+    keys: ribbit::u120,
     frozen: bool,
-    len: u4,
+    len: ribbit::u4,
 }
 
 impl Header {
@@ -66,13 +66,13 @@ impl linear::Header for ribbit::Packed<Header> {
 
     #[inline]
     fn get(self, key: u8) -> Option<u8> {
-        let index = node::simd::get_15(self.value, key);
+        let index = node::simd::get_15(self.into_raw(), key);
         (index < self.len().value()).then_some(index)
     }
 
     #[inline]
     fn get_or_insert(self, key: u8) -> Result<u8, Option<Self>> {
-        let index = node::simd::get_15(self.value, key);
+        let index = node::simd::get_15(self.into_raw(), key);
         let len = self.len().value();
 
         if index < len {
@@ -84,23 +84,23 @@ impl linear::Header for ribbit::Packed<Header> {
         }
 
         let key = (key as u128) << (len << 3);
-        let value = (self.value | key) + (1u128 << 121);
+        let value = (self.into_raw() | key) + (1u128 << 121);
 
         // SAFETY: `len < Self::LEN`
-        Err(Some(unsafe { Self::new_unchecked(value) }))
+        Err(Some(unsafe { Self::from_raw_unchecked(value) }))
     }
 
     fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U, iter: &mut KeyIter15) {
         let len = self.len();
-        node::simd::keys_15(self.value, len, lower, upper, iter);
+        node::simd::keys_15(self.into_raw(), len, lower, upper, iter);
     }
 
     fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex> {
-        node::simd::min_15(self.value, self.len(), lower)
+        node::simd::min_15(self.into_raw(), self.len(), lower)
     }
 
     fn max<U: node::Upper>(self, upper: U) -> Option<node::KeyIndex> {
-        node::simd::max_15(self.value, self.len(), upper)
+        node::simd::max_15(self.into_raw(), self.len(), upper)
     }
 }
 

@@ -7,7 +7,6 @@ use core::ops::AddAssign;
 use core::ops::Sub;
 use core::ops::SubAssign;
 
-use ribbit::traits::Integer as _;
 use ribbit::u6;
 use ribbit::u14;
 
@@ -265,14 +264,14 @@ impl From<u6> for Len {
 impl From<Len> for u6 {
     #[inline]
     fn from(len: Len) -> Self {
-        u6::masked_new((len.0 << 3) as u8)
+        u6::extract_u64((len.0 << 3) as u64, 0)
     }
 }
 
 impl From<Len> for u14 {
     #[inline]
     fn from(len: Len) -> Self {
-        u14::masked_new(len.0 as u16)
+        u14::extract_u64(len.0 as u64, 0)
     }
 }
 

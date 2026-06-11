@@ -4,6 +4,7 @@ use core::cmp;
 use core::ops::BitAnd as _;
 use core::ops::BitOr as _;
 
+use ribbit::Unpack;
 use ribbit::u3;
 use ribbit::u6;
 use ribbit::u56;
@@ -17,11 +18,11 @@ use crate::raw::edge::Len as _;
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, debug)]
 pub struct Le {
-    prefix: u56,
+    prefix: ribbit::u56,
     value: bool,
     frozen: bool,
     #[ribbit(offset = 59)]
-    len: u3,
+    len: ribbit::u3,
 }
 
 impl Le {
@@ -32,7 +33,7 @@ impl Le {
     pub(crate) fn new(value: u64, len: u6) -> ribbit::Packed<Self> {
         validate_eq!(len.value() & 0b111, 0);
         unsafe {
-            ribbit::Packed::<Self>::new_unchecked(
+            ribbit::Packed::<Self>::from_raw_unchecked(
                 value & Self::mask(len) | ((len.value() as u64) << 56),
             )
         }
@@ -47,7 +48,7 @@ impl Le {
 impl LePacked {
     #[inline]
     pub(crate) fn raw(self) -> u64 {
-        self.value
+        Unpack::into_raw(self)
     }
 }
 
@@ -105,7 +106,7 @@ impl edge::Meta for LePacked {
         let index_child = (len_parent.value() + len_byte) as u32;
 
         Some(unsafe {
-            Self::new_unchecked(
+            Self::from_raw_unchecked(
                 // Parent prefix
                 self.raw()
                     // Byte
@@ -133,7 +134,7 @@ impl edge::Meta for LePacked {
         let len_child = len - index_child;
 
         let child = unsafe {
-            Self::new_unchecked(
+            Self::from_raw_unchecked(
                 (self.raw() >> index_child.value())
                     .bitand(Le::mask(len_child))
                     .bitor((len_child.value() as u64) << 56)
@@ -183,7 +184,7 @@ impl proptest::arbitrary::Arbitrary for Le {
         (
             bool::arbitrary(),
             bool::arbitrary(),
-            0u8..=<u3 as ribbit::traits::Integer>::MAX.value(),
+            0u8..=<u3 as ribbit::Integer>::MAX.value(),
         )
             .prop_flat_map(|(value, frozen, len)| {
                 (

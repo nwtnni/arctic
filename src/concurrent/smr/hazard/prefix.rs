@@ -5,7 +5,7 @@ use core::ops::BitAnd as _;
 use core::ops::BitOr as _;
 use core::ops::Not as _;
 
-use ribbit::traits::Integer as _;
+use ribbit::Integer as _;
 use ribbit::u3;
 use ribbit::u4;
 use ribbit::u48;
@@ -13,7 +13,7 @@ use ribbit::u56;
 use ribbit::u112;
 use ribbit::u120;
 
-pub trait Prefix: Send + Sync + ribbit::Unpack<Loose: ribbit::atomic::Loose> {
+pub trait Prefix: Send + Sync + Sized {
     const HAZARD_NULL: Self;
     const HAZARD_ROOT: Self;
 
@@ -60,10 +60,10 @@ pub struct Be {
     pub(super) overlap: bool,
 
     // NOTE: at offset 3 so we don't need to shift bits
-    len: u3,
+    len: ribbit::u3,
 
     #[ribbit(offset = 8)]
-    prefix: u56,
+    prefix: ribbit::u56,
 }
 
 impl Be {
@@ -82,7 +82,7 @@ impl Be {
         };
 
         unsafe {
-            ribbit::Packed::<Self>::new_unchecked(
+            ribbit::Packed::<Self>::from_raw_unchecked(
                 // Protect nodes, values, and overlap
                 Self::extract(prefix, bits) | bits as u64 | 0b0000_0111,
             )
@@ -107,8 +107,8 @@ impl Prefix for BePacked {
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self {
         match bits {
             Some(bits) if bits < (self.len().value() as usize) << 3 => unsafe {
-                let prefix = Be::extract(self.value, bits);
-                Self::new_unchecked(prefix | bits as u64)
+                let prefix = Be::extract(self.into_raw(), bits);
+                Self::from_raw_unchecked(prefix | bits as u64)
             },
             Some(_) | None => self,
         }
@@ -119,7 +119,7 @@ impl Prefix for BePacked {
     #[inline]
     fn is_active(self) -> bool {
         // Protects either values or nodes
-        self.value & 0b11 > 0
+        self.into_raw() & 0b11 > 0
     }
 
     #[inline]
@@ -182,7 +182,7 @@ impl BePacked {
         validate!(self.is_node() ^ self.is_value());
 
         // Case: `hazard` doesn't protect node or value
-        if (hazard.value & self.value) & 0b11 == 0 {
+        if (hazard.into_raw() & self.into_raw()) & 0b11 == 0 {
             return false;
         }
 
@@ -193,14 +193,14 @@ impl BePacked {
 
         let len = self.len().min(hazard.len());
         let bits = (len.value() as usize) << 3;
-        Be::extract(self.value ^ hazard.value, bits) == 0
+        Be::extract(self.into_raw() ^ hazard.into_raw(), bits) == 0
     }
 }
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, packed(rename = "LePacked"), debug)]
 pub struct Le {
-    prefix: u56,
+    prefix: ribbit::u56,
 
     #[ribbit(get(rename = "is_node"))]
     pub(super) node: bool,
@@ -211,7 +211,7 @@ pub struct Le {
     #[ribbit(get(rename = "is_overlap"))]
     pub(super) overlap: bool,
 
-    len: u3,
+    len: ribbit::u3,
 }
 
 impl Le {
@@ -229,7 +229,7 @@ impl Le {
         };
 
         unsafe {
-            ribbit::Packed::<Self>::new_unchecked(
+            ribbit::Packed::<Self>::from_raw_unchecked(
                 Self::extract(prefix, bits) | const { 0b111u64 << 56 } | ((bits as u64) << 56),
             )
         }
@@ -253,7 +253,7 @@ impl Prefix for LePacked {
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self {
         match bits {
             Some(bits) if bits < (self.len().value() as usize) << 3 => {
-                let prefix = Le::extract(self.value, bits);
+                let prefix = Le::extract(self.into_raw(), bits);
                 Self::new(
                     unsafe { u56::new_unchecked(prefix) },
                     !value,
@@ -269,7 +269,7 @@ impl Prefix for LePacked {
     #[inline]
     fn is_active(self) -> bool {
         // Protects either values or nodes
-        self.value & const { 0b11u64 << 56 } > 0
+        self.into_raw() & const { 0b11u64 << 56 } > 0
     }
 
     #[inline]
@@ -332,7 +332,7 @@ impl LePacked {
         validate!(self.is_node() ^ self.is_value());
 
         // Case: `hazard` doesn't protect node or value
-        if (hazard.value & self.value) & const { 0b11u64 << 56 } == 0 {
+        if (hazard.into_raw() & self.into_raw()) & const { 0b11u64 << 56 } == 0 {
             return false;
         }
 
@@ -343,14 +343,14 @@ impl LePacked {
 
         let len = self.len().min(hazard.len());
         let bits = (len.value() as usize) << 3;
-        Le::extract(self.value ^ hazard.value, bits) == 0
+        Le::extract(self.into_raw() ^ hazard.into_raw(), bits) == 0
     }
 }
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 128, packed(rename = "Le128Packed"), debug)]
 pub struct Le128 {
-    prefix: u120,
+    prefix: ribbit::u120,
 
     #[ribbit(get(rename = "is_node"))]
     pub(super) node: bool,
@@ -361,7 +361,7 @@ pub struct Le128 {
     #[ribbit(get(rename = "is_overlap"))]
     pub(super) overlap: bool,
 
-    len: u4,
+    len: ribbit::u4,
 }
 
 impl Le128 {
@@ -378,7 +378,7 @@ impl Le128 {
         };
 
         unsafe {
-            ribbit::Packed::<Self>::new_unchecked(
+            ribbit::Packed::<Self>::from_raw_unchecked(
                 Self::extract(prefix, bits) | const { 0b111u128 << 120 } | ((bits as u128) << 120),
             )
         }
@@ -402,7 +402,7 @@ impl Prefix for Le128Packed {
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self {
         match bits {
             Some(bits) if bits < (self.len().value() as usize) << 3 => {
-                let prefix = Le128::extract(self.value, bits);
+                let prefix = Le128::extract(self.into_raw(), bits);
                 Self::new(
                     unsafe { u120::new_unchecked(prefix) },
                     !value,
@@ -418,7 +418,7 @@ impl Prefix for Le128Packed {
     #[inline]
     fn is_active(self) -> bool {
         // Protects either values or nodes
-        self.value & const { 0b11u128 << 120 } > 0
+        self.into_raw() & const { 0b11u128 << 120 } > 0
     }
 
     #[inline]
@@ -474,7 +474,7 @@ impl Le128Packed {
         validate!(self.is_node() ^ self.is_value());
 
         // Case: `hazard` doesn't protect node or value
-        if (hazard.value & self.value) & const { 0b11u128 << 120 } == 0 {
+        if (hazard.into_raw() & self.into_raw()) & const { 0b11u128 << 120 } == 0 {
             return false;
         }
 
@@ -485,6 +485,6 @@ impl Le128Packed {
 
         let len = self.len().min(hazard.len());
         let bits = (len.value() as usize) << 3;
-        Le128::extract(self.value ^ hazard.value, bits) == 0
+        Le128::extract(self.into_raw() ^ hazard.into_raw(), bits) == 0
     }
 }

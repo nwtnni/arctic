@@ -7,7 +7,6 @@ use core::ptr::NonNull;
 
 use ribbit::Atomic;
 use ribbit::Pack as _;
-use ribbit::traits::Integer as _;
 use ribbit::u2;
 
 use crate::raw::edge;
@@ -236,18 +235,10 @@ impl KeyIter {
     fn r#type(&self) -> ribbit::Packed<node::Type> {
         // `node_3` and `node_256` are structs with endian-independent layout
         // `node_15` and `node_47` use an endian-dependent shift when encoding
-        let byte = unsafe { self.raw[7] } >> TYPE_SHIFT_BYTE;
-
-        let r#type = if cfg!(target_endian = "little") {
-            // Pointer bits 61..64 are zero
-            u2::new(byte)
-        } else {
-            // Pointer bits 5..8 may have data
-            u2::masked_new(byte)
-        };
-
+        let byte = unsafe { self.raw[7] };
+        let r#type = u2::extract_u8(byte, TYPE_SHIFT_BYTE);
         // SAFETY: every `u2` is a valid `ribbit::Packed<node::Type>`
-        unsafe { ribbit::Packed::<node::Type>::new_unchecked(r#type) }
+        unsafe { ribbit::Packed::<node::Type>::from_raw_unchecked(r#type) }
     }
 
     #[inline]
@@ -262,7 +253,7 @@ impl KeyIter {
         let iter = Self {
             node_15: NonNull::from(Box::leak(node_15)).map_addr(|addr| {
                 validate_eq!(
-                    u2::masked_new((addr.get() >> TYPE_SHIFT_PTR) as u8),
+                    u2::extract_u64(addr.get() as u64, TYPE_SHIFT_PTR),
                     u2::new(0),
                     "Type does not clobber address",
                 );
@@ -281,7 +272,7 @@ impl KeyIter {
         let iter = Self {
             node_47: NonNull::from(Box::leak(node_47)).map_addr(|addr| {
                 validate_eq!(
-                    u2::masked_new((addr.get() >> TYPE_SHIFT_PTR) as u8),
+                    u2::extract_u64(addr.get() as u64, TYPE_SHIFT_PTR),
                     u2::new(0),
                     "Type does not clobber address",
                 );

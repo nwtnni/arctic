@@ -636,7 +636,6 @@ mod tests {
     use core::arch::x86_64::_mm256_setr_epi16;
     use core::hash::Hasher as _;
 
-    use ribbit::traits::Integer as _;
     use ribbit::u2;
     use ribbit::u4;
 
@@ -705,7 +704,7 @@ mod tests {
             let data = hasher.finish();
 
             let keys = data & 0x00FF_00FF_00FF;
-            let len = u2::masked_new(data >> 8);
+            let len = u2::extract_u64(data, 8);
             let mut low = (data >> 24) as u8;
             let mut high = (data >> 40) as u8;
             if low > high {
@@ -742,7 +741,7 @@ mod tests {
             hasher.write_usize(i);
             let data = hasher.finish();
 
-            let len = u4::masked_new(data);
+            let len = u4::extract_u64(data, 0);
             let mut low = (data >> 8) as u8;
             let mut high = (data >> 16) as u8;
             if low > high {

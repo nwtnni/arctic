@@ -27,11 +27,11 @@ const_assert_size_align!(Node3, 64, 64);
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, packed(rename = "HeaderPacked"), debug)]
 pub(crate) struct Header {
-    keys: u48,
+    keys: ribbit::u48,
     #[ribbit(offset = 48)]
     frozen: bool,
     #[ribbit(offset = 56)]
-    len: u2,
+    len: ribbit::u2,
 }
 
 impl Header {
@@ -76,13 +76,13 @@ impl linear::Header for ribbit::Packed<Header> {
 
     #[inline]
     fn get(self, key: u8) -> Option<u8> {
-        let index = simd::get_3(self.value, key);
+        let index = simd::get_3(self.into_raw(), key);
         (index < self.len().value()).then_some(index)
     }
 
     #[inline]
     fn get_or_insert(self, key: u8) -> Result<u8, Option<Self>> {
-        let index = simd::get_3(self.value, key);
+        let index = simd::get_3(self.into_raw(), key);
         let len = self.len().value();
 
         if index < len {
@@ -95,23 +95,23 @@ impl linear::Header for ribbit::Packed<Header> {
 
         // Insert key byte and increment length
         let key = (key as u64) << (len << 4);
-        let value = (self.value | key) + (1u64 << 56);
+        let value = (self.into_raw() | key) + (1u64 << 56);
 
         // SAFETY: `len < Self::LEN`
-        Err(Some(unsafe { Self::new_unchecked(value) }))
+        Err(Some(unsafe { Self::from_raw_unchecked(value) }))
     }
 
     fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U, iter: &mut Self::KeyIter) {
         let len = self.len();
-        node::simd::keys_3(self.value, len, lower, upper, iter)
+        node::simd::keys_3(self.into_raw(), len, lower, upper, iter)
     }
 
     fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex> {
-        node::simd::min_3(self.value, self.len(), lower)
+        node::simd::min_3(self.into_raw(), self.len(), lower)
     }
 
     fn max<U: node::Upper>(self, upper: U) -> Option<node::KeyIndex> {
-        node::simd::max_3(self.value, self.len(), upper)
+        node::simd::max_3(self.into_raw(), self.len(), upper)
     }
 }
 

@@ -14,10 +14,7 @@ use crate::raw::node::KeyIndex;
 use crate::raw::node::Node;
 
 #[repr(C, align(64))]
-pub(crate) struct Linear<const LEN: usize, H: ribbit::Pack>
-where
-    <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
-{
+pub(crate) struct Linear<const LEN: usize, H: ribbit::Pack> {
     pub(super) header: Atomic<H>,
     pub(super) edges: [Atomic<edge::Raw>; LEN],
 }
@@ -25,7 +22,6 @@ where
 impl<const LEN: usize, H> Default for Linear<LEN, H>
 where
     H: ribbit::Pack<Packed: Default>,
-    <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
 {
     fn default() -> Self {
         Self {
@@ -38,7 +34,6 @@ where
 unsafe impl<const LEN: usize, H> Node for Linear<LEN, H>
 where
     H: ribbit::Pack<Packed: Header + Default>,
-    <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
 {
     const TYPE: node::Type = <H::Packed as Header>::TYPE;
     const CAPACITY: usize = <H::Packed as Header>::CAPACITY;
@@ -139,7 +134,6 @@ where
 impl<const LEN: usize, H> Debug for Linear<LEN, H>
 where
     H: ribbit::Pack<Packed: Debug>,
-    <H::Packed as ribbit::Unpack>::Loose: ribbit::atomic::Loose,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let name = const {
