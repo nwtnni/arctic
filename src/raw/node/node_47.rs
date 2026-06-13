@@ -335,11 +335,11 @@ impl Debug for Header {
 }
 
 #[derive(Copy, Clone, ribbit::Pack)]
-#[ribbit(size = 16, packed(rename = "MetaPacked"))]
+#[ribbit(size = 16)]
 struct Meta {
     last: u8,
     frozen: bool,
-    len: ribbit::u6,
+    len: u6,
 }
 
 impl Meta {

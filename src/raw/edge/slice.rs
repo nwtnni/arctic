@@ -6,10 +6,10 @@ use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 64, debug)]
+#[ribbit(size = 64, derive(Debug))]
 pub struct Slice {
-    ptr: ribbit::u48,
-    len: ribbit::u14,
+    ptr: u48,
+    len: u14,
     value: bool,
     frozen: bool,
 }

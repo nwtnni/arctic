@@ -120,10 +120,10 @@ enum RefMut<'a> {
 }
 
 #[derive(Copy, Clone, ribbit::Pack)]
-#[ribbit(size = 64, packed(rename = "Set8Packed"))]
+#[ribbit(size = 64)]
 struct Set8 {
-    set: ribbit::u56,
-    len: ribbit::u6,
+    set: u56,
+    len: u6,
 }
 
 impl Set8 {

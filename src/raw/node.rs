@@ -11,6 +11,7 @@
 //! `&dyn Node` that fits in 8 bytes (and hence within a [`crate::raw::Edge`]).
 
 use core::fmt::Debug;
+use core::num::NonZeroU32;
 use core::num::NonZeroU64;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
@@ -166,7 +167,7 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node>(
 
 /// Node type discriminant.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ribbit::Pack)]
-#[ribbit(size = 2, eq, debug, packed(rename = "TypePacked"))]
+#[ribbit(size = 2, derive(Debug, Eq))]
 pub(crate) enum Type {
     Node3 = 0,
     Node15 = 1,
@@ -229,13 +230,13 @@ pub(super) use dispatch;
 /// But takes up 8 bytes, is compatible with `ribbit`, and avoids
 /// jump tables when dispatching (see [`crate::raw::node::dispatch`]).
 #[derive(Copy, Clone, ribbit::Pack)]
-#[ribbit(size = 64, packed(rename = PtrPacked), eq, nonzero)]
+#[ribbit(size = 64, derive(Eq), non_zero)]
 pub struct Ptr {
     #[ribbit(size = 2, get(vis = "pub(crate)"))]
     r#type: crate::raw::node::Type,
 
     #[ribbit(with(skip))]
-    _placeholder: ribbit::NonZeroU32,
+    _placeholder: NonZeroU32,
 }
 
 impl Ptr {

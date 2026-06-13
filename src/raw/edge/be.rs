@@ -17,14 +17,14 @@ use crate::raw::edge::Len as _;
 ///
 /// Optimized for integer keys, or slice keys on big-endian systems.
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 64, debug)]
+#[ribbit(size = 64, derive(Debug))]
 pub struct Be {
     value: bool,
     frozen: bool,
     #[ribbit(offset = 3)]
-    len: ribbit::u3,
+    len: u3,
     #[ribbit(offset = 8)]
-    prefix: ribbit::u56,
+    prefix: u56,
 }
 
 impl Be {

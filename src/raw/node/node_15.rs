@@ -16,11 +16,11 @@ pub(crate) type Node15 = Linear<15, Header>;
 const_assert_size_align!(Node15, 256, 64);
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 128, packed(rename = "HeaderPacked"), debug)]
+#[ribbit(size = 128, derive(Debug))]
 pub(crate) struct Header {
-    keys: ribbit::u120,
+    keys: u120,
     frozen: bool,
-    len: ribbit::u4,
+    len: u4,
 }
 
 impl Header {

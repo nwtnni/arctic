@@ -42,7 +42,7 @@ pub trait Prefix: Send + Sync + Sized {
 // NOTE: this type is used for both **hazards**, which guard
 // parts of the tree, and prefixes of retired edges.
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 64, packed(rename = "BePacked"), debug)]
+#[ribbit(size = 64, derive(Debug))]
 pub struct Be {
     // Hazard: whether to protect nodes
     // Prefix: whether this is a node
@@ -60,10 +60,10 @@ pub struct Be {
     pub(super) overlap: bool,
 
     // NOTE: at offset 3 so we don't need to shift bits
-    len: ribbit::u3,
+    len: u3,
 
     #[ribbit(offset = 8)]
-    prefix: ribbit::u56,
+    prefix: u56,
 }
 
 impl Be {
@@ -198,9 +198,9 @@ impl BePacked {
 }
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 64, packed(rename = "LePacked"), debug)]
+#[ribbit(size = 64, derive(Debug))]
 pub struct Le {
-    prefix: ribbit::u56,
+    prefix: u56,
 
     #[ribbit(get(rename = "is_node"))]
     pub(super) node: bool,
@@ -211,7 +211,7 @@ pub struct Le {
     #[ribbit(get(rename = "is_overlap"))]
     pub(super) overlap: bool,
 
-    len: ribbit::u3,
+    len: u3,
 }
 
 impl Le {
@@ -348,9 +348,9 @@ impl LePacked {
 }
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 128, packed(rename = "Le128Packed"), debug)]
+#[ribbit(size = 128, derive(Debug))]
 pub struct Le128 {
-    prefix: ribbit::u120,
+    prefix: u120,
 
     #[ribbit(get(rename = "is_node"))]
     pub(super) node: bool,
@@ -361,7 +361,7 @@ pub struct Le128 {
     #[ribbit(get(rename = "is_overlap"))]
     pub(super) overlap: bool,
 
-    len: ribbit::u4,
+    len: u4,
 }
 
 impl Le128 {

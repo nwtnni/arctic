@@ -27,7 +27,7 @@ use crate::raw::node::Node3;
 ///
 /// Generic over [`Meta`] to support different byte orderings depending on key type.
 #[derive(Copy, Clone, Default, ribbit::Pack)]
-#[ribbit(size = 128, packed(rename = EdgePacked), eq)]
+#[ribbit(size = 128, derive(Eq))]
 pub(crate) struct Edge<M> {
     #[ribbit(size = 64)]
     pub(crate) meta: M,
@@ -40,7 +40,7 @@ pub(crate) struct Edge<M> {
 ///
 /// Used to reduce code generation, as most node logic is independent of the edge type.
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 128, debug)]
+#[ribbit(size = 128, derive(Debug))]
 pub(crate) struct Raw(u128);
 
 impl Raw {

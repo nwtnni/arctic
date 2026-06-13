@@ -644,7 +644,8 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 [[package]]
 name = "ribbit"
 version = "0.1.0"
-source = "git+https://github.com/nwtnni/ribbit.git#fbbd2b5b7acc8b5cbed4e62d2fcd448e4765a49c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fa7adab93ad4bf486a3632843a95c5099da08b2601235e81e263ff98889545e"
 dependencies = [
  "arbitrary-int",
  "portable-atomic",
@@ -654,7 +655,8 @@ dependencies = [
 [[package]]
 name = "ribbit-derive"
 version = "0.1.0"
-source = "git+https://github.com/nwtnni/ribbit.git#fbbd2b5b7acc8b5cbed4e62d2fcd448e4765a49c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978adcce653b091439d17ca4d4e51f1442b170a6c5612789b328f311dbb2a3c0"
 dependencies = [
  "darling",
  "heck",

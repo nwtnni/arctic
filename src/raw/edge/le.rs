@@ -16,13 +16,13 @@ use crate::raw::edge::Len as _;
 ///
 /// Optimized for slice keys on little-endian systems.
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 64, debug)]
+#[ribbit(size = 64, derive(Debug))]
 pub struct Le {
-    prefix: ribbit::u56,
+    prefix: u56,
     value: bool,
     frozen: bool,
     #[ribbit(offset = 59)]
-    len: ribbit::u3,
+    len: u3,
 }
 
 impl Le {
