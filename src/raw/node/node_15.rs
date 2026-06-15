@@ -137,3 +137,8 @@ impl From<Box<KeyIter15>> for node::KeyIter {
         node::KeyIter::new_15(iter)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    crate::raw::node::header::tests::impl_suite!(crate::Atomic<crate::raw::node::node_15::Header>);
+}

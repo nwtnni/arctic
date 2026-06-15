@@ -6,6 +6,7 @@
 use core::fmt::Debug;
 
 use crate::Atomic;
+use crate::raw;
 use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::KeyIndex;
@@ -37,7 +38,7 @@ where
     type KeyIter = <H as Header>::KeyIter;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
-        if_validate!(crate::assert_unique(keys));
+        if_validate!(assert!(raw::is_unique(keys)));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= Self::CAPACITY);
 
@@ -115,7 +116,7 @@ where
     }
 }
 
-pub(super) trait Header: Debug + Sized {
+pub(super) trait Header: Debug + Default + Sized {
     const TYPE: node::Type;
     type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
 
@@ -136,4 +137,32 @@ pub(super) trait Header: Debug + Sized {
 
     fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex>;
     fn max<U: node::Upper>(&self, upper: U) -> Option<node::KeyIndex>;
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    /// A `get_or_insert` on an empty header succeeds and is consistent with `get`
+    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    pub(in crate::raw::node) fn get_or_insert_empty<H>(key: u8)
+    where
+        H: crate::raw::node::header::Header,
+    {
+        let header = H::default();
+        let get_or_insert = header.get_or_insert(key).expect("get_or_insert empty");
+        let get = header.get(key).expect("get after get_or_insert");
+        assert_eq!(get, get_or_insert)
+    }
+
+    macro_rules! impl_suite {
+        ($type:ty) => {
+            #[cfg(feature = "proptest")]
+            proptest::proptest! {
+                #[test]
+                fn get_or_insert_empty(key: u8) {
+                    crate::raw::node::header::tests::get_or_insert_empty::<$type>(key)
+                }
+            }
+        };
+    }
+    pub(in crate::raw::node) use impl_suite;
 }

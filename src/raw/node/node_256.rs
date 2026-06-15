@@ -6,6 +6,7 @@
 use core::fmt::Debug;
 
 use crate::Atomic;
+use crate::raw;
 use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::KeyIter256;
@@ -31,7 +32,7 @@ unsafe impl Node for Node256 {
     type KeyIter = KeyIter256;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
-        if_validate!(crate::assert_unique(keys));
+        if_validate!(assert!(raw::is_unique(keys)));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= Self::CAPACITY);
 

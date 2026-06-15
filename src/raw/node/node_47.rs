@@ -186,7 +186,7 @@ impl Header {
 
     fn ensure_meta_consistent(&self, meta: ribbit::Packed<Meta>) {
         let len = meta.len().value();
-        validate!((15..=47).contains(&len));
+        validate!(len <= 47);
         let index = len - 1;
 
         let key = meta.last();

@@ -142,19 +142,6 @@ mod seal {
 #[cold]
 pub(crate) fn cold() {}
 
-fn assert_unique(keys: &[u8]) {
-    let mut seen = [0u128; 2];
-    for key in keys {
-        let row = key / 128;
-        let col = key % 128;
-        let bit = 1 << col;
-        if seen[row as usize] & bit > 0 {
-            panic!("Duplicate key {key:#02x?}");
-        }
-        seen[row as usize] |= bit;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::Ascend;

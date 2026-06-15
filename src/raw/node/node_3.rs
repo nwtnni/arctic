@@ -48,10 +48,9 @@ impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node3;
     type KeyIter = KeyIter3;
 
-    #[expect(clippy::get_first)]
     unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
         let mut buffer = 0u64;
-        buffer |= keys.get(0).copied().unwrap_or(0) as u64;
+        buffer |= keys.first().copied().unwrap_or(0) as u64;
         buffer |= (keys.get(1).copied().unwrap_or(0) as u64) << 16;
         buffer |= (keys.get(2).copied().unwrap_or(0) as u64) << 32;
         buffer |= (keys.len() as u64) << 56;
@@ -210,4 +209,41 @@ impl From<KeyIter3> for node::KeyIter {
     fn from(iter: KeyIter3) -> Self {
         node::KeyIter::new_3(iter)
     }
+}
+
+#[cfg(feature = "proptest")]
+impl proptest::arbitrary::Arbitrary for Header {
+    type Parameters = ();
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        use proptest::strategy::Strategy as _;
+
+        use crate::raw;
+        (
+            proptest::collection::vec(
+                u8::arbitrary(),
+                ..<u2 as ribbit::Integer>::MAX.value() as usize,
+            )
+            .prop_filter("unique keys", |keys| raw::is_unique(keys)),
+            bool::arbitrary(),
+        )
+            .prop_map(|(keys, frozen)| {
+                let mut buffer = 0u64;
+                buffer |= keys.first().copied().unwrap_or(0) as u64;
+                buffer |= (keys.get(1).copied().unwrap_or(0) as u64) << 16;
+                buffer |= (keys.get(2).copied().unwrap_or(0) as u64) << 32;
+                Self {
+                    keys: u48::new(buffer),
+                    frozen,
+                    len: u2::new(keys.len() as u8),
+                }
+            })
+            .boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    crate::raw::node::header::tests::impl_suite!(crate::Atomic<crate::raw::node::node_3::Header>);
 }

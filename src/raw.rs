@@ -53,3 +53,17 @@ impl Smo {
         matches!(self, Self::ReplaceNode)
     }
 }
+
+fn is_unique(keys: &[u8]) -> bool {
+    let mut seen = [0u128; 2];
+    for key in keys {
+        let row = key / 128;
+        let col = key % 128;
+        let bit = 1 << col;
+        if seen[row as usize] & bit > 0 {
+            return false;
+        }
+        seen[row as usize] |= bit;
+    }
+    true
+}
