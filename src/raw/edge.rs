@@ -171,8 +171,11 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
     /// Return `true` if this edge has no child.
     #[inline]
     pub(crate) fn is_null(self) -> bool {
-        let null = !self.meta().is_value() && self.child_raw() == 0;
-        validate!(!null || self.unfreeze() == Edge::NULL);
+        let null = self.unfreeze() == Edge::NULL;
+        validate!(
+            null || self.meta().is_value() || self.child_raw() > 0,
+            "Edge must be null, a value, or a node"
+        );
         null
     }
 
