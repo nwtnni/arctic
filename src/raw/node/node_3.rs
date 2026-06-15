@@ -1,6 +1,7 @@
 //! [`Node3`] is linear and can contain at most 3 key-edge pairs.
 
 use core::ptr::NonNull;
+use core::sync::atomic::Ordering;
 
 use ribbit::u2;
 use ribbit::u48;
@@ -13,19 +14,16 @@ use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;
-use crate::raw::node::Linear;
-#[cfg_attr(not(doc), expect(unused_imports))]
-use crate::raw::node::Node;
+use crate::raw::node::header;
 use crate::raw::node::iter::KeyIter3;
-use crate::raw::node::linear;
 use crate::raw::node::simd;
 
-/// [`Node`] representation that contains at most 3 key-edge pairs.
-pub(crate) type Node3 = Linear<3, Header>;
+/// [`Node`][crate::raw::node::Node] representation that contains at most 3 key-edge pairs.
+pub(crate) type Node3 = header::Node<3, Atomic<Header>>;
 
 const_assert_size_align!(Node3, 64, 64);
 
-#[derive(Copy, Clone, Debug, ribbit::Pack)]
+#[derive(Copy, Clone, Debug, Default, ribbit::Pack)]
 #[ribbit(size = 64, derive(Debug))]
 pub(crate) struct Header {
     keys: u48,
@@ -46,7 +44,7 @@ impl Default for HeaderPacked {
     }
 }
 
-impl linear::Header for ribbit::Packed<Header> {
+impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node3;
     const CAPACITY: usize = 3;
     type KeyIter = KeyIter3;
@@ -57,30 +55,74 @@ impl linear::Header for ribbit::Packed<Header> {
         buffer |= keys.get(0).copied().unwrap_or(0) as u64;
         buffer |= (keys.get(1).copied().unwrap_or(0) as u64) << 16;
         buffer |= (keys.get(2).copied().unwrap_or(0) as u64) << 32;
-        Self::new(u48::new(buffer), false, u2::new(keys.len() as u8))
+        Self::new_packed(ribbit::Packed::<Header>::new(
+            u48::new(buffer),
+            false,
+            u2::new(keys.len() as u8),
+        ))
     }
 
     #[inline]
-    fn freeze(self) -> Self {
-        self.with_frozen(true)
+    fn freeze(&self) -> usize {
+        let mut header = self.load_packed(Ordering::Relaxed);
+
+        while !header.frozen() {
+            match self.compare_exchange_packed(
+                header,
+                header.with_frozen(true),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(conflict) => header = conflict,
+            }
+        }
+
+        header.len().value() as usize
     }
 
     #[inline]
-    fn is_frozen(self) -> bool {
-        self.frozen()
+    fn get(&self, key: u8) -> Option<u8> {
+        let header = self.load_packed(Ordering::Relaxed);
+        let index = simd::get_3(header.into_raw(), key);
+        (index < header.len().value()).then_some(index)
     }
 
     #[inline]
-    fn len(self) -> u8 {
-        self.len().value()
+    fn get_or_insert(&self, key: u8) -> Option<u8> {
+        let mut old = self.load_packed(Ordering::Relaxed);
+
+        loop {
+            let new = match old.get_or_insert(key) {
+                Ok(index) => return Some(index),
+                Err(None) => return None,
+                Err(Some(new)) => new,
+            };
+
+            match self.compare_exchange_packed(old, new, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break Some(old.len().value()),
+                Err(conflict) => old = conflict,
+            }
+        }
     }
 
-    #[inline]
-    fn get(self, key: u8) -> Option<u8> {
-        let index = simd::get_3(self.into_raw(), key);
-        (index < self.len().value()).then_some(index)
+    fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U, iter: &mut Self::KeyIter) {
+        let header = self.load_packed(Ordering::Relaxed);
+        node::simd::keys_3(header.into_raw(), header.len(), lower, upper, iter)
     }
 
+    fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {
+        let header = self.load_packed(Ordering::Relaxed);
+        node::simd::min_3(header.into_raw(), header.len(), lower)
+    }
+
+    fn max<U: node::Upper>(&self, upper: U) -> Option<node::KeyIndex> {
+        let header = self.load_packed(Ordering::Relaxed);
+        node::simd::max_3(header.into_raw(), header.len(), upper)
+    }
+}
+
+impl HeaderPacked {
     #[inline]
     fn get_or_insert(self, key: u8) -> Result<u8, Option<Self>> {
         let index = simd::get_3(self.into_raw(), key);
@@ -90,7 +132,7 @@ impl linear::Header for ribbit::Packed<Header> {
             return Ok(index);
         }
 
-        if len >= Self::CAPACITY as u8 || self.is_frozen() {
+        if len >= <Node3 as node::Node>::CAPACITY as u8 || self.frozen() {
             return Err(None);
         }
 
@@ -101,22 +143,9 @@ impl linear::Header for ribbit::Packed<Header> {
         // SAFETY: `len < Self::LEN`
         Err(Some(unsafe { Self::from_raw_unchecked(value) }))
     }
-
-    fn keys<L: node::Lower, U: node::Upper>(self, lower: L, upper: U, iter: &mut Self::KeyIter) {
-        let len = self.len();
-        node::simd::keys_3(self.into_raw(), len, lower, upper, iter)
-    }
-
-    fn min<L: node::Lower>(self, lower: L) -> Option<node::KeyIndex> {
-        node::simd::min_3(self.into_raw(), self.len(), lower)
-    }
-
-    fn max<U: node::Upper>(self, upper: U) -> Option<node::KeyIndex> {
-        node::simd::max_3(self.into_raw(), self.len(), upper)
-    }
 }
 
-impl Linear<3, Header> {
+impl header::Node<3, Atomic<Header>> {
     pub(crate) fn new_expand<M: ribbit::Pack<Packed: edge::Meta>>(
         meta: ribbit::Packed<M>,
         keys: [u8; 2],

@@ -16,8 +16,8 @@ use core::num::NonZeroU64;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
+mod header;
 mod iter;
-mod linear;
 mod node_15;
 mod node_256;
 mod node_3;
@@ -45,7 +45,6 @@ use crate::raw::node::iter::KeyIter15;
 use crate::raw::node::iter::KeyIter63;
 use crate::raw::node::iter::KeyIter256;
 use crate::stat;
-use linear::Linear;
 
 /// A node is a partial mapping from `u8` to [`edge::Raw`].
 ///
