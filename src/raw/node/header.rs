@@ -42,7 +42,7 @@ where
         validate!(keys.len() <= Self::CAPACITY);
 
         let mut node = Box::new(Self::default());
-        node.header = unsafe { <H as Header>::new_unchecked(keys) };
+        unsafe { <H as Header>::initialize_unchecked(&mut node.header, keys) };
 
         for (out, r#in) in node.edges.iter_mut().zip(edges) {
             out.set_packed(*r#in);
@@ -103,7 +103,8 @@ where
             } else if LEN == 15 {
                 "Node15"
             } else {
-                unreachable!()
+                assert!(LEN == 47);
+                "Node47"
             }
         };
 
@@ -119,7 +120,7 @@ pub(super) trait Header: Debug + Sized {
     const CAPACITY: usize;
     type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
 
-    unsafe fn new_unchecked(keys: &[u8]) -> Self;
+    unsafe fn initialize_unchecked(&mut self, keys: &[u8]);
 
     fn freeze(&self) -> usize;
 

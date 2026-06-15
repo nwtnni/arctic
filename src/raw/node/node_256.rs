@@ -13,7 +13,7 @@ use crate::raw::node::Node;
 
 /// [`Node`] representation that contains exactly 256 key-edge pairs.
 #[repr(C, align(4096))]
-pub(crate) struct Node256([Atomic<edge::Raw>; 256]);
+pub(super) struct Node256([Atomic<edge::Raw>; 256]);
 
 const_assert_size_align!(Node256, 4096, 4096);
 

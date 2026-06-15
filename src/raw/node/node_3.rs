@@ -19,13 +19,13 @@ use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::simd;
 
 /// [`Node`][crate::raw::node::Node] representation that contains at most 3 key-edge pairs.
-pub(crate) type Node3 = header::Node<3, Atomic<Header>>;
+pub(in crate::raw) type Node3 = header::Node<3, Atomic<Header>>;
 
 const_assert_size_align!(Node3, 64, 64);
 
 #[derive(Copy, Clone, Debug, Default, ribbit::Pack)]
 #[ribbit(size = 64, derive(Debug))]
-pub(crate) struct Header {
+pub(in crate::raw) struct Header {
     keys: u48,
     #[ribbit(offset = 48)]
     frozen: bool,
@@ -50,16 +50,13 @@ impl header::Header for Atomic<Header> {
     type KeyIter = KeyIter3;
 
     #[expect(clippy::get_first)]
-    unsafe fn new_unchecked(keys: &[u8]) -> Self {
+    unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
         let mut buffer = 0u64;
         buffer |= keys.get(0).copied().unwrap_or(0) as u64;
         buffer |= (keys.get(1).copied().unwrap_or(0) as u64) << 16;
         buffer |= (keys.get(2).copied().unwrap_or(0) as u64) << 32;
-        Self::new_packed(ribbit::Packed::<Header>::new(
-            u48::new(buffer),
-            false,
-            u2::new(keys.len() as u8),
-        ))
+        buffer |= (keys.len() as u64) << 56;
+        *self = Self::new_packed(unsafe { ribbit::Packed::<Header>::from_raw_unchecked(buffer) });
     }
 
     #[inline]

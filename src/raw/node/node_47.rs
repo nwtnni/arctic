@@ -12,106 +12,24 @@ use core::sync::atomic::Ordering;
 use ribbit::u6;
 
 use crate::Atomic;
-use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
-use crate::raw::node::Node;
+use crate::raw::node::header;
 use crate::raw::node::iter::KeyIndex;
 use crate::raw::node::iter::KeyIter63;
 use crate::stat;
 
 /// [`Node`] representation that contains at most 47 key-edge pairs.
-#[repr(C, align(1024))]
-pub(crate) struct Node47 {
-    header: Header,
-    edges: [Atomic<edge::Raw>; 47],
-}
+pub(super) type Node47 = header::Node<47, Header>;
 
-const_assert_size_align!(Node47, 1024, 1024);
-
-impl Default for Node47 {
-    fn default() -> Self {
-        Self {
-            header: Header::default(),
-            edges: core::array::from_fn(|_| Atomic::new_packed(edge::Raw::NULL)),
-        }
-    }
-}
-
-unsafe impl Node for Node47 {
-    const TYPE: node::Type = node::Type::Node47;
-    const CAPACITY: usize = 47;
-    type KeyIter = KeyIter63;
-
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
-        if_validate!(crate::assert_unique(keys));
-        validate!(keys.len() == edges.len());
-        validate!(keys.len() <= Self::CAPACITY);
-
-        let mut node = Box::new(Self::default());
-        node.header.initialize(keys);
-        for (out, r#in) in node.edges.iter_mut().zip(edges) {
-            out.set_packed(*r#in);
-        }
-        node
-    }
-
-    fn keys<L: node::iter::Lower, U: node::iter::Upper>(
-        &self,
-        lower: L,
-        upper: U,
-        iter: &mut Self::KeyIter,
-    ) {
-        self.header.keys(lower, upper, iter)
-    }
-
-    #[inline]
-    fn edges(&self) -> &[Atomic<edge::Raw>] {
-        &self.edges
-    }
-
-    #[inline]
-    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>] {
-        &mut self.edges
-    }
-
-    #[inline]
-    fn get_key(&self, key: u8) -> Option<u8> {
-        self.header.get(key)
-    }
-
-    #[inline]
-    fn get_or_insert_key(&self, key: u8) -> Option<u8> {
-        self.header.get_or_insert(key)
-    }
-
-    #[inline]
-    fn freeze_header(&self) -> usize {
-        self.header.freeze() as usize
-    }
-
-    #[inline]
-    fn min<L: node::Lower>(&self, lower: L) -> Option<KeyIndex> {
-        self.header.min(lower)
-    }
-
-    #[inline]
-    fn max<U: node::Upper>(&self, upper: U) -> Option<KeyIndex> {
-        self.header.max(upper)
-    }
-}
-
-impl Debug for Node47 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Node47")
-            .field("header", &self.header)
-            .field("edges", &self.edges)
-            .finish()
-    }
-}
+// Note: aligning to 1024 would require a newtype wrapper
+// and a boilerplate implementation of Node. Just assume a
+// reasonable memory allocator will have a dedicated
+// size class for 1KiB.
+const_assert_size_align!(Node47, 1024, 64);
 
 #[repr(C, align(16))]
-struct Header {
+pub(super) struct Header {
     data: [Atomic<u128>; 16],
     meta: Atomic<Meta>,
 }
@@ -119,6 +37,10 @@ struct Header {
 impl Default for Header {
     fn default() -> Self {
         Self {
+            // NOTE: fill in uninitialized indices with 0x7F so that
+            // readers can call `get` without comparing against the
+            // length. Don't use 0xFF because AVX2 only supports
+            // signed byte-wise comparison.
             data: core::array::from_fn(|_| {
                 Atomic::new_packed(0x7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F)
             }),
@@ -127,10 +49,12 @@ impl Default for Header {
     }
 }
 
-const_assert_size_align!(Header, 272, 16);
+impl header::Header for Header {
+    const TYPE: node::Type = node::Type::Node47;
+    const CAPACITY: usize = 47;
+    type KeyIter = KeyIter63;
 
-impl Header {
-    fn initialize(&mut self, keys: &[u8]) {
+    unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
         for (i, key) in keys.iter().enumerate() {
             let (row, col) = Self::key_to_row_col(*key);
             let row = unsafe { self.data_unchecked_mut(row) };
@@ -144,7 +68,7 @@ impl Header {
         ));
     }
 
-    fn freeze(&self) -> u8 {
+    fn freeze(&self) -> usize {
         let mut old = self.meta.load_packed(Ordering::Relaxed);
         while !old.frozen() {
             self.ensure_meta_consistent(old);
@@ -158,7 +82,7 @@ impl Header {
                 Err(conflict) => old = conflict,
             }
         }
-        old.len().value()
+        old.len().value() as usize
     }
 
     fn get(&self, key: u8) -> Option<u8> {
@@ -252,7 +176,9 @@ impl Header {
     fn max<U: node::Upper>(&self, _upper: U) -> Option<KeyIndex> {
         todo!()
     }
+}
 
+impl Header {
     fn meta_consistent(&self) -> ribbit::Packed<Meta> {
         let meta = self.meta.load_packed(Ordering::Relaxed);
         self.ensure_meta_consistent(meta);
@@ -319,7 +245,8 @@ impl Debug for Header {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let meta = self.meta.load_packed(Ordering::Relaxed);
         let mut iter = KeyIter63::default();
-        self.keys(
+        header::Header::keys(
+            self,
             Unbound::<()>::default(),
             Unbound::<()>::default(),
             &mut iter,

@@ -11,13 +11,13 @@ use crate::raw::node::KeyIter15;
 use crate::raw::node::header;
 
 /// [`Node`][crate::raw::node::Node] representation that contains at most 15 key-edge pairs.
-pub(crate) type Node15 = header::Node<15, Atomic<Header>>;
+pub(super) type Node15 = header::Node<15, Atomic<Header>>;
 
 const_assert_size_align!(Node15, 256, 64);
 
 #[derive(Copy, Clone, Debug, Default, ribbit::Pack)]
 #[ribbit(size = 128, derive(Debug))]
-pub(crate) struct Header {
+pub(super) struct Header {
     keys: u120,
     frozen: bool,
     len: u4,
@@ -39,14 +39,15 @@ impl header::Header for Atomic<Header> {
     const CAPACITY: usize = 15;
     type KeyIter = KeyIter15;
 
-    unsafe fn new_unchecked(keys: &[u8]) -> Self {
+    unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
         let mut buffer = [0u8; 16];
         buffer[..keys.len()].copy_from_slice(keys);
-        Self::new_packed(ribbit::Packed::<Header>::new(
-            u120::new(u128::from_le_bytes(buffer)),
-            false,
-            u4::new(keys.len() as u8),
-        ))
+        // Skip frozen bit
+        buffer[15] = (keys.len() as u8) << 1;
+
+        *self = Self::new_packed(unsafe {
+            ribbit::Packed::<Header>::from_raw_unchecked(u128::from_le_bytes(buffer))
+        })
     }
 
     #[inline]

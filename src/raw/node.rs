@@ -29,10 +29,10 @@ pub(crate) use iter::KeyIndex;
 pub(crate) use iter::KeyIter;
 pub(crate) use iter::Lower;
 pub(crate) use iter::Upper;
-pub(crate) use node_3::Node3;
-pub(crate) use node_15::Node15;
-pub(crate) use node_47::Node47;
-pub(crate) use node_256::Node256;
+pub(super) use node_3::Node3;
+use node_15::Node15;
+use node_47::Node47;
+use node_256::Node256;
 
 use crate::Atomic;
 use crate::raw::Edge;
@@ -279,7 +279,7 @@ impl Ptr {
 
     // The only way a larger node can be created is through node replacement.
     #[inline]
-    pub(crate) fn new_node_3(node: Box<Node3>) -> ribbit::Packed<Self> {
+    pub(super) fn new_node_3(node: Box<Node3>) -> ribbit::Packed<Self> {
         Self::new(node)
     }
 
@@ -456,7 +456,7 @@ impl PtrPacked {
     }
 
     #[inline(always)]
-    pub(crate) fn dispatch<N3, N15, N47, N256, T>(
+    fn dispatch<N3, N15, N47, N256, T>(
         self,
         node_3: N3,
         node_15: N15,
