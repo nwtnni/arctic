@@ -74,10 +74,10 @@ where
     pub(crate) fn traverse_get(&mut self) -> Option<u64> {
         loop {
             let edge = self.edge().load_packed(Ordering::Acquire);
+            let len = self.reader.match_exact(edge.meta())?;
 
             match edge.child()? {
                 edge::Child::Node(node) => {
-                    let len = self.reader.match_exact(edge.meta())?;
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
@@ -87,11 +87,7 @@ where
                 }
                 edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
-                    validate!(
-                        self.reader
-                            .match_exact(edge.meta())
-                            .is_some_and(|len| self.reader.len() == len.into())
-                    );
+                    validate!(self.reader.len() == len.into());
                     return Some(value);
                 }
             }
@@ -174,10 +170,10 @@ where
     pub(crate) fn traverse_update(&mut self) -> Option<Result<Update<R::Edge>, Frozen>> {
         loop {
             let edge = self.edge().load_packed(Ordering::Acquire);
+            let len = self.reader.match_exact(edge.meta())?;
 
             match edge.child()? {
                 edge::Child::Node(node) => {
-                    let len = self.reader.match_exact(edge.meta())?;
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
@@ -187,11 +183,7 @@ where
                 }
                 edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
-                    validate!(
-                        self.reader
-                            .match_exact(edge.meta())
-                            .is_some_and(|len| self.reader.len() == len.into())
-                    );
+                    validate!(self.reader.len() == len.into());
 
                     return Some({
                         if edge.meta().is_frozen() {
@@ -236,11 +228,7 @@ where
                 }
                 edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
-                    validate!(
-                        self.reader
-                            .match_exact(edge.meta())
-                            .is_some_and(|len| self.reader.len() == len.into())
-                    );
+                    validate!(self.reader.len() == len.into());
 
                     return Insert::Value {
                         value: Some(value),

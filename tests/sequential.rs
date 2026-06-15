@@ -2,6 +2,7 @@ use core::borrow::Borrow as _;
 use core::fmt::Debug;
 use core::ops::ControlFlow;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 
 use arctic::NonNullString;
 use proptest::arbitrary::Arbitrary;
@@ -27,7 +28,7 @@ prop_state_machine! {
         sequential
         1000
         =>
-        Arctic<u16, u64>
+        Arctic<u32, u64>
     );
 
     #[test]
@@ -43,7 +44,7 @@ prop_state_machine! {
         sequential
         1000
         =>
-        Arctic<u16, u64>
+        Arctic<u128, u64>
     );
 
     #[test]
@@ -58,12 +59,18 @@ prop_state_machine! {
 #[derive(Clone, Debug)]
 pub enum Transition<K, V> {
     Upsert(K, V),
+    Update(K, V),
+    Insert(K, V),
     Remove(K),
+    Get(K),
     Range { descend: bool, lower: K, upper: K },
 }
 
 #[derive(Debug, Clone)]
-struct Map<K, V>(BTreeMap<K, V>);
+struct Map<K, V> {
+    map: BTreeMap<K, V>,
+    prev: Option<V>,
+}
 
 impl<K, V> ReferenceStateMachine for Map<K, V>
 where
@@ -74,19 +81,27 @@ where
     type Transition = Transition<K, V>;
 
     fn init_state() -> proptest::prelude::BoxedStrategy<Self::State> {
-        Just(Self(BTreeMap::new())).boxed()
+        Just(Self {
+            map: BTreeMap::new(),
+            prev: None,
+        })
+        .boxed()
     }
 
     fn transitions(state: &Self::State) -> proptest::prelude::BoxedStrategy<Self::Transition> {
         prop_oneof![
             1 => (K::arbitrary(), V::arbitrary()).prop_map(|(key, value)| Transition::Upsert(key, value)),
+            1 => (K::arbitrary(), V::arbitrary()).prop_map(|(key, value)| Transition::Update(key, value)),
+            1 => (K::arbitrary(), V::arbitrary()).prop_map(|(key, value)| Transition::Insert(key, value)),
+            1 => K::arbitrary().prop_map(|key| Transition::Get(key)),
+
             1 => proptest::prelude::any::<Selector>().prop_map({
                 let state = state.clone();
                 move |selector| {
-                    let key = if state.0.is_empty() {
+                    let key = if state.map.is_empty() {
                         K::default()
                     } else {
-                        selector.select(state.0.keys()).clone()
+                        selector.select(state.map.keys()).clone()
                     };
                     Transition::Remove(key)
                 }
@@ -94,12 +109,12 @@ where
             1 => (bool::arbitrary(), K::arbitrary(), proptest::prelude::any::<Selector>()).prop_map({
                 let state = state.clone();
                 move |(descend, random, selector)| {
-                    if state.0.is_empty() {
+                    if state.map.is_empty() {
                         return Transition::Range { descend, lower: K::default(), upper: K::default() };
                     }
 
                     let mut lower = random;
-                    let mut upper = selector.select(state.0.keys()).clone();
+                    let mut upper = selector.select(state.map.keys()).clone();
 
                     if lower > upper {
                         core::mem::swap(&mut lower, &mut upper);
@@ -114,12 +129,25 @@ where
     fn apply(mut state: Self::State, transition: &Self::Transition) -> Self::State {
         match transition {
             Transition::Upsert(key, value) => {
-                state.0.insert(key.clone(), value.clone());
+                state.prev = state.map.insert(key.clone(), value.clone());
             }
+            Transition::Update(key, value) => match state.map.entry(key.clone()) {
+                Entry::Occupied(mut entry) => state.prev = Some(entry.insert(value.clone())),
+                Entry::Vacant(_) => state.prev = None,
+            },
+            Transition::Insert(key, value) => match state.map.entry(key.clone()) {
+                Entry::Vacant(entry) => {
+                    state.prev = None;
+                    entry.insert(value.clone());
+                }
+                Entry::Occupied(entry) => {
+                    state.prev = Some(entry.get().clone());
+                }
+            },
             Transition::Remove(key) => {
-                state.0.remove(key);
+                state.prev = state.map.remove(key);
             }
-            Transition::Range { .. } => (),
+            Transition::Get(_) | Transition::Range { .. } => (),
         }
         state
     }
@@ -133,8 +161,9 @@ impl<K, V> StateMachineTest for Arctic<K, V>
 where
     K: arctic::concurrent::smr::hazard::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
     K::Borrowed: Ord + core::fmt::Debug,
-    V: arctic::concurrent::Value + Arbitrary + Clone + Debug + Send + Sync + 'static,
-    V::Target: Debug + PartialEq + PartialEq<V>,
+    V: arctic::concurrent::Value + Arbitrary + Clone + Debug + Eq + Send + Sync + 'static,
+    V::Target: Debug + PartialEq + PartialEq<V> + Clone,
+    for<'a> Option<&'a V::Target>: PartialEq<Option<&'a V>>,
 {
     type SystemUnderTest = Self;
 
@@ -151,10 +180,62 @@ where
     ) -> Self::SystemUnderTest {
         match transition {
             Transition::Upsert(key, value) => {
-                state.0.upsert(K::as_insert(&key), value);
+                let upserted = state.0.upsert(K::as_insert(&key), value.clone());
+                assert_eq!(upserted.old(), expected.prev.as_ref());
+                assert_eq!(upserted.new(), &value);
+                drop(upserted);
+                assert_eq!(state.0.get(key.borrow()).as_deref(), Some(&value));
+            }
+            Transition::Update(key, value) => match state.0.update(key.borrow(), value.clone()) {
+                Ok(updated) => {
+                    assert_eq!(
+                        updated.old(),
+                        expected.prev.as_ref().expect("Update previous is Some"),
+                    );
+                    assert_eq!(updated.new(), &value);
+                    drop(updated);
+                    assert_eq!(state.0.get(key.borrow()).as_deref(), Some(&value));
+                }
+                Err(new) => {
+                    assert_eq!(new, value);
+                    assert!(state.0.get(key.borrow()).is_none());
+                }
+            },
+            Transition::Insert(key, value) => {
+                match state.0.insert(K::as_insert(&key), value.clone()) {
+                    Ok(new) => {
+                        assert_eq!(&*new, &value);
+                        assert_eq!(state.0.get(key.borrow()).as_deref(), Some(&value));
+                    }
+                    Err((old, new)) => {
+                        assert_eq!(
+                            &*old,
+                            expected.prev.as_ref().expect("Insert previous is Some")
+                        );
+                        assert_eq!(new, value);
+                        let value = (*old).clone();
+                        drop(old);
+                        assert_eq!(
+                            state
+                                .0
+                                .get(key.borrow())
+                                .as_deref()
+                                .expect("Insert previous is Some"),
+                            &value
+                        );
+                    }
+                }
             }
             Transition::Remove(key) => {
-                state.0.remove(K::borrow(&key));
+                let removed = state.0.remove(K::borrow(&key));
+                assert_eq!(removed.as_deref(), expected.prev.as_ref());
+                assert!(state.0.get(key.borrow()).is_none());
+            }
+            Transition::Get(key) => {
+                assert_eq!(
+                    state.0.get(key.borrow()).as_deref(),
+                    expected.map.get(key.borrow()),
+                );
             }
             Transition::Range {
                 descend,
@@ -162,7 +243,7 @@ where
                 upper,
             } => {
                 let actual = state.0.range(lower.borrow()..=upper.borrow());
-                let expected = expected.0.range::<K, _>(lower.clone()..=upper.clone());
+                let expected = expected.map.range::<K, _>(lower.clone()..=upper.clone());
                 let mut expected = if descend {
                     Box::new(expected.rev())
                 } else {
