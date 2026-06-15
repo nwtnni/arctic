@@ -127,7 +127,7 @@ impl Default for Header {
     }
 }
 
-const _: [(); 272] = [(); core::mem::size_of::<Header>()];
+const_assert_size_align!(Header, 272, 16);
 
 impl Header {
     fn initialize(&mut self, keys: &[u8]) {

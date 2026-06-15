@@ -34,7 +34,9 @@
 
 macro_rules! const_assert_size_align {
     ($ty:ty, $size:expr, $align:expr) => {
+        #[cfg(not(feature = "shuttle"))]
         const _: [(); $size] = [(); core::mem::size_of::<$ty>()];
+        #[cfg(not(feature = "shuttle"))]
         const _: [(); $align] = [(); core::mem::align_of::<$ty>()];
     };
 }
@@ -78,13 +80,12 @@ macro_rules! simd {
     }};
 }
 
-mod atomic;
 pub mod concurrent;
 pub mod raw;
 pub mod sequential;
 pub mod stat;
+mod sync;
 
-pub(crate) use atomic::Atomic;
 #[doc(inline)]
 pub use raw::Key;
 #[doc(inline)]
@@ -97,6 +98,7 @@ pub use raw::key::string::NonNullStr;
 pub use raw::key::string::NonNullString;
 #[doc(inline)]
 pub use raw::key::vec::NonPrefixVec;
+pub(crate) use sync::Atomic;
 
 /// Key order for scan operations (e.g., [`concurrent::Shard::entries`]).
 ///

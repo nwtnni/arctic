@@ -15,7 +15,7 @@ impl<K: Key> Map<K> {
     /// Constructs a new empty map. Does not allocate.
     #[inline]
     pub(crate) const fn new() -> Self {
-        Self(Atomic::new_raw(ribbit::atomic::AtomicU128::new(
+        Self(Atomic::new_raw(crate::sync::AtomicU128::new(
             Edge::<K::Edge>::NULL.into_raw(),
         )))
     }
