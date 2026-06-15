@@ -51,7 +51,6 @@ impl Default for Header {
 
 impl header::Header for Header {
     const TYPE: node::Type = node::Type::Node47;
-    const CAPACITY: usize = 47;
     type KeyIter = KeyIter63;
 
     unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {

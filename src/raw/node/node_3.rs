@@ -46,7 +46,6 @@ impl Default for HeaderPacked {
 
 impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node3;
-    const CAPACITY: usize = 3;
     type KeyIter = KeyIter3;
 
     #[expect(clippy::get_first)]

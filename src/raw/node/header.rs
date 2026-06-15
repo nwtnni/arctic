@@ -33,7 +33,7 @@ where
     H: Default + Header,
 {
     const TYPE: node::Type = <H as Header>::TYPE;
-    const CAPACITY: usize = <H as Header>::CAPACITY;
+    const CAPACITY: usize = LEN;
     type KeyIter = <H as Header>::KeyIter;
 
     unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
@@ -117,7 +117,6 @@ where
 
 pub(super) trait Header: Debug + Sized {
     const TYPE: node::Type;
-    const CAPACITY: usize;
     type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
 
     unsafe fn initialize_unchecked(&mut self, keys: &[u8]);

@@ -36,7 +36,6 @@ impl Default for HeaderPacked {
 
 impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node15;
-    const CAPACITY: usize = 15;
     type KeyIter = KeyIter15;
 
     unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
