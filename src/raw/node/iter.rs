@@ -401,7 +401,7 @@ impl<const N: usize> Default for KeyIterN<N> {
 
 #[repr(C, align(8))]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct KeyIter3(pub(super) KeyIterN<3>);
+pub(in crate::raw) struct KeyIter3(pub(super) KeyIterN<3>);
 
 #[repr(C, align(32))]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]

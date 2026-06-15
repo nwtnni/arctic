@@ -14,12 +14,15 @@ use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;
+use crate::raw::node::Node;
 use crate::raw::node::header;
 use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::simd;
 
+const CAPACITY: usize = 3;
+
 /// [`Node`][crate::raw::node::Node] representation that contains at most 3 key-edge pairs.
-pub(in crate::raw) type Node3 = header::Node<3, Atomic<Header>>;
+pub(in crate::raw) type Node3 = Node<CAPACITY, Atomic<Header>>;
 
 const_assert_size_align!(Node3, 64, 64);
 
@@ -44,7 +47,7 @@ impl Default for HeaderPacked {
     }
 }
 
-impl header::Header for Atomic<Header> {
+unsafe impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node3;
     type KeyIter = KeyIter3;
 
@@ -127,7 +130,7 @@ impl HeaderPacked {
             return Ok(index);
         }
 
-        if len >= <Node3 as node::Node>::CAPACITY as u8 || self.frozen() {
+        if len >= CAPACITY as u8 || self.frozen() {
             return Err(None);
         }
 
@@ -140,7 +143,7 @@ impl HeaderPacked {
     }
 }
 
-impl header::Node<3, Atomic<Header>> {
+impl Node<3, Atomic<Header>> {
     pub(crate) fn new_expand<M: ribbit::Pack<Packed: edge::Meta>>(
         meta: ribbit::Packed<M>,
         keys: [u8; 2],

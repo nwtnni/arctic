@@ -14,16 +14,19 @@ use ribbit::u6;
 use crate::Atomic;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
+use crate::raw::node::Node;
 use crate::raw::node::header;
 use crate::raw::node::iter::KeyIndex;
 use crate::raw::node::iter::KeyIter63;
 use crate::stat;
 
+const CAPACITY: usize = 47;
+
 /// [`Node`] representation that contains at most 47 key-edge pairs.
-pub(super) type Node47 = header::Node<47, Header>;
+pub(super) type Node47 = Node<CAPACITY, Header>;
 
 // Note: aligning to 1024 would require a newtype wrapper
-// and a boilerplate implementation of Node. Just assume a
+// and more boilerplate. Just assume a
 // reasonable memory allocator will have a dedicated
 // size class for 1KiB.
 const_assert_size_align!(Node47, 1024, 64);
@@ -49,7 +52,7 @@ impl Default for Header {
     }
 }
 
-impl header::Header for Header {
+unsafe impl header::Header for Header {
     const TYPE: node::Type = node::Type::Node47;
     type KeyIter = KeyIter63;
 
@@ -92,7 +95,7 @@ impl header::Header for Header {
             core::hint::assert_unchecked(col < 64);
         }
         let index = data.load(Ordering::Relaxed).shr(col) as u8;
-        (index < 47).then_some(index)
+        (index < CAPACITY as u8).then_some(index)
     }
 
     fn get_or_insert(&self, key: u8) -> Option<u8> {
@@ -113,7 +116,7 @@ impl header::Header for Header {
                 return index;
             }
 
-            if len == 47 || old.frozen() {
+            if len == CAPACITY as u8 || old.frozen() {
                 return None;
             }
 
@@ -186,7 +189,7 @@ impl Header {
 
     fn ensure_meta_consistent(&self, meta: ribbit::Packed<Meta>) {
         let len = meta.len().value();
-        validate!(len <= 47);
+        validate!(len <= CAPACITY as u8);
         let index = len - 1;
 
         let key = meta.last();

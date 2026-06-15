@@ -40,6 +40,7 @@ use crate::raw::Smo;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::iter::Unbound;
+use crate::raw::node::header::Header;
 use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::iter::KeyIter15;
 use crate::raw::node::iter::KeyIter63;
@@ -47,20 +48,23 @@ use crate::raw::node::iter::KeyIter256;
 use crate::stat;
 
 /// A node is a partial mapping from `u8` to [`edge::Raw`].
-///
-/// # Safety
-///
-/// Implementations must ensure that all returned key indices are within
-/// `self.edges()` and `self.edges_mut()`.
-unsafe trait Node: Default + core::fmt::Debug {
-    /// A runtime representation of the node type.
-    const TYPE: Type;
+#[derive(Debug)]
+#[repr(C, align(64))]
+pub(super) struct Node<const CAPACITY: usize, H> {
+    pub(super) header: H,
+    pub(super) edges: [Atomic<edge::Raw>; CAPACITY],
+}
 
-    /// The maximum number of entries this node can contain.
-    const CAPACITY: usize;
+impl<const CAPACITY: usize, H: Default> Default for Node<CAPACITY, H> {
+    fn default() -> Self {
+        Self {
+            header: H::default(),
+            edges: core::array::from_fn(|_| Atomic::new_packed(edge::Raw::NULL)),
+        }
+    }
+}
 
-    type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
-
+impl<const CAPACITY: usize, H: Header> Node<CAPACITY, H> {
     /// Returns a new node populated with `keys` and `edges`.
     ///
     /// # Safety
@@ -70,52 +74,68 @@ unsafe trait Node: Default + core::fmt::Debug {
     /// - `keys.len() <= Self::CAPACITY`
     /// - Keys are unique
     /// - Edges are unique
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self>;
+    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
+        unsafe { H::new_unchecked(keys, edges) }
+    }
 
     /// Initializes an unsorted iterator over this node's keys.
-    fn keys<L: iter::Lower, U: iter::Upper>(&self, lower: L, upper: U, iter: &mut Self::KeyIter);
+    #[inline]
+    fn keys<L: Lower, U: Upper>(&self, lower: L, upper: U, iter: &mut H::KeyIter) {
+        self.header.keys(lower, upper, iter)
+    }
 
-    fn edges(&self) -> &[Atomic<edge::Raw>];
+    #[inline]
+    fn edges(&self) -> &[Atomic<edge::Raw>] {
+        &self.edges
+    }
 
-    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>];
+    #[inline]
+    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>] {
+        &mut self.edges
+    }
 
-    /// # Safety
-    ///
-    /// Implementer must guarantee that `Some(index)` is within `self.edges()`
-    fn get_key(&self, key: u8) -> Option<u8>;
+    #[inline]
+    fn get_key(&self, key: u8) -> Option<u8> {
+        self.header.get(key)
+    }
 
-    /// # Safety
-    ///
-    /// Implementer must guarantee that `Some(index)` is within `self.edges()`
-    fn get_or_insert_key(&self, key: u8) -> Option<u8>;
+    #[inline]
+    fn get_or_insert_key(&self, key: u8) -> Option<u8> {
+        self.header.get_or_insert(key)
+    }
 
     /// Freeze this node's header (i.e., its non-edge metadata).
     ///
     /// Returns the number of edges that must be frozen.
-    fn freeze_header(&self) -> usize;
+    #[inline]
+    fn freeze_header(&self) -> usize {
+        self.header.freeze()
+    }
 
-    fn min<L: Lower>(&self, lower: L) -> Option<KeyIndex>;
-    fn max<U: Upper>(&self, upper: U) -> Option<KeyIndex>;
+    #[inline]
+    fn min<L: Lower>(&self, lower: L) -> Option<KeyIndex> {
+        self.header.min(lower)
+    }
+
+    #[inline]
+    fn max<U: Upper>(&self, upper: U) -> Option<KeyIndex> {
+        self.header.max(upper)
+    }
 }
 
-fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node>(
-    node: &N,
+fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, H: Header>(
+    node: &Node<CAPACITY, H>,
     meta: ribbit::Packed<M>,
     keys: &mut [u8; CAPACITY],
     edges: &mut [ribbit::Packed<Edge<M>>; CAPACITY],
 ) -> (Smo, ribbit::Packed<Edge<M>>) {
-    const {
-        // HACK: can't use associated constant as array length
-        assert!(CAPACITY == N::CAPACITY);
-    }
-
     // Caller must not call replace if doomed to fail CAS
     validate!(!meta.is_frozen());
 
     // Can only call replace on nodes
     validate!(!meta.is_value());
 
-    let mut iter = N::KeyIter::default();
+    let mut iter = H::KeyIter::default();
     node.keys(
         Unbound::<()>::default(),
         Unbound::<()>::default(),
@@ -153,7 +173,7 @@ fn replace<const CAPACITY: usize, M: ribbit::Pack<Packed: edge::Meta>, N: Node>(
     // Heuristic: assume a full node should be expanded
     let new = unsafe {
         Ptr::new_unchecked(
-            len == N::CAPACITY,
+            len == CAPACITY,
             &keys[..len],
             core::mem::transmute::<&[ribbit::Packed<Edge<M>>], &[ribbit::Packed<edge::Raw>]>(
                 &edges[..len],
@@ -283,7 +303,7 @@ impl Ptr {
         Self::new(node)
     }
 
-    fn new<N: Node>(node: Box<N>) -> ribbit::Packed<Self> {
+    fn new<const CAPACITY: usize, H: Header>(node: Box<Node<CAPACITY, H>>) -> ribbit::Packed<Self> {
         // NOTE: we rely on address (usize) <-> u64 conversions here
         const _: () = assert!(size_of::<usize>() == size_of::<u64>());
 
@@ -293,7 +313,7 @@ impl Ptr {
 
         unsafe {
             ribbit::Packed::<Self>::from_raw_unchecked(NonZeroU64::new_unchecked(
-                N::TYPE as u64 | ptr,
+                H::TYPE as u64 | ptr,
             ))
         }
     }

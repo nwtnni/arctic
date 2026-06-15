@@ -8,10 +8,13 @@ use ribbit::u120;
 use crate::Atomic;
 use crate::raw::node;
 use crate::raw::node::KeyIter15;
+use crate::raw::node::Node;
 use crate::raw::node::header;
 
+const CAPACITY: usize = 15;
+
 /// [`Node`][crate::raw::node::Node] representation that contains at most 15 key-edge pairs.
-pub(super) type Node15 = header::Node<15, Atomic<Header>>;
+pub(super) type Node15 = Node<CAPACITY, Atomic<Header>>;
 
 const_assert_size_align!(Node15, 256, 64);
 
@@ -34,7 +37,7 @@ impl Default for HeaderPacked {
     }
 }
 
-impl header::Header for Atomic<Header> {
+unsafe impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node15;
     type KeyIter = KeyIter15;
 
@@ -119,7 +122,7 @@ impl HeaderPacked {
             return Ok(index);
         }
 
-        if len >= <Node15 as node::Node>::CAPACITY as u8 || self.frozen() {
+        if len >= CAPACITY as u8 || self.frozen() {
             return Err(None);
         }
 

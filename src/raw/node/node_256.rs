@@ -5,43 +5,44 @@
 
 use core::fmt::Debug;
 
-use crate::Atomic;
-use crate::raw;
-use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::KeyIter256;
-use crate::raw::node::Node;
+
+const CAPACITY: usize = 256;
 
 /// [`Node`] representation that contains exactly 256 key-edge pairs.
-#[repr(C, align(4096))]
-pub(super) struct Node256([Atomic<edge::Raw>; 256]);
+pub(super) type Node256 = node::Node<CAPACITY, Header>;
 
-const_assert_size_align!(Node256, 4096, 4096);
+// Note: aligning to 4096 would require a newtype wrapper
+// and more boilerplate. Just assume a
+// reasonable memory allocator will have a dedicated
+// size class for 4KiB.
+const_assert_size_align!(Node256, 4096, 64);
 
-impl Default for Node256 {
-    fn default() -> Self {
-        Self(core::array::from_fn(|_| {
-            Atomic::new_packed(edge::Raw::NULL)
-        }))
-    }
-}
+#[derive(Debug, Default)]
+pub(super) struct Header;
 
-unsafe impl Node for Node256 {
+unsafe impl node::Header for Header {
     const TYPE: node::Type = node::Type::Node256;
-    const CAPACITY: usize = 256;
     type KeyIter = KeyIter256;
 
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
-        if_validate!(assert!(raw::is_unique(keys)));
+    unsafe fn new_unchecked<const CAPACITY: usize>(
+        keys: &[u8],
+        edges: &[ribbit::Packed<crate::raw::edge::Raw>],
+    ) -> Box<node::Node<CAPACITY, Self>> {
+        if_validate!(assert!(crate::raw::is_unique(keys)));
         validate!(keys.len() == edges.len());
-        validate!(keys.len() <= Self::CAPACITY);
+        validate!(keys.len() <= CAPACITY);
 
-        let mut node = Box::new(Self::default());
-        for (key, edge) in keys.iter().zip(edges) {
-            node.0[*key as usize].set_packed(*edge);
+        let mut node = Box::new(node::Node::default());
+        for (index, edge) in core::iter::zip(keys, edges) {
+            node.edges[*index as usize].set_packed(*edge);
         }
         node
     }
+
+    #[inline]
+    unsafe fn initialize_unchecked(&mut self, _keys: &[u8]) {}
 
     #[inline]
     fn keys<L: node::iter::Lower, U: node::iter::Upper>(
@@ -54,28 +55,18 @@ unsafe impl Node for Node256 {
     }
 
     #[inline]
-    fn edges(&self) -> &[Atomic<edge::Raw>] {
-        &self.0
-    }
-
-    #[inline]
-    fn edges_mut(&mut self) -> &mut [Atomic<edge::Raw>] {
-        &mut self.0
-    }
-
-    #[inline]
-    fn get_key(&self, key: u8) -> Option<u8> {
+    fn get(&self, key: u8) -> Option<u8> {
         Some(key)
     }
 
     #[inline]
-    fn get_or_insert_key(&self, key: u8) -> Option<u8> {
+    fn get_or_insert(&self, key: u8) -> Option<u8> {
         Some(key)
     }
 
     #[inline]
-    fn freeze_header(&self) -> usize {
-        Self::CAPACITY
+    fn freeze(&self) -> usize {
+        CAPACITY
     }
 
     #[inline]
@@ -115,11 +106,5 @@ unsafe impl Node for Node256 {
         //             })
         //         }
         //     })
-    }
-}
-
-impl Debug for Node256 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Node256").field("edges", &self.0).finish()
     }
 }
