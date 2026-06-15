@@ -141,7 +141,39 @@ impl From<Box<KeyIter15>> for node::KeyIter {
     }
 }
 
+#[cfg(feature = "proptest")]
+impl proptest::arbitrary::Arbitrary for Header {
+    type Parameters = u4;
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+    fn arbitrary_with(len: Self::Parameters) -> Self::Strategy {
+        use proptest::strategy::Strategy as _;
+
+        use crate::raw;
+        (
+            proptest::collection::vec(u8::arbitrary(), ..=len.value() as usize)
+                .prop_filter("unique keys", |keys| raw::is_unique(keys)),
+            bool::arbitrary(),
+        )
+            .prop_map(|(keys, frozen)| {
+                let mut buffer = [0u8; 16];
+                buffer[..keys.len()].copy_from_slice(&keys);
+                Self {
+                    keys: u120::new(u128::from_le_bytes(buffer)),
+                    frozen,
+                    len: u4::new(keys.len() as u8),
+                }
+            })
+            .boxed()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    crate::raw::node::header::tests::impl_suite!(crate::Atomic<crate::raw::node::node_15::Header>);
+    use proptest::arbitrary::any;
+    use proptest::strategy::Strategy as _;
+
+    crate::raw::node::header::tests::impl_suite!(
+        any::<crate::raw::node::node_15::Header>().prop_map(crate::sync::Atomic::new)
+    );
 }

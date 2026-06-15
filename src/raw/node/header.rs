@@ -58,25 +58,57 @@ pub(in crate::raw) unsafe trait Header: Debug + Default + Sized {
 
 #[cfg(test)]
 pub(super) mod tests {
-    /// A `get_or_insert` on an empty header succeeds and is consistent with `get`
+    /// A successful `get` means `get_or_insert` returns the same index
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(in crate::raw::node) fn get_or_insert_empty<H>(key: u8)
+    pub(in crate::raw::node) fn get_implies_get_or_insert<H>(header: H, key: u8)
     where
         H: crate::raw::node::header::Header,
     {
-        let header = H::default();
-        let get_or_insert = header.get_or_insert(key).expect("get_or_insert empty");
-        let get = header.get(key).expect("get after get_or_insert");
-        assert_eq!(get, get_or_insert)
+        if let Some(index) = header.get(key) {
+            assert_eq!(header.get_or_insert(key), Some(index));
+        }
+    }
+
+    /// A successful `get_or_insert` means `get` returns the same index
+    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    pub(in crate::raw::node) fn get_or_insert_implies_get<H>(header: H, key: u8)
+    where
+        H: crate::raw::node::header::Header,
+    {
+        if let Some(index) = header.get_or_insert(key) {
+            assert_eq!(header.get(key), Some(index));
+        }
+    }
+
+    /// Consecutive `get_or_insert` calls return the same index
+    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    pub(in crate::raw::node) fn get_or_insert_idempotent<H>(header: H, key: u8)
+    where
+        H: crate::raw::node::header::Header,
+    {
+        let index = header.get_or_insert(key);
+        for _ in 0..5 {
+            assert_eq!(header.get_or_insert(key), index);
+        }
     }
 
     macro_rules! impl_suite {
-        ($type:ty) => {
+        ($strategy:expr) => {
             #[cfg(feature = "proptest")]
             proptest::proptest! {
                 #[test]
-                fn get_or_insert_empty(key: u8) {
-                    crate::raw::node::header::tests::get_or_insert_empty::<$type>(key)
+                fn get_implies_get_or_insert(header in $strategy, key: u8) {
+                    crate::raw::node::header::tests::get_implies_get_or_insert(header, key)
+                }
+
+                #[test]
+                fn get_or_insert_implies_get(header in $strategy, key: u8) {
+                    crate::raw::node::header::tests::get_or_insert_implies_get(header, key)
+                }
+
+                #[test]
+                fn get_or_insert_idempotent(header in $strategy, key: u8) {
+                    crate::raw::node::header::tests::get_or_insert_idempotent(header, key)
                 }
             }
         };

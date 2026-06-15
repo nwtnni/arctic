@@ -216,19 +216,16 @@ impl From<KeyIter3> for node::KeyIter {
 
 #[cfg(feature = "proptest")]
 impl proptest::arbitrary::Arbitrary for Header {
-    type Parameters = ();
+    type Parameters = u2;
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(len: Self::Parameters) -> Self::Strategy {
         use proptest::strategy::Strategy as _;
 
         use crate::raw;
         (
-            proptest::collection::vec(
-                u8::arbitrary(),
-                ..<u2 as ribbit::Integer>::MAX.value() as usize,
-            )
-            .prop_filter("unique keys", |keys| raw::is_unique(keys)),
+            proptest::collection::vec(u8::arbitrary(), ..=len.value() as usize)
+                .prop_filter("unique keys", |keys| raw::is_unique(keys)),
             bool::arbitrary(),
         )
             .prop_map(|(keys, frozen)| {
@@ -248,5 +245,10 @@ impl proptest::arbitrary::Arbitrary for Header {
 
 #[cfg(test)]
 mod tests {
-    crate::raw::node::header::tests::impl_suite!(crate::Atomic<crate::raw::node::node_3::Header>);
+    use proptest::arbitrary::any;
+    use proptest::strategy::Strategy as _;
+
+    crate::raw::node::header::tests::impl_suite!(
+        any::<crate::raw::node::node_3::Header>().prop_map(crate::sync::Atomic::new)
+    );
 }

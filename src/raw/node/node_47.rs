@@ -287,3 +287,41 @@ impl From<Box<KeyIter63>> for node::KeyIter {
         node::KeyIter::new_47(iter)
     }
 }
+
+#[cfg(feature = "proptest")]
+impl proptest::arbitrary::Arbitrary for Header {
+    type Parameters = (u8, u8);
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+    fn arbitrary_with((min, max): Self::Parameters) -> Self::Strategy {
+        use proptest::strategy::Strategy as _;
+        assert!(min >= 15);
+        assert!(max <= 47);
+
+        use crate::raw;
+        (
+            proptest::collection::vec(u8::arbitrary(), min as usize..=max as usize)
+                .prop_filter("unique keys", |keys| raw::is_unique(keys)),
+            bool::arbitrary(),
+        )
+            .prop_map(|(keys, frozen)| {
+                use crate::raw::node::header::Header as _;
+                let mut header = Header::default();
+                unsafe { header.initialize_unchecked(&keys) };
+                if frozen {
+                    header.freeze();
+                }
+                header
+            })
+            .boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::arbitrary::any_with;
+
+    crate::raw::node::header::tests::impl_suite!(any_with::<crate::raw::node::node_47::Header>((
+        15, 47
+    )));
+}
