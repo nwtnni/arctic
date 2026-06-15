@@ -1,14 +1,15 @@
 //! Guard types that retire removed or updated values
 //! via [`crate::concurrent::smr::Guard`] on drop.
 
+use core::borrow::Borrow;
 use core::fmt::Debug;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
-use std::sync::Arc;
 
 use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
 use crate::sequential;
+pub use crate::sequential::value::Arc;
 
 /// Values that can safely be stored in a [`crate::concurrent::Map`].
 ///
@@ -20,7 +21,7 @@ use crate::sequential;
 /// Note: we don't need [`Send`] or [`Sync`] bounds here.
 /// It's fine to create a concurrent map with non-Sync
 /// values; the map instance just won't implement Sync.
-pub trait Value: sequential::Value {
+pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
     /// We need this extra layer of indirection relative to [`crate::sequential::Map`]
     /// because edges can be concurrently modified.
     ///
@@ -32,7 +33,7 @@ pub trait Value: sequential::Value {
     ///
     /// For an indirect value, the concurrent map copies out a pointer
     /// and interprets it as reference.
-    type Target;
+    type Borrowed;
 
     /// This is a type-level function that allows inline values to
     /// discard a [`crate::concurrent::smr::Guard`].
@@ -46,14 +47,14 @@ pub trait Value: sequential::Value {
     /// - `raw` was created from [`crate::sequential::Value::into_raw`]
     /// - There are no calls to [`crate::sequential::Value::from_raw_unchecked`] while `raw` is live
     /// - This value is not mutated while `raw` is live
-    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target;
+    unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed;
 }
 
 macro_rules! impl_integer {
     ($($ty:ty),*) => {
         $(
             impl Value for $ty {
-                type Target = Self;
+                type Borrowed = Self;
 
                 type Guard<G>
                     = smr::no_op::Guard<G, Self>
@@ -61,7 +62,7 @@ macro_rules! impl_integer {
                     G: smr::Guard<Self>;
 
                 #[inline]
-                unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
+                unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
                     unsafe { core::mem::transmute::<&u64, &Self>(raw) }
                 }
             }
@@ -75,7 +76,7 @@ impl_integer!(u64, i64);
 // `&T` itself can be freely copied, even if
 // `T` is not `Copy`.
 impl<'v, T: 'v + Sized> Value for &'v T {
-    type Target = Self;
+    type Borrowed = Self;
 
     type Guard<G>
         = smr::no_op::Guard<G, Self>
@@ -83,13 +84,13 @@ impl<'v, T: 'v + Sized> Value for &'v T {
         G: smr::Guard<Self>;
 
     #[inline]
-    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
+    unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
         unsafe { core::mem::transmute::<&u64, &Self>(raw) }
     }
 }
 
 impl<T: Sized> Value for Box<T> {
-    type Target = T;
+    type Borrowed = T;
 
     type Guard<G>
         = G
@@ -97,14 +98,14 @@ impl<T: Sized> Value for Box<T> {
         G: smr::Guard<Self>;
 
     #[inline]
-    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
+    unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
         let borrow = unsafe { core::ptr::with_exposed_provenance::<T>((*raw) as usize).as_ref() };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
     }
 }
 
 impl<T: Sized> Value for Arc<T> {
-    type Target = ArcRef<T>;
+    type Borrowed = ArcRef<T>;
 
     type Guard<G>
         = G
@@ -112,13 +113,19 @@ impl<T: Sized> Value for Arc<T> {
         G: smr::Guard<Self>;
 
     #[inline]
-    unsafe fn target_from_raw_unchecked(raw: &u64) -> &Self::Target {
+    unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
         let borrow = unsafe {
             core::ptr::with_exposed_provenance::<T>((*raw) as usize)
                 .cast::<ArcRef<T>>()
                 .as_ref()
         };
         if_validate!(borrow.unwrap(), unsafe { borrow.unwrap_unchecked() })
+    }
+}
+
+impl<T> Borrow<ArcRef<T>> for crate::sequential::value::Arc<T> {
+    fn borrow(&self) -> &ArcRef<T> {
+        unsafe { core::mem::transmute::<&T, &ArcRef<T>>(self.0.as_ref()) }
     }
 }
 
@@ -138,10 +145,10 @@ impl<T> ArcRef<T> {
 
         // SAFETY: SMR guarantees `ptr` is not yet freed,
         // so strong count must be >= 1
-        unsafe { Arc::increment_strong_count(ptr) };
+        unsafe { crate::sync::Arc::increment_strong_count(ptr) };
 
         // SAFETY: `ptr` was returned from `Arc::into_raw`
-        unsafe { Arc::from_raw(ptr) }
+        Arc(unsafe { crate::sync::Arc::from_raw(ptr) })
     }
 }
 
@@ -180,11 +187,11 @@ where
     G: smr::Guard<V>,
     V: Value,
 {
-    type Target = V::Target;
+    type Target = V::Borrowed;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { V::target_from_raw_unchecked(&self.raw) }
+        unsafe { V::borrow_from_raw_unchecked(&self.raw) }
     }
 }
 
@@ -198,7 +205,7 @@ impl<G, V> Debug for Owned<G, V>
 where
     G: smr::Guard<V>,
     V: Value,
-    V::Target: Debug,
+    V::Borrowed: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.deref().fmt(f)
@@ -230,11 +237,11 @@ where
     G: smr::Guard<V>,
     V: Value,
 {
-    type Target = V::Target;
+    type Target = V::Borrowed;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { V::target_from_raw_unchecked(&self.raw) }
+        unsafe { V::borrow_from_raw_unchecked(&self.raw) }
     }
 }
 
@@ -242,7 +249,7 @@ impl<G, V> Debug for Shared<G, V>
 where
     G: smr::Guard<V>,
     V: Value,
-    V::Target: Debug,
+    V::Borrowed: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.deref().fmt(f)
@@ -275,15 +282,15 @@ where
 
     /// Return the old value before updating.
     #[inline]
-    pub fn old(&self) -> &V::Target {
-        unsafe { V::target_from_raw_unchecked(&self.old) }
+    pub fn old(&self) -> &V::Borrowed {
+        unsafe { V::borrow_from_raw_unchecked(&self.old) }
     }
 
     /// Return the new value after updating.
     #[inline]
-    #[expect(clippy::new_ret_no_self, clippy::wrong_self_convention)]
-    pub fn new(&self) -> &V::Target {
-        unsafe { V::target_from_raw_unchecked(&self.new) }
+    #[expect(clippy::new_ret_no_self)]
+    pub fn new(&self) -> &V::Borrowed {
+        unsafe { V::borrow_from_raw_unchecked(&self.new) }
     }
 }
 
@@ -297,7 +304,7 @@ impl<G, V> Debug for Updated<G, V>
 where
     G: smr::Guard<V>,
     V: Value,
-    V::Target: Debug,
+    V::Borrowed: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Updated")
@@ -347,17 +354,17 @@ where
 
     /// Return the old value before upserting.
     #[inline]
-    pub fn old(&self) -> Option<&V::Target> {
+    pub fn old(&self) -> Option<&V::Borrowed> {
         self.old
             .as_ref()
-            .map(|old| unsafe { V::target_from_raw_unchecked(old) })
+            .map(|old| unsafe { V::borrow_from_raw_unchecked(old) })
     }
 
     /// Return the new value after upserting.
     #[inline]
-    #[expect(clippy::new_ret_no_self, clippy::wrong_self_convention)]
-    pub fn new(&self) -> &V::Target {
-        unsafe { V::target_from_raw_unchecked(&self.new) }
+    #[expect(clippy::new_ret_no_self)]
+    pub fn new(&self) -> &V::Borrowed {
+        unsafe { V::borrow_from_raw_unchecked(&self.new) }
     }
 }
 
@@ -372,7 +379,7 @@ impl<G, V> Debug for Upserted<G, V>
 where
     G: smr::Guard<V>,
     V: Value,
-    V::Target: Debug,
+    V::Borrowed: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Upserted")

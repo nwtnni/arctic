@@ -84,7 +84,7 @@ pub mod concurrent;
 pub mod raw;
 pub mod sequential;
 pub mod stat;
-mod sync;
+pub mod sync;
 
 #[doc(inline)]
 pub use raw::Key;

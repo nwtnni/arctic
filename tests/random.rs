@@ -44,7 +44,7 @@ mod u64 {
             &self,
             index: usize,
             key: &<Self::Key<'_> as Key>::Borrowed,
-            value: &<Self::Value as arctic::concurrent::Value>::Target,
+            value: &<Self::Value as arctic::concurrent::Value>::Borrowed,
         ) {
             assert_eq!(index as u64, *key);
             assert_eq!(index as u64, *value);
@@ -53,8 +53,6 @@ mod u64 {
 }
 
 mod arced {
-    use std::sync::Arc;
-
     use arctic::raw::Key;
 
     use super::Workload;
@@ -95,14 +93,14 @@ mod arced {
     impl Workload for Arced {
         type Key<'k> = u32;
 
-        type Value = Arc<Entry>;
+        type Value = arctic::concurrent::value::Arc<Entry>;
 
         fn key(&self, index: usize) -> Self::Key<'_> {
             index as u32
         }
 
         fn value(&self, index: usize) -> Self::Value {
-            Arc::new(Entry::new(index))
+            arctic::sync::Arc::new(Entry::new(index)).into()
         }
 
         fn validate(
@@ -225,7 +223,7 @@ mod vec {
             &self,
             index: usize,
             key: &<Self::Key<'_> as Key>::Borrowed,
-            value: &<Self::Value as arctic::concurrent::Value>::Target,
+            value: &<Self::Value as arctic::concurrent::Value>::Borrowed,
         ) {
             assert_eq!(key, self.key(index).as_non_prefix_slice());
             assert_eq!(*value, index as u64);
@@ -293,7 +291,7 @@ mod slice {
             &self,
             index: usize,
             key: &<Self::Key<'_> as Key>::Borrowed,
-            value: &<Self::Value as arctic::concurrent::Value>::Target,
+            value: &<Self::Value as arctic::concurrent::Value>::Borrowed,
         ) {
             assert!(core::ptr::eq(key, self.key(index)));
             assert_eq!(*value, index as u64);
@@ -349,7 +347,7 @@ mod array {
             &self,
             index: usize,
             key: &<Self::Key<'_> as Key>::Borrowed,
-            value: &<Self::Value as arctic::concurrent::Value>::Target,
+            value: &<Self::Value as arctic::concurrent::Value>::Borrowed,
         ) {
             assert_eq!(*key, self.key(index));
             assert_eq!(*value, index as u64);
@@ -372,14 +370,14 @@ trait Workload: Sized + Sync {
         &'k self,
         index: usize,
         key: &<Self::Key<'k> as Key>::Borrowed,
-        value: &<Self::Value as arctic::concurrent::Value>::Target,
+        value: &<Self::Value as arctic::concurrent::Value>::Borrowed,
     );
 }
 
 fn test_map<'k, K: Workload>(key_set: &'k K, thread_count: usize, key_count: usize, hash: bool)
 where
     for<'a> &'a <K::Key<'k> as Key>::Borrowed: Sync + core::fmt::Debug,
-    <K::Value as arctic::concurrent::Value>::Target: core::fmt::Debug,
+    <K::Value as arctic::concurrent::Value>::Borrowed: core::fmt::Debug,
     K::Key<'k>: Clone + Ord + core::fmt::Debug,
 {
     assert_eq!(key_count % thread_count, 0);

@@ -1,6 +1,17 @@
 use core::ops::Deref;
 use core::ops::DerefMut;
 
+cfg_select! {
+    feature = "shuttle" => {
+        use shuttle::sync::atomic;
+        pub use shuttle::sync::Arc;
+    }
+    _ => {
+        pub use std::sync::Arc;
+        use ribbit::atomic;
+    }
+}
+
 pub(crate) type Atomic<T> =
     ribbit::Atomic<T, <<<T as ribbit::Pack>::Packed as ribbit::Unpack>::Loose as Loose>::Atomic>;
 
@@ -8,11 +19,6 @@ pub(crate) type Atomic<T> =
 // shuttle or std atomic types as ribbit::Atomic backend
 pub(crate) trait Loose: Sized {
     type Atomic: ribbit::atomic::Raw<Self>;
-}
-
-cfg_select! {
-    feature = "shuttle" => { use shuttle::sync::atomic; }
-    _ => { use ribbit::atomic; }
 }
 
 macro_rules! impl_raw {

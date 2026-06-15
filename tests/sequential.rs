@@ -162,8 +162,8 @@ where
     K: arctic::concurrent::smr::hazard::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
     K::Borrowed: Ord + core::fmt::Debug,
     V: arctic::concurrent::Value + Arbitrary + Clone + Debug + Eq + Send + Sync + 'static,
-    V::Target: Debug + PartialEq + PartialEq<V> + Clone,
-    for<'a> Option<&'a V::Target>: PartialEq<Option<&'a V>>,
+    V::Borrowed: Debug + PartialEq + PartialEq<V> + Clone,
+    for<'a> Option<&'a V::Borrowed>: PartialEq<Option<&'a V>>,
 {
     type SystemUnderTest = Self;
 

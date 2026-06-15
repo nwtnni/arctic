@@ -79,7 +79,7 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 ///    sequential API via [`Map::as_sequential`].
 ///
 /// 3. Values distinguish between inline (e.g., integers) and indirect (e.g., `Box<T>`).
-///    In short, we return [`Value::Target`] instead of `&V`, because the memory location
+///    In short, we return [`Value::Borrowed`] instead of `&V`, because the memory location
 ///    where `V` itself is stored may be concurrently updated.
 ///    (See [`Value`] for more information.)
 ///
@@ -632,7 +632,7 @@ where
         mut upsert: F,
     ) -> Upsert<'g, K, V, S>
     where
-        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let reader = K::insert_as_read(key);
         let initial = if cfg!(feature = "opt-no-path") {
@@ -711,7 +711,7 @@ where
         mut update: F,
     ) -> Update<'g, K, V, S>
     where
-        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let reader = K::Read::from(key);
         let initial = if cfg!(feature = "opt-no-path") {
@@ -779,7 +779,7 @@ where
     /// ```
     pub fn remove_with<'g, F>(&'g self, key: &K::Borrowed, mut remove: F) -> Remove<'g, K, V, S>
     where
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let reader = K::Read::from(key);
         let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(reader, &mut remove);
@@ -804,7 +804,7 @@ where
         mut with: F,
     ) -> Remove<'_, K, V, S>
     where
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let reader = K::Read::from(key);
         match self.remove_non_recursive_with_optimistic(reader, &mut with) {
@@ -903,7 +903,7 @@ where
         upsert: F,
     ) -> Result<Upsert<'g, K, V, S>, Option<V>>
     where
-        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
     {
         self.upsert_with_impl::<path::Discard, _>(reader, initial, upsert)
     }
@@ -916,7 +916,7 @@ where
         upsert: F,
     ) -> Upsert<'g, K, V, S>
     where
-        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
     {
         stat::increment(stat::Counter::InsertPessimistic);
         match self.upsert_with_impl::<path::Retain<_>, _>(reader, initial, upsert) {
@@ -934,7 +934,7 @@ where
     ) -> Result<Upsert<'g, K, V, S>, Option<V>>
     where
         P: Path<K::Read<'k>>,
-        F: FnMut(Option<&V::Target>, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
@@ -948,7 +948,7 @@ where
                     let new_value = match upsert(
                         old_value
                             .as_ref()
-                            .map(|old| unsafe { V::target_from_raw_unchecked(old) }),
+                            .map(|old| unsafe { V::borrow_from_raw_unchecked(old) }),
                         &mut initial,
                     ) {
                         ControlFlow::Continue(value) => V::into_raw(value),
@@ -1043,7 +1043,7 @@ where
         update: F,
     ) -> Result<Update<'g, K, V, S>, Option<V>>
     where
-        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
     {
         self.update_with_impl::<path::Discard, _>(reader, initial, update)
     }
@@ -1056,7 +1056,7 @@ where
         update: F,
     ) -> Update<'g, K, V, S>
     where
-        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
     {
         stat::increment(stat::Counter::UpdatePessimistic);
         match self.update_with_impl::<path::Retain<_>, _>(reader, initial, update) {
@@ -1074,7 +1074,7 @@ where
     ) -> Result<Update<'g, K, V, S>, Option<V>>
     where
         P: Path<K::Read<'k>>,
-        F: FnMut(&V::Target, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
@@ -1094,7 +1094,7 @@ where
             };
 
             let new_value = match update(
-                unsafe { V::target_from_raw_unchecked(&updated.value) },
+                unsafe { V::borrow_from_raw_unchecked(&updated.value) },
                 &mut initial,
             ) {
                 ControlFlow::Continue(new) => V::into_raw(new),
@@ -1131,7 +1131,7 @@ where
         remove: &mut F,
     ) -> Result<Remove<'_, K, V, S>, ()>
     where
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         self.remove_with_impl::<false, path::Discard, _>(reader, remove)
     }
@@ -1143,7 +1143,7 @@ where
         remove: &mut F,
     ) -> Remove<'_, K, V, S>
     where
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(reader, remove);
         remove
@@ -1157,7 +1157,7 @@ where
     ) -> Result<Remove<'g, K, V, S>, P::PopError>
     where
         P: Path<K::Read<'k>>,
-        F: FnMut(&V::Target) -> ControlFlow<(), ()>,
+        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
@@ -1175,7 +1175,7 @@ where
                 },
             };
 
-            match remove(unsafe { V::target_from_raw_unchecked(&updated.value) }) {
+            match remove(unsafe { V::borrow_from_raw_unchecked(&updated.value) }) {
                 ControlFlow::Continue(()) => (),
                 ControlFlow::Break(()) => {
                     return Ok(Remove::Break {

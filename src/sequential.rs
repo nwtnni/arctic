@@ -3,7 +3,7 @@
 mod iter;
 pub mod map;
 pub mod set;
-mod value;
+pub(crate) mod value;
 
 pub use iter::EntryIter;
 pub use iter::EntryIterMut;

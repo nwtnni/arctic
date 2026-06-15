@@ -1,5 +1,4 @@
 use std::rc::Rc;
-use std::sync::Arc;
 
 /// Values that can be stored in a [`crate::sequential::Map`].
 ///
@@ -50,12 +49,14 @@ unsafe impl<T: Sized> Value for Box<T> {
 unsafe impl<T: Sized> Value for Arc<T> {
     #[inline]
     fn into_raw(self) -> u64 {
-        Arc::into_raw(self).expose_provenance() as u64
+        crate::sync::Arc::into_raw(self.0).expose_provenance() as u64
     }
 
     #[inline]
     unsafe fn from_raw_unchecked(raw: u64) -> Self {
-        unsafe { Arc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
+        Self(unsafe {
+            crate::sync::Arc::from_raw(core::ptr::with_exposed_provenance(raw as usize))
+        })
     }
 }
 
@@ -69,6 +70,32 @@ unsafe impl<T: Sized> Value for Rc<T> {
     #[inline]
     unsafe fn from_raw_unchecked(raw: u64) -> Self {
         unsafe { Rc::from_raw(core::ptr::with_exposed_provenance(raw as usize)) }
+    }
+}
+
+/// See [`std::sync::Arc`].
+#[repr(transparent)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Arc<T>(pub(crate) crate::sync::Arc<T>);
+
+impl<T> Arc<T> {
+    #[inline]
+    pub const fn new(arc: crate::sync::Arc<T>) -> Self {
+        Self(arc)
+    }
+}
+
+impl<T> From<crate::sync::Arc<T>> for Arc<T> {
+    #[inline]
+    fn from(arc: crate::sync::Arc<T>) -> Self {
+        Self(arc)
+    }
+}
+
+impl<T> From<Arc<T>> for crate::sync::Arc<T> {
+    #[inline]
+    fn from(Arc(arc): Arc<T>) -> Self {
+        arc
     }
 }
 

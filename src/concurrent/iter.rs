@@ -83,22 +83,22 @@ where
     /// Lending equivalent to [`Iterator::next`] that borrows the current key and
     /// value from this [`EntryIter`].
     #[inline]
-    pub fn lend(&mut self) -> Option<(K::Insert<'_>, &V::Target)> {
+    pub fn lend(&mut self) -> Option<(K::Insert<'_>, &V::Borrowed)> {
         self.inner.lend().map(|(key, value, _)| {
             self.value = value;
-            (key, unsafe { V::target_from_raw_unchecked(&self.value) })
+            (key, unsafe { V::borrow_from_raw_unchecked(&self.value) })
         })
     }
 
     /// Internal iteration over keys and immutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &V::Target)) -> ControlFlow<()>>(
+    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &V::Borrowed)) -> ControlFlow<()>>(
         mut self,
         mut apply: F,
     ) {
         self.inner.for_each_internal(|(key, value, _)| {
             self.value = value;
-            apply((key, unsafe { V::target_from_raw_unchecked(&self.value) }))
+            apply((key, unsafe { V::borrow_from_raw_unchecked(&self.value) }))
         })
     }
 }
@@ -107,12 +107,12 @@ impl<'g, 'k, K, V, R, O, G> Iterator for EntryIter<'g, 'k, K, V, R, O, G>
 where
     K: Key,
     V: Value,
-    V::Target: Clone,
+    V::Borrowed: Clone,
     R: raw::iter::Range<K::Read<'k>>,
     O: Order,
     G: smr::Guard<V>,
 {
-    type Item = (K, V::Target);
+    type Item = (K, V::Borrowed);
 
     // FIXME: specialize for `Arc` values
     fn next(&mut self) -> Option<Self::Item> {
@@ -139,19 +139,19 @@ where
 {
     /// Lending equivalent to [`Iterator::next`] that borrows the current value from this [`EntryIter`].
     #[inline]
-    pub fn lend(&mut self) -> Option<&V::Target> {
+    pub fn lend(&mut self) -> Option<&V::Borrowed> {
         self.inner.lend().map(|(value, _)| {
             self.value = value;
-            unsafe { V::target_from_raw_unchecked(&self.value) }
+            unsafe { V::borrow_from_raw_unchecked(&self.value) }
         })
     }
 
     /// Internal iteration over immutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut(&V::Target) -> ControlFlow<()>>(mut self, mut apply: F) {
+    pub fn for_each_internal<F: FnMut(&V::Borrowed) -> ControlFlow<()>>(mut self, mut apply: F) {
         self.inner.for_each_internal(|(value, _)| {
             self.value = value;
-            apply(unsafe { V::target_from_raw_unchecked(&self.value) })
+            apply(unsafe { V::borrow_from_raw_unchecked(&self.value) })
         })
     }
 }
@@ -160,12 +160,12 @@ impl<'g, 'k, K, V, R, O, G> Iterator for ValueIter<'g, 'k, K, V, R, O, G>
 where
     K: Key,
     V: Value,
-    V::Target: Clone,
+    V::Borrowed: Clone,
     R: raw::iter::Range<K::Read<'k>>,
     O: Order,
     G: smr::Guard<V>,
 {
-    type Item = V::Target;
+    type Item = V::Borrowed;
 
     // FIXME: specialize for `Arc` values
     fn next(&mut self) -> Option<Self::Item> {
