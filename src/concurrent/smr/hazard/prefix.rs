@@ -13,9 +13,8 @@ use ribbit::u56;
 use ribbit::u112;
 use ribbit::u120;
 
-pub trait Prefix: Send + Sync + Sized {
+pub(crate) trait Prefix: Send + Sync + Sized {
     const HAZARD_NULL: Self;
-    const HAZARD_ROOT: Self;
 
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self;
 
@@ -28,9 +27,6 @@ pub trait Prefix: Send + Sync + Sized {
     fn is_node(self) -> bool;
 
     fn is_value(self) -> bool;
-
-    fn without_overlap(self) -> Self;
-    fn without_node(self) -> Self;
 
     /// For measurement purposes only
     fn age(self) -> u8;
@@ -101,7 +97,6 @@ impl Be {
 
 impl Prefix for BePacked {
     const HAZARD_NULL: Self = Self::new(false, false, false, u3::new(0), u56::new(0));
-    const HAZARD_ROOT: Self = Self::new(true, true, true, u3::new(0), u56::new(0));
 
     #[inline]
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self {
@@ -142,16 +137,6 @@ impl Prefix for BePacked {
     #[inline]
     fn is_value(self) -> bool {
         self.is_value()
-    }
-
-    #[inline]
-    fn without_node(self) -> Self {
-        self.with_node(false)
-    }
-
-    #[inline]
-    fn without_overlap(self) -> Self {
-        self.with_overlap(false)
     }
 
     #[inline]
@@ -247,7 +232,6 @@ impl Le {
 
 impl Prefix for LePacked {
     const HAZARD_NULL: Self = Self::new(u56::new(0), false, false, false, u3::new(0));
-    const HAZARD_ROOT: Self = Self::new(u56::new(0), true, true, true, u3::new(0));
 
     #[inline]
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self {
@@ -292,16 +276,6 @@ impl Prefix for LePacked {
     #[inline]
     fn is_value(self) -> bool {
         self.is_value()
-    }
-
-    #[inline]
-    fn without_node(self) -> Self {
-        self.with_node(false)
-    }
-
-    #[inline]
-    fn without_overlap(self) -> Self {
-        self.with_overlap(false)
     }
 
     #[inline]
@@ -396,7 +370,6 @@ impl Le128 {
 
 impl Prefix for Le128Packed {
     const HAZARD_NULL: Self = Self::new(u120::new(0), false, false, false, u4::new(0));
-    const HAZARD_ROOT: Self = Self::new(u120::new(0), true, true, true, u4::new(0));
 
     #[inline]
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self {
@@ -434,16 +407,6 @@ impl Prefix for Le128Packed {
     #[inline]
     fn is_value(self) -> bool {
         self.is_value()
-    }
-
-    #[inline]
-    fn without_node(self) -> Self {
-        self.with_node(false)
-    }
-
-    #[inline]
-    fn without_overlap(self) -> Self {
-        self.with_overlap(false)
     }
 
     #[inline]

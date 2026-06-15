@@ -188,7 +188,7 @@ impl<K: Key, V: Value> Smr<K, V> for Box<Hazard<K, V>> {
 }
 
 #[repr(align(64))]
-pub struct Local<P: ribbit::Pack<Packed: Prefix>, V> {
+struct Local<P: ribbit::Pack<Packed: Prefix>, V> {
     garbage: i32,
     cycle: usize,
     snapshot: Vec<ribbit::Packed<P>>,

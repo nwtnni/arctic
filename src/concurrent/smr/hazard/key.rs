@@ -9,6 +9,7 @@ use crate::raw::key::Len;
 use crate::raw::key::Read as _;
 
 pub trait Key: raw::Key {
+    #[expect(private_bounds)]
     type Prefix: ribbit::Pack<Packed: hazard::Prefix>;
 
     fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix>;
