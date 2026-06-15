@@ -60,7 +60,7 @@ pub(in crate::raw) unsafe trait Header: Debug + Default + Sized {
 pub(super) mod tests {
     /// A successful `get` means `get_or_insert` returns the same index
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(in crate::raw::node) fn get_implies_get_or_insert<H>(header: H, key: u8)
+    pub(crate) fn get_implies_get_or_insert<H>(header: H, key: u8)
     where
         H: crate::raw::node::header::Header,
     {
@@ -71,7 +71,7 @@ pub(super) mod tests {
 
     /// A successful `get_or_insert` means `get` returns the same index
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(in crate::raw::node) fn get_or_insert_implies_get<H>(header: H, key: u8)
+    pub(crate) fn get_or_insert_implies_get<H>(header: H, key: u8)
     where
         H: crate::raw::node::header::Header,
     {
@@ -82,13 +82,46 @@ pub(super) mod tests {
 
     /// Consecutive `get_or_insert` calls return the same index
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(in crate::raw::node) fn get_or_insert_idempotent<H>(header: H, key: u8)
+    pub(crate) fn get_or_insert_idempotent<H>(header: H, key: u8)
     where
         H: crate::raw::node::header::Header,
     {
         let index = header.get_or_insert(key);
         for _ in 0..5 {
             assert_eq!(header.get_or_insert(key), index);
+        }
+    }
+
+    /// Every key returned from `keys` is visible to `get` and `get_or_insert`
+    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    pub(crate) fn keys_get_consistent<H>(header: H, mut lower: u8, mut upper: u8)
+    where
+        H: crate::raw::node::header::Header,
+    {
+        let mut keys = H::KeyIter::default();
+        if lower > upper {
+            core::mem::swap(&mut lower, &mut upper);
+        }
+        header.keys(Some(lower), Some(upper), &mut keys);
+        for KeyIndex { key, index } in keys {
+            assert_eq!(header.get(key), Some(index));
+            assert_eq!(header.get_or_insert(key), Some(index));
+        }
+    }
+
+    /// Freezing prevents insertion
+    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    pub(crate) fn freeze_no_insert<H>(header: H)
+    where
+        H: crate::raw::node::header::Header,
+    {
+        header.freeze();
+
+        for key in 0..=u8::MAX {
+            match header.get(key) {
+                None => assert!(header.get_or_insert(key).is_none()),
+                Some(index) => assert_eq!(header.get_or_insert(key), Some(index)),
+            }
         }
     }
 
@@ -110,8 +143,20 @@ pub(super) mod tests {
                 fn get_or_insert_idempotent(header in $strategy, key: u8) {
                     crate::raw::node::header::tests::get_or_insert_idempotent(header, key)
                 }
+
+                #[test]
+                fn keys_get_consistent(header in $strategy, lower: u8, upper: u8) {
+                    crate::raw::node::header::tests::keys_get_consistent(header, lower, upper)
+                }
+
+                #[test]
+                fn freeze_no_insert(header in $strategy) {
+                    crate::raw::node::header::tests::freeze_no_insert(header)
+                }
             }
         };
     }
-    pub(in crate::raw::node) use impl_suite;
+    pub(crate) use impl_suite;
+
+    use crate::raw::node::KeyIndex;
 }
