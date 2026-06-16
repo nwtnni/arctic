@@ -32,7 +32,7 @@ const_assert_size_align!(Node47, 1024, 64);
 
 #[repr(C, align(16))]
 pub(super) struct Header {
-    data: [Atomic<u128>; 16],
+    indices: [Atomic<u128>; 16],
     meta: Atomic<Meta>,
 }
 
@@ -43,7 +43,7 @@ impl Default for Header {
             // readers can call `get` without comparing against the
             // length. Don't use 0xFF because AVX2 only supports
             // signed byte-wise comparison.
-            data: core::array::from_fn(|_| {
+            indices: core::array::from_fn(|_| {
                 Atomic::new_packed(0x7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F)
             }),
             meta: Atomic::new_packed(Meta::DEFAULT),
@@ -58,7 +58,7 @@ unsafe impl header::Header for Header {
     unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
         for (i, key) in keys.iter().enumerate() {
             let (row, col) = Self::key_to_row_col(*key);
-            let row = &mut self.data[row as usize];
+            let row = &mut self.indices[row as usize];
             let old = row.get();
             let new = old ^ (0x7F ^ i as u128) << col;
             row.set(new);
@@ -91,7 +91,7 @@ unsafe impl header::Header for Header {
     fn get(&self, key: u8) -> Option<u8> {
         let (row, col) = Self::key_to_row_col(key);
         validate!(col < 128);
-        let index = self.data[row as usize].load(Ordering::Relaxed).shr(col) as u8;
+        let index = self.indices[row as usize].load(Ordering::Relaxed).shr(col) as u8;
         (index < CAPACITY as u8).then_some(index)
     }
 
@@ -165,7 +165,8 @@ unsafe impl header::Header for Header {
         iter: &mut KeyIter63,
     ) {
         let len = self.meta_consistent().len().value();
-        node::simd::keys_47(&self.data, lower, upper, len, iter);
+        let indices = core::array::from_fn(|i| self.indices[i].load(Ordering::Relaxed));
+        node::simd::keys_47(indices, lower, upper, len, iter);
     }
 
     fn min<L: node::Lower>(&self, _lower: L) -> Option<KeyIndex> {
@@ -192,8 +193,8 @@ impl Header {
         let key = meta.last();
         let (row, col) = Self::key_to_row_col(key);
 
-        let data = &self.data[row as usize];
-        let old = data.load(Ordering::Relaxed);
+        let row = &self.indices[row as usize];
+        let old = row.load(Ordering::Relaxed);
 
         if (old >> col) as u8 == index {
             stat::increment(stat::Counter::Node47Consistent);
@@ -203,7 +204,7 @@ impl Header {
         let hole = !(0xFFu128 << col);
         let new = old & hole | ((index as u128) << col);
 
-        match data.compare_exchange(old, new, Ordering::Relaxed, Ordering::Relaxed) {
+        match row.compare_exchange(old, new, Ordering::Relaxed, Ordering::Relaxed) {
             Ok(_) => {
                 stat::increment(stat::Counter::Node47CasSuccess);
             }

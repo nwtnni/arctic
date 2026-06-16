@@ -32,12 +32,10 @@ use core::arch::x86_64::_mm256_shuffle_epi8;
 use core::arch::x86_64::_mm256_store_si256;
 use core::arch::x86_64::_pext_u64;
 use core::ptr::NonNull;
-use core::sync::atomic::Ordering;
 
 use ribbit::u2;
 use ribbit::u4;
 
-use crate::Atomic;
 use crate::raw::node::KeyIter3;
 use crate::raw::node::KeyIter15;
 use crate::raw::node::KeyIter63;
@@ -216,7 +214,7 @@ pub(super) fn sort_15(out: &mut KeyIter15) {
 
 #[inline]
 pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
-    indices: &[Atomic<u128>; 16],
+    indices: [u128; 16],
     lower: L,
     upper: U,
     len: u8,
@@ -236,11 +234,7 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
         let i = lower.get() / 16;
         let j = upper.get() / 16;
 
-        for (k, indices) in indices[i as usize..=j as usize]
-            .iter()
-            .map(|indices| indices.load(Ordering::Relaxed))
-            .enumerate()
-        {
+        for (k, indices) in indices[i as usize..=j as usize].iter().copied().enumerate() {
             let keys = keys(i + k as u8);
             let mask_len = avx_to_u128(unsafe { _mm_cmplt_epi8(u128_to_avx(indices), len_u8) });
             let mask_range = mask_range(keys, lower, upper);
@@ -254,11 +248,7 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
             };
         }
     } else {
-        for (i, indices) in indices
-            .iter()
-            .map(|indices| indices.load(Ordering::Relaxed))
-            .enumerate()
-        {
+        for (i, indices) in indices.iter().copied().enumerate() {
             let keys = keys(i as u8);
             let mask_len = avx_to_u128(unsafe { _mm_cmplt_epi8(u128_to_avx(indices), len_u8) });
             len += unsafe {

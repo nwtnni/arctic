@@ -1,14 +1,11 @@
 //! SIMD acceleration for node operations.
 
-use core::sync::atomic::Ordering;
-
 #[cfg(target_feature = "avx2")]
 mod avx2;
 
 use ribbit::u2;
 use ribbit::u4;
 
-use crate::Atomic;
 use crate::raw::node;
 use crate::raw::node::KeyIter3;
 use crate::raw::node::KeyIter15;
@@ -200,7 +197,7 @@ fn sort_15_fallback(iter: &mut KeyIter15) {
 
 #[inline]
 pub(super) fn keys_47<L: node::Lower, U: node::Upper>(
-    indices: &[Atomic<u128>; 16],
+    indices: [u128; 16],
     lower: L,
     upper: U,
     len: u8,
@@ -215,7 +212,7 @@ pub(super) fn keys_47<L: node::Lower, U: node::Upper>(
 
 #[inline]
 pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
-    indices: &[Atomic<u128>; 16],
+    indices: [u128; 16],
     lower: L,
     upper: U,
     len: u8,
@@ -226,7 +223,7 @@ pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
 
     let len = indices[i as usize..=j as usize]
         .iter()
-        .flat_map(|chunk| chunk.load(Ordering::Relaxed).to_le_bytes())
+        .flat_map(|chunk| chunk.to_le_bytes())
         // HACK: using `i: u8` here causes integer overflow in debug mode
         // when all 256 bytes are loaded
         .zip((i as u16 * 16)..)
