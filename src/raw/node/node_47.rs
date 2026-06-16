@@ -6,7 +6,6 @@
 
 use core::fmt::Debug;
 use core::ops::Shr;
-use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
 use ribbit::u6;
@@ -59,8 +58,10 @@ unsafe impl header::Header for Header {
     unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
         for (i, key) in keys.iter().enumerate() {
             let (row, col) = Self::key_to_row_col(*key);
-            let row = unsafe { self.data_unchecked_mut(row) };
-            *row.get_mut() ^= (0x7F ^ i as u64) << col;
+            let row = &mut self.data[row as usize];
+            let old = row.get();
+            let new = old ^ (0x7F ^ i as u128) << col;
+            row.set(new);
         }
 
         self.meta.set_packed(ribbit::Packed::<Meta>::new(
@@ -89,12 +90,8 @@ unsafe impl header::Header for Header {
 
     fn get(&self, key: u8) -> Option<u8> {
         let (row, col) = Self::key_to_row_col(key);
-        let data = unsafe { self.data_unchecked(row) };
-        validate!(col < 64);
-        unsafe {
-            core::hint::assert_unchecked(col < 64);
-        }
-        let index = data.load(Ordering::Relaxed).shr(col) as u8;
+        validate!(col < 128);
+        let index = self.data[row as usize].load(Ordering::Relaxed).shr(col) as u8;
         (index < CAPACITY as u8).then_some(index)
     }
 
@@ -195,7 +192,7 @@ impl Header {
         let key = meta.last();
         let (row, col) = Self::key_to_row_col(key);
 
-        let data = unsafe { self.data_unchecked(row) };
+        let data = &self.data[row as usize];
         let old = data.load(Ordering::Relaxed);
 
         if (old >> col) as u8 == index {
@@ -203,8 +200,8 @@ impl Header {
             return;
         }
 
-        let hole = !(0xFFu64 << col);
-        let new = old & hole | ((index as u64) << col);
+        let hole = !(0xFFu128 << col);
+        let new = old & hole | ((index as u128) << col);
 
         match data.compare_exchange(old, new, Ordering::Relaxed, Ordering::Relaxed) {
             Ok(_) => {
@@ -214,31 +211,9 @@ impl Header {
         }
     }
 
-    unsafe fn data_unchecked(&self, row: u8) -> &AtomicU64 {
-        let data = unsafe {
-            self.data
-                .as_ptr()
-                .cast::<AtomicU64>()
-                .add(row as usize)
-                .as_ref()
-        };
-        if_validate!(data.unwrap(), unsafe { data.unwrap_unchecked() })
-    }
-
-    unsafe fn data_unchecked_mut(&mut self, row: u8) -> &mut AtomicU64 {
-        let data = unsafe {
-            self.data
-                .as_mut_ptr()
-                .cast::<AtomicU64>()
-                .add(row as usize)
-                .as_mut()
-        };
-        if_validate!(data.unwrap(), unsafe { data.unwrap_unchecked() })
-    }
-
     fn key_to_row_col(key: u8) -> (u8, u8) {
-        let row = key / 8;
-        let col = (key % 8) * 8;
+        let row = key / 16;
+        let col = (key % 16) * 8;
         (row, col)
     }
 }
