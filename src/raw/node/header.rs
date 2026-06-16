@@ -60,23 +60,27 @@ pub(in crate::raw) unsafe trait Header: Debug + Default + Sized {
 pub(super) mod tests {
     /// A successful `get` means `get_or_insert` returns the same index
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(crate) fn get_implies_get_or_insert<H>(header: H, key: u8)
+    pub(crate) fn get_implies_get_or_insert<H>(header: H)
     where
         H: crate::raw::node::header::Header,
     {
-        if let Some(index) = header.get(key) {
-            assert_eq!(header.get_or_insert(key), Some(index));
+        for key in u8::MIN..=u8::MAX {
+            if let Some(index) = header.get(key) {
+                assert_eq!(header.get_or_insert(key), Some(index));
+            }
         }
     }
 
     /// A successful `get_or_insert` means `get` returns the same index
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(crate) fn get_or_insert_implies_get<H>(header: H, key: u8)
+    pub(crate) fn get_or_insert_implies_get<H>(header: H)
     where
         H: crate::raw::node::header::Header,
     {
-        if let Some(index) = header.get_or_insert(key) {
-            assert_eq!(header.get(key), Some(index));
+        for key in u8::MIN..=u8::MAX {
+            if let Some(index) = header.get_or_insert(key) {
+                assert_eq!(header.get(key), Some(index));
+            }
         }
     }
 
@@ -130,13 +134,13 @@ pub(super) mod tests {
             #[cfg(feature = "proptest")]
             proptest::proptest! {
                 #[test]
-                fn get_implies_get_or_insert(header in $strategy, key: u8) {
-                    crate::raw::node::header::tests::get_implies_get_or_insert(header, key)
+                fn get_implies_get_or_insert(header in $strategy) {
+                    crate::raw::node::header::tests::get_implies_get_or_insert(header)
                 }
 
                 #[test]
-                fn get_or_insert_implies_get(header in $strategy, key: u8) {
-                    crate::raw::node::header::tests::get_or_insert_implies_get(header, key)
+                fn get_or_insert_implies_get(header in $strategy) {
+                    crate::raw::node::header::tests::get_or_insert_implies_get(header)
                 }
 
                 #[test]
