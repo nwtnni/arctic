@@ -309,17 +309,16 @@ mod tests {
     pub(crate) mod sequential {
         use core::fmt::Debug;
 
+        use crate::raw::Edge;
         use crate::raw::edge::Len;
         use crate::raw::edge::Meta;
 
         /// An expansion followed by a compression results in the same edge.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn expand_compress_inverse<M>(meta: M)
+        pub(crate) fn expand_compress_inverse<M>(meta: ribbit::Packed<M>)
         where
             M: ribbit::Pack<Packed: Meta<Len: Debug>>,
         {
-            let meta = meta.pack();
-
             for index in meta.len().range_to() {
                 let Some((parent, byte, child)) = meta.try_expand(index) else {
                     assert_eq!(index, meta.len());
@@ -334,21 +333,19 @@ mod tests {
                     && actual.is_frozen() == meta.is_frozen()
                     && actual.is_value() == meta.is_value(),
                     "Expand compress mismatch:\n\
-                {meta:x?}@{index:x?}\n\
-                {parent:x?} - {byte:x?} - {child:x?}\n\
-                {actual:x?}",
+                    {meta:x?}@{index:x?}\n\
+                    {parent:x?} - {byte:x?} - {child:x?}\n\
+                    {actual:x?}",
                 );
             }
         }
 
         /// An expansion (a) preserves total key bytes, and (b) preserves flags in the child edge.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn expand_correct<M>(meta: M)
+        pub(crate) fn expand_correct<M>(meta: ribbit::Packed<M>)
         where
             M: ribbit::Pack<Packed: Meta<Len: Debug>>,
         {
-            let meta = meta.pack();
-
             for index in meta.len().range_to() {
                 let Some((parent, byte, child)) = meta.try_expand(index) else {
                     assert_eq!(index, meta.len());
@@ -359,24 +356,95 @@ mod tests {
                     meta.len(),
                     parent.len() + <ribbit::Packed::<M> as Meta>::Len::BYTE + child.len(),
                     "Expand length mismatch:\n\
-                {meta:x?}@{index:x?}\n\
-                {parent:x?} - {byte:x?} - {child:x?}",
+                    {meta:x?}@{index:x?}\n\
+                    {parent:x?} - {byte:x?} - {child:x?}",
                 );
 
                 assert!(
                     meta.is_frozen() == child.is_frozen() && meta.is_value() == child.is_value(),
                     "Expand child mismatch:\n\
-                {meta:x?}@{index:x?}\n\
-                {parent:x?} - {byte:x?} - {child:x?}",
+                    {meta:x?}@{index:x?}\n\
+                    {parent:x?} - {byte:x?} - {child:x?}",
                 );
 
                 assert!(
                     !parent.is_frozen() && !parent.is_value(),
                     "Expand parent mismatch:\n\
-                {meta:x?}@{index:x?}\n\
-                {parent:x?} - {byte:x?} - {child:x?}",
+                    {meta:x?}@{index:x?}\n\
+                    {parent:x?} - {byte:x?} - {child:x?}",
                 );
             }
+        }
+
+        /// `M::eq` is reflexive.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        #[expect(clippy::eq_op)]
+        pub(crate) fn eq_reflexive<M>(meta: ribbit::Packed<M>)
+        where
+            M: ribbit::Pack<Packed: Meta>,
+        {
+            assert_eq!(meta, meta)
+        }
+
+        /// `M::cmp` returns equal if and only if `M::eq`.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn eq_ord_consistent<M>(left: ribbit::Packed<M>, right: ribbit::Packed<M>)
+        where
+            M: ribbit::Pack<Packed: Meta>,
+        {
+            assert_eq!(left.cmp(&right).is_eq(), left == right)
+        }
+
+        /// `left < right` if and only if `right > left`.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn ord_duality<M>(left: ribbit::Packed<M>, right: ribbit::Packed<M>)
+        where
+            M: ribbit::Pack<Packed: Meta>,
+        {
+            assert_eq!(left.cmp(&right), right.cmp(&left).reverse())
+        }
+
+        /// `M::cmp` ignores freeze and value flag bits.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn ord_ignores_flags<M>(left: ribbit::Packed<M>, right: ribbit::Packed<M>)
+        where
+            M: ribbit::Pack<Packed: Meta>,
+        {
+            assert_eq!(
+                left.cmp(&right),
+                left.with_value(!left.is_value()).cmp(&right)
+            );
+
+            assert_eq!(
+                left.cmp(&right),
+                left.with_frozen(!left.is_frozen()).cmp(&right)
+            );
+
+            assert_eq!(
+                left.cmp(&right),
+                left.with_value(!left.is_value())
+                    .with_frozen(!left.is_frozen())
+                    .cmp(&right)
+            );
+        }
+
+        /// `Edge::new_value` creates an edge with the value bit set.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn new_value_is_value<M>(meta: ribbit::Packed<M>, value: u64)
+        where
+            M: ribbit::Pack<Packed: Meta>,
+        {
+            assert!(Edge::<M>::new_value(meta, value).meta().is_value())
+        }
+
+        /// `M::into_iter` returns an iterator of `M::len` bytes.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn into_iter_len_consistent<M>(meta: ribbit::Packed<M>)
+        where
+            M: ribbit::Pack<Packed: Meta>,
+        {
+            let len = meta.len().bytes();
+            assert_eq!(meta.into_iter().count(), len);
         }
     }
 
@@ -385,16 +453,49 @@ mod tests {
             #[cfg(feature = "proptest")]
             mod sequential {
                 use crate::raw::edge::tests::sequential;
+                use ribbit::Pack as _;
 
                 proptest::proptest! {
+                    #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
+
                     #[test]
                     fn expand_compress_inverse(meta: $type) {
-                        sequential::expand_compress_inverse(meta)
+                        sequential::expand_compress_inverse::<$type>(meta.pack())
                     }
 
                     #[test]
                     fn expand_correct(meta: $type) {
-                        sequential::expand_correct(meta)
+                        sequential::expand_correct::<$type>(meta.pack())
+                    }
+
+                    #[test]
+                    fn eq_reflexive(meta: $type) {
+                        sequential::eq_reflexive::<$type>(meta.pack())
+                    }
+
+                    #[test]
+                    fn eq_ord_consistent(left: $type, right: $type) {
+                        sequential::eq_ord_consistent::<$type>(left.pack(), right.pack())
+                    }
+
+                    #[test]
+                    fn ord_duality(left: $type, right: $type) {
+                        sequential::ord_duality::<$type>(left.pack(), right.pack())
+                    }
+
+                    #[test]
+                    fn ord_ignores_flags(left: $type, right: $type) {
+                        sequential::ord_ignores_flags::<$type>(left.pack(), right.pack())
+                    }
+
+                    #[test]
+                    fn new_value_is_value(meta: $type, value: u64) {
+                        sequential::new_value_is_value::<$type>(meta.pack(), value)
+                    }
+
+                    #[test]
+                    fn into_iter_len_consistent(meta: $type) {
+                        sequential::into_iter_len_consistent::<$type>(meta.pack())
                     }
                 }
             }
