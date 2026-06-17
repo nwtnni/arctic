@@ -176,3 +176,30 @@ fn read_u64(slice: &[u8]) -> u64 {
 
     u64::from_le_bytes(buffer)
 }
+
+pub(crate) trait Terminate: Copy + Debug + Default + Eq {
+    fn new(terminate: bool) -> Self;
+    fn get(self) -> bool;
+}
+
+impl Terminate for () {
+    #[inline]
+    fn new(_: bool) -> Self {}
+
+    #[inline]
+    fn get(self) -> bool {
+        false
+    }
+}
+
+impl Terminate for bool {
+    #[inline]
+    fn new(terminate: bool) -> Self {
+        terminate
+    }
+
+    #[inline]
+    fn get(self) -> bool {
+        self
+    }
+}
