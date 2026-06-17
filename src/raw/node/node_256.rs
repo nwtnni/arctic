@@ -19,7 +19,7 @@ pub(super) type Node256 = node::Node<CAPACITY, Header>;
 // size class for 4KiB.
 const_assert_size_align!(Node256, 4096, 64);
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct Header;
 
 unsafe impl node::Header for Header {

@@ -31,6 +31,7 @@ pub(super) type Node47 = Node<CAPACITY, Header>;
 const_assert_size_align!(Node47, 1024, 64);
 
 #[repr(C, align(16))]
+#[derive(Clone)]
 pub(super) struct Header {
     indices: [Atomic<u128>; 16],
     meta: Atomic<Meta>,
@@ -270,6 +271,8 @@ impl proptest::arbitrary::Arbitrary for Header {
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
     fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
+        use core::sync::atomic::AtomicU64;
+
         use proptest::bits::SampledBitSetStrategy;
         use proptest::strategy::Strategy as _;
         use ribbit::Integer as _;
@@ -278,7 +281,7 @@ impl proptest::arbitrary::Arbitrary for Header {
         assert!(max_len <= 47);
 
         (
-            SampledBitSetStrategy::<crate::raw::set::Set256>::new(
+            SampledBitSetStrategy::<crate::raw::set::Set256<AtomicU64>>::new(
                 min_len.value() as usize..=max_len.value() as usize,
                 u8::MIN as usize..=u8::MAX as usize,
             )
@@ -287,13 +290,20 @@ impl proptest::arbitrary::Arbitrary for Header {
             bool::arbitrary(),
         )
             .prop_map(|(keys, frozen)| {
-                use crate::raw::node::header::Header as _;
-                let mut header = Header::default();
-                unsafe { header.initialize_unchecked(&keys) };
-                if frozen {
-                    header.freeze();
+                let mut indices = [0u128; 16];
+                for (i, key) in keys.iter().enumerate() {
+                    let (row, col) = Self::key_to_row_col(*key);
+                    indices[row as usize] ^= (0x7F ^ i as u128) << col;
                 }
-                header
+
+                Self {
+                    indices: core::array::from_fn(|i| crate::sync::Atomic::new(indices[i])),
+                    meta: crate::sync::Atomic::new(Meta {
+                        last: keys.last().copied().unwrap(),
+                        frozen,
+                        len: u6::new(keys.len() as u8),
+                    }),
+                }
             })
             .boxed()
     }

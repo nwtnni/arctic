@@ -4,10 +4,12 @@ use core::ops::DerefMut;
 cfg_select! {
     feature = "shuttle" => {
         use shuttle::sync::atomic;
+        pub(crate) use shuttle::thread;
         pub use shuttle::sync::Arc;
     }
     _ => {
         pub use std::sync::Arc;
+        pub(crate) use std::thread;
         use ribbit::atomic;
     }
 }
@@ -65,3 +67,18 @@ macro_rules! impl_raw {
 impl_raw!(u16, AtomicU16);
 impl_raw!(u64, AtomicU64);
 impl_raw!(u128, AtomicU128);
+
+#[doc(hidden)]
+pub fn check_dfs<F>(_count: usize, run: F)
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    cfg_select! {
+        feature = "shuttle" => { shuttle::check_dfs(run, None); }
+        _ => {
+            for _ in .._count {
+                run();
+            }
+        }
+    }
+}

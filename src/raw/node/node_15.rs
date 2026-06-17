@@ -148,11 +148,13 @@ impl proptest::arbitrary::Arbitrary for Header {
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
     fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
+        use core::sync::atomic::AtomicU64;
+
         use proptest::bits::SampledBitSetStrategy;
         use proptest::strategy::Strategy as _;
 
         (
-            SampledBitSetStrategy::<crate::raw::set::Set256>::new(
+            SampledBitSetStrategy::<crate::raw::set::Set256<AtomicU64>>::new(
                 min_len.value() as usize..=max_len.value() as usize,
                 u8::MIN as usize..=u8::MAX as usize,
             )

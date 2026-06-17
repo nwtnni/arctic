@@ -14,7 +14,9 @@ use crate::raw::node::Node;
 ///
 /// Implementer must guarantee indices returned from all methods were
 /// previously successfully inserted by `get_or_insert`.
-pub(in crate::raw) unsafe trait Header: Debug + Default + Sized {
+pub(in crate::raw) unsafe trait Header:
+    Clone + Debug + Default + Sized + Send + Sync + 'static
+{
     /// A runtime representation of the node type.
     const TYPE: node::Type;
     type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
@@ -123,6 +125,22 @@ pub(super) mod tests {
         }
     }
 
+    /// Concurrent calls to `get_or_insert` return the same index
+    pub(crate) fn get_or_insert_concurrent_consistent<H>(header: H, key: u8)
+    where
+        H: crate::raw::node::header::Header,
+    {
+        crate::sync::check_dfs(1, move || {
+            let header = header.clone();
+            crate::sync::thread::scope(|scope| {
+                let a = scope.spawn(|| header.get_or_insert(key));
+                let b = header.get_or_insert(key);
+                let a = a.join().unwrap();
+                assert_eq!(a, b);
+            });
+        })
+    }
+
     // Guarantees lower >= upper
     #[cfg(feature = "proptest")]
     proptest::prop_compose! {
@@ -162,6 +180,15 @@ pub(super) mod tests {
                 #[test]
                 fn freeze_no_insert(header in $strategy) {
                     crate::raw::node::header::tests::freeze_no_insert(header)
+                }
+            }
+
+            #[cfg(all(feature = "proptest", feature = "shuttle"))]
+            proptest::proptest! {
+                #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+                #[test]
+                fn get_or_insert_concurrent_consistent(header in $strategy, key: u8) {
+                    crate::raw::node::header::tests::get_or_insert_concurrent_consistent(header, key)
                 }
             }
         };

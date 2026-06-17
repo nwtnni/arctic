@@ -5,15 +5,16 @@ use core::sync::atomic::Ordering;
 use ribbit::u6;
 use ribbit::u56;
 
-use crate::Atomic;
 use crate::raw::edge::Len as _;
 use crate::raw::node;
 use crate::sequential;
 
+type AtomicU64 = <u64 as crate::sync::Loose>::Atomic;
+
 pub(crate) union Set {
     raw: u64,
     set_8: ribbit::Packed<Set8>,
-    set_256: NonNull<Set256>,
+    set_256: NonNull<Set256<AtomicU64>>,
 }
 
 unsafe impl sequential::Value for Set {
@@ -57,7 +58,7 @@ impl Set {
     /// # Safety
     ///
     /// Caller must ensure `self` is `Set8`.
-    unsafe fn expand_mut_unchecked(&mut self) -> &mut Set256 {
+    unsafe fn expand_mut_unchecked(&mut self) -> &mut Set256<AtomicU64> {
         validate!(unsafe { self.raw >> 56 } <= 56);
 
         let mut set_256 = Box::new(Set256::default());
@@ -111,12 +112,12 @@ impl Set {
 
 enum Ref<'a> {
     Set8(&'a ribbit::Packed<Set8>),
-    Set256(&'a Set256),
+    Set256(&'a Set256<AtomicU64>),
 }
 
 enum RefMut<'a> {
     Set8(&'a mut ribbit::Packed<Set8>),
-    Set256(&'a mut Set256),
+    Set256(&'a mut Set256<AtomicU64>),
 }
 
 #[derive(Copy, Clone, ribbit::Pack)]
@@ -158,10 +159,10 @@ impl Set8Packed {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Default)]
-pub(super) struct Set256([Atomic<u64>; 4]);
+#[derive(Default)]
+pub(super) struct Set256<R>([ribbit::Atomic<u64, R>; 4]);
 
-impl Set256 {
+impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
     fn contains(&self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
         self.0[i].load(Ordering::Relaxed) & bit == bit
@@ -207,6 +208,20 @@ impl Set256 {
     }
 }
 
+impl<R: ribbit::atomic::Raw<u64>> Clone for Set256<R> {
+    fn clone(&self) -> Self {
+        Self(core::array::from_fn(|i| {
+            ribbit::Atomic::new(self.0[i].load(Ordering::Relaxed))
+        }))
+    }
+}
+
+impl<R: ribbit::atomic::Raw<u64>> core::fmt::Debug for Set256<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Set256").field(&self.0).finish()
+    }
+}
+
 pub(super) struct Iter256([u64; 4]);
 
 impl Iterator for Iter256 {
@@ -226,7 +241,7 @@ impl Iterator for Iter256 {
 }
 
 #[cfg(feature = "proptest")]
-impl proptest::bits::BitSetLike for Set256 {
+impl proptest::bits::BitSetLike for Set256<core::sync::atomic::AtomicU64> {
     fn new_bitset(max: usize) -> Self {
         assert!(max <= 256, "Only supports 256 bit sets");
         Self::default()
