@@ -23,6 +23,7 @@ const_assert_size_align!(Node15, 256, 64);
 pub(super) struct Header {
     keys: u120,
     frozen: bool,
+    #[ribbit(get(vis = "pub(in crate::raw)"))]
     len: u4,
 }
 

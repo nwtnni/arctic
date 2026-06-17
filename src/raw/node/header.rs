@@ -58,8 +58,9 @@ pub(in crate::raw) unsafe trait Header: Debug + Default + Sized {
 
 #[cfg(test)]
 pub(super) mod tests {
+    #![cfg_attr(not(feature = "proptest"), expect(unused))]
+
     /// A successful `get` means `get_or_insert` returns the same index
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
     pub(crate) fn get_implies_get_or_insert<H>(header: H)
     where
         H: crate::raw::node::header::Header,
@@ -72,7 +73,6 @@ pub(super) mod tests {
     }
 
     /// A successful `get_or_insert` means `get` returns the same index
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
     pub(crate) fn get_or_insert_implies_get<H>(header: H)
     where
         H: crate::raw::node::header::Header,
@@ -85,7 +85,6 @@ pub(super) mod tests {
     }
 
     /// Consecutive `get_or_insert` calls return the same index
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
     pub(crate) fn get_or_insert_idempotent<H>(header: H, key: u8)
     where
         H: crate::raw::node::header::Header,
@@ -97,7 +96,6 @@ pub(super) mod tests {
     }
 
     /// Every key returned from `keys` is visible to `get` and `get_or_insert`
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
     pub(crate) fn keys_get_consistent<H>(header: H, mut lower: u8, mut upper: u8)
     where
         H: crate::raw::node::header::Header,
@@ -114,7 +112,6 @@ pub(super) mod tests {
     }
 
     /// Freezing prevents insertion
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
     pub(crate) fn freeze_no_insert<H>(header: H)
     where
         H: crate::raw::node::header::Header,
@@ -133,6 +130,8 @@ pub(super) mod tests {
         ($strategy:expr) => {
             #[cfg(feature = "proptest")]
             proptest::proptest! {
+                #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
+
                 #[test]
                 fn get_implies_get_or_insert(header in $strategy) {
                     crate::raw::node::header::tests::get_implies_get_or_insert(header)

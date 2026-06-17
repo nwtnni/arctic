@@ -60,7 +60,6 @@ criterion = { version = "0.8.2", default-features = false }
 mimalloc = "0.1.50"
 proptest-state-machine = "0.6.0"
 rand = "0.10.1"
-rapidhash = "4.0.0"
 
 [[bench]]
 name = "sequential"

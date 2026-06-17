@@ -624,137 +624,101 @@ mod tests {
     use core::arch::x86_64::_mm256_loadu_si256;
     use core::arch::x86_64::_mm256_set_epi16;
     use core::arch::x86_64::_mm256_setr_epi16;
-    use core::hash::Hasher as _;
 
-    use ribbit::u2;
-    use ribbit::u4;
-
-    use crate::raw::node::KeyIter3;
-    use crate::raw::node::KeyIter15;
-    use crate::raw::node::simd;
     use crate::raw::node::simd::avx2::bitonic_sort_16;
 
-    #[test]
-    fn get_3() {
-        const COUNT: usize = 100_000;
+    #[cfg(feature = "proptest")]
+    mod proptest {
+        use proptest::strategy::Just;
+        use ribbit::Integer as _;
+        use ribbit::u2;
+        use ribbit::u4;
 
-        let mut hasher = rapidhash::fast::RapidHasher::default_const();
+        use crate::raw::node::KeyIter3;
+        use crate::raw::node::KeyIter15;
+        use crate::raw::node::simd;
 
-        for i in 0..COUNT {
-            hasher.write_usize(i);
-            let hash = hasher.finish();
-            let array = hash & 0x00FF_00FF_00FF;
-            let key = (hash >> 8) as u8;
+        proptest::proptest! {
+            #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
 
-            let swar = super::get_3(array, key);
-            let fallback = simd::get_3_fallback(array, key);
+            #[test]
+            fn get_3(header in proptest::arbitrary::any_with::<crate::raw::node::node_3::Header>((u2::new(0), u2::MAX))) {
+                let raw = ribbit::Pack::pack(header).into_raw();
+                for key in u8::MIN..=u8::MAX {
+                    let swar = simd::avx2::get_3(raw, key);
+                    let fallback = simd::get_3_fallback(raw, key);
 
-            assert_eq!(
-                swar, fallback,
-                "SWAR {swar} does not match fallback {fallback} for array {array:x?} and key {key:x?}",
-            );
-        }
-    }
-
-    #[test]
-    fn get_15() {
-        const COUNT: usize = 100_000;
-
-        let mut hasher = rapidhash::fast::RapidHasher::default_const();
-
-        for i in 0..COUNT {
-            hasher.write_usize(i);
-            let low = hasher.finish();
-
-            hasher.write_usize(i);
-            let high = hasher.finish();
-
-            hasher.write_usize(i);
-            let key = hasher.finish() as u8;
-
-            let array = (high as u128) << 64 | (low as u128);
-            let simd = super::get_15(array, key);
-            let fallback = simd::get_15_fallback(array, key);
-
-            assert_eq!(
-                simd, fallback,
-                "SIMD does not match fallback for array {array:#x?} and key {key:#x?}",
-            );
-        }
-    }
-
-    #[test]
-    fn keys_3() {
-        const COUNT: usize = 100_000;
-
-        let mut hasher = rapidhash::fast::RapidHasher::default_const();
-
-        for i in 0..COUNT {
-            hasher.write_usize(i);
-            let data = hasher.finish();
-
-            let keys = data & 0x00FF_00FF_00FF;
-            let len = u2::extract_u64(data, 8);
-            let mut low = (data >> 24) as u8;
-            let mut high = (data >> 40) as u8;
-            if low > high {
-                core::mem::swap(&mut low, &mut high);
-            }
-
-            let mut simd = KeyIter3::default();
-            super::keys_3(keys, len, Some(low), Some(high), &mut simd);
-
-            let mut fallback = KeyIter3::default();
-            simd::keys_3_fallback(keys, len, Some(low), Some(high), &mut fallback);
-
-            assert_eq!(
-                simd, fallback,
-                "SIMD does not match fallback for keys {keys:#x?}, len {len}, low {low:#x?}, high {high:#x?}",
-            );
-        }
-    }
-
-    #[test]
-    fn keys_15() {
-        const COUNT: usize = 100_000;
-
-        let mut hasher = rapidhash::fast::RapidHasher::default_const();
-
-        for i in 0..COUNT {
-            hasher.write_usize(i);
-            let low = hasher.finish();
-            hasher.write_usize(i);
-            let high = hasher.finish();
-
-            let keys = (low as u128) | (high as u128) << 64;
-
-            hasher.write_usize(i);
-            let data = hasher.finish();
-
-            let len = u4::extract_u64(data, 0);
-            let mut low = (data >> 8) as u8;
-            let mut high = (data >> 16) as u8;
-            if low > high {
-                core::mem::swap(&mut low, &mut high);
-            }
-
-            let mut simd = KeyIter15::default();
-            super::keys_15(keys, len, Some(low), Some(high), &mut simd);
-            for (index, entry) in simd.0.entries.iter_mut().enumerate() {
-                if entry.key == 0xFF && entry.index == 0xFF {
-                    assert!(index >= simd.0.tail as usize);
-                    entry.key = 0;
-                    entry.index = 0;
+                    assert_eq!(
+                        swar, fallback,
+                        "SWAR {swar} does not match fallback {fallback} for header {header:x?} and key {key:x?}",
+                    );
                 }
             }
 
-            let mut fallback = KeyIter15::default();
-            simd::keys_15_fallback(keys, len, Some(low), Some(high), &mut fallback);
+            #[test]
+            fn get_15(header in proptest::arbitrary::any_with::<crate::raw::node::node_15::Header>((u4::new(0), u4::MAX))) {
+                let raw = ribbit::Pack::pack(header).into_raw();
+                for key in u8::MIN..=u8::MAX {
+                    let simd = simd::avx2::get_15(raw, key);
+                    let fallback = simd::get_15_fallback(raw, key);
 
-            assert_eq!(
-                simd, fallback,
-                "SIMD does not match fallback for {i}: keys {keys:#x?}, len {len}, low {low:#x?}, high {high:#x?}",
-            );
+                    assert_eq!(
+                        simd, fallback,
+                        "SIMD does not match fallback for array {header:#x?} and key {key:#x?}",
+                    );
+                }
+            }
+
+            #[test]
+            fn keys_3(
+                header in proptest::arbitrary::any_with::<crate::raw::node::node_3::Header>((u2::new(0), u2::MAX)),
+                (lower, upper) in bound()
+            ) {
+                let header = ribbit::Pack::pack(header);
+                let raw = header.into_raw();
+                let len = header.len();
+
+                let mut simd = KeyIter3::default();
+                simd::avx2::keys_3(raw, len, Some(lower), Some(upper), &mut simd);
+
+                let mut fallback = KeyIter3::default();
+                simd::keys_3_fallback(raw, len, Some(lower), Some(upper), &mut fallback);
+
+                assert_eq!(
+                    simd, fallback,
+                    "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
+                );
+            }
+
+            #[test]
+            fn keys_15(
+                header in proptest::arbitrary::any_with::<crate::raw::node::node_15::Header>((u4::new(0), u4::MAX)),
+                (lower, upper) in bound()
+            ) {
+                let header = ribbit::Pack::pack(header);
+                let raw = header.into_raw();
+                let len = header.len();
+
+                let mut simd = KeyIter15::default();
+                simd::avx2::keys_15(raw, len, Some(lower), Some(upper), &mut simd);
+
+                let mut fallback = KeyIter15::default();
+                simd::keys_15_fallback(raw, len, Some(lower), Some(upper), &mut fallback);
+
+                assert_eq!(
+                    simd, fallback,
+                    "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
+                );
+            }
+        }
+
+        // Guarantees lower >= upper
+        proptest::prop_compose! {
+            fn bound()
+            (lower in u8::MIN..=u8::MAX)
+            (lower in Just(lower), upper in lower..=u8::MAX) -> (u8, u8) {
+                (lower, upper)
+            }
         }
     }
 

@@ -32,7 +32,7 @@ pub(in crate::raw) struct Header {
     keys: u48,
     #[ribbit(offset = 48)]
     frozen: bool,
-    #[ribbit(offset = 56)]
+    #[ribbit(offset = 56, get(vis = "pub(in crate::raw)"))]
     len: u2,
 }
 
