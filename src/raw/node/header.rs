@@ -96,14 +96,11 @@ pub(super) mod tests {
     }
 
     /// Every key returned from `keys` is visible to `get` and `get_or_insert`
-    pub(crate) fn keys_get_consistent<H>(header: H, mut lower: u8, mut upper: u8)
+    pub(crate) fn keys_get_consistent<H>(header: H, lower: u8, upper: u8)
     where
         H: crate::raw::node::header::Header,
     {
         let mut keys = H::KeyIter::default();
-        if lower > upper {
-            core::mem::swap(&mut lower, &mut upper);
-        }
         header.keys(Some(lower), Some(upper), &mut keys);
         for KeyIndex { key, index } in keys {
             assert_eq!(header.get(key), Some(index));
@@ -123,6 +120,16 @@ pub(super) mod tests {
                 None => assert!(header.get_or_insert(key).is_none()),
                 Some(index) => assert_eq!(header.get_or_insert(key), Some(index)),
             }
+        }
+    }
+
+    // Guarantees lower >= upper
+    #[cfg(feature = "proptest")]
+    proptest::prop_compose! {
+        pub(crate) fn bound()
+        (lower in u8::MIN..=u8::MAX)
+        (lower in proptest::strategy::Just(lower), upper in lower..=u8::MAX) -> (u8, u8) {
+            (lower, upper)
         }
     }
 
@@ -148,7 +155,7 @@ pub(super) mod tests {
                 }
 
                 #[test]
-                fn keys_get_consistent(header in $strategy, lower: u8, upper: u8) {
+                fn keys_get_consistent(header in $strategy, (lower, upper) in crate::raw::node::header::tests::bound()) {
                     crate::raw::node::header::tests::keys_get_consistent(header, lower, upper)
                 }
 

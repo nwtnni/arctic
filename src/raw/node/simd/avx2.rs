@@ -629,7 +629,6 @@ mod tests {
 
     #[cfg(feature = "proptest")]
     mod proptest {
-        use proptest::strategy::Just;
         use ribbit::Integer as _;
         use ribbit::u2;
         use ribbit::u4;
@@ -672,7 +671,7 @@ mod tests {
             #[test]
             fn keys_3(
                 header in proptest::arbitrary::any_with::<crate::raw::node::node_3::Header>((u2::new(0), u2::MAX)),
-                (lower, upper) in bound()
+                (lower, upper) in crate::raw::node::header::tests::bound()
             ) {
                 let header = ribbit::Pack::pack(header);
                 let raw = header.into_raw();
@@ -693,7 +692,7 @@ mod tests {
             #[test]
             fn keys_15(
                 header in proptest::arbitrary::any_with::<crate::raw::node::node_15::Header>((u4::new(0), u4::MAX)),
-                (lower, upper) in bound()
+                (lower, upper) in crate::raw::node::header::tests::bound()
             ) {
                 let header = ribbit::Pack::pack(header);
                 let raw = header.into_raw();
@@ -709,15 +708,6 @@ mod tests {
                     simd, fallback,
                     "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
                 );
-            }
-        }
-
-        // Guarantees lower >= upper
-        proptest::prop_compose! {
-            fn bound()
-            (lower in u8::MIN..=u8::MAX)
-            (lower in Just(lower), upper in lower..=u8::MAX) -> (u8, u8) {
-                (lower, upper)
             }
         }
     }
