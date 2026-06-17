@@ -269,15 +269,21 @@ impl proptest::arbitrary::Arbitrary for Header {
     type Parameters = (u8, u8);
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
-    fn arbitrary_with((min, max): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
+        use proptest::bits::SampledBitSetStrategy;
         use proptest::strategy::Strategy as _;
-        assert!(min >= 15);
-        assert!(max <= 47);
+        use ribbit::Integer as _;
 
-        use crate::raw;
+        assert!(min_len >= 1);
+        assert!(max_len <= 47);
+
         (
-            proptest::collection::vec(u8::arbitrary(), min as usize..=max as usize)
-                .prop_filter("unique keys", |keys| raw::is_unique(keys)),
+            SampledBitSetStrategy::<crate::raw::set::Set256>::new(
+                min_len.value() as usize..=max_len.value() as usize,
+                u8::MIN as usize..=u8::MAX as usize,
+            )
+            .prop_map(|set| set.iter().collect::<Vec<_>>())
+            .prop_shuffle(),
             bool::arbitrary(),
         )
             .prop_map(|(keys, frozen)| {
@@ -298,6 +304,6 @@ mod tests {
     use proptest::arbitrary::any_with;
 
     crate::raw::node::header::tests::impl_suite!(any_with::<crate::raw::node::node_47::Header>((
-        15, 47
+        1, 47
     )));
 }

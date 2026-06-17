@@ -52,6 +52,12 @@ macro_rules! impl_raw {
             }
         }
 
+        impl Clone for $atomic {
+            fn clone(&self) -> Self {
+                Self::new(self.load(core::sync::atomic::Ordering::Relaxed))
+            }
+        }
+
         ribbit::impl_raw!($inner, $atomic);
     };
 }

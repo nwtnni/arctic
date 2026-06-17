@@ -1,11 +1,11 @@
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
-use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
 use ribbit::u6;
 use ribbit::u56;
 
+use crate::Atomic;
 use crate::raw::edge::Len as _;
 use crate::raw::node;
 use crate::sequential;
@@ -158,8 +158,8 @@ impl Set8Packed {
 }
 
 #[repr(C)]
-#[derive(Default)]
-struct Set256([AtomicU64; 4]);
+#[derive(Clone, Debug, Default)]
+pub(super) struct Set256([Atomic<u64>; 4]);
 
 impl Set256 {
     fn contains(&self, byte: u8) -> bool {
@@ -169,7 +169,7 @@ impl Set256 {
 
     fn insert_mut(&mut self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
-        let row = self.0[i].get_mut();
+        let row = self.0[i].get_mut_packed();
         if *row & bit == bit {
             return false;
         }
@@ -177,11 +177,75 @@ impl Set256 {
         true
     }
 
+    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    fn remove_mut(&mut self, byte: u8) -> bool {
+        let (i, bit) = Self::index(byte);
+        let row = self.0[i].get_mut_packed();
+        let old = (*row & bit) > 0;
+        *row &= !bit;
+        old
+    }
+
     #[inline]
     fn index(byte: u8) -> (usize, u64) {
         let i = byte / 64;
         let j = byte % 64;
         (i as usize, 1u64 << j)
+    }
+
+    #[expect(unused)]
+    pub(super) fn len(&self) -> u8 {
+        self.0
+            .iter()
+            .map(|row| row.load(Ordering::Relaxed).count_ones() as u8)
+            .sum()
+    }
+
+    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    pub(super) fn iter(&self) -> Iter256 {
+        Iter256(core::array::from_fn(|i| self.0[i].load(Ordering::Relaxed)))
+    }
+}
+
+pub(super) struct Iter256([u64; 4]);
+
+impl Iterator for Iter256 {
+    type Item = u8;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.iter_mut().enumerate().find_map(|(i, row)| {
+            let j = row.trailing_zeros();
+
+            if j == u64::BITS {
+                return None;
+            }
+
+            *row ^= 1 << j;
+            Some((i as u8) * 64 + j as u8)
+        })
+    }
+}
+
+#[cfg(feature = "proptest")]
+impl proptest::bits::BitSetLike for Set256 {
+    fn new_bitset(max: usize) -> Self {
+        assert!(max <= 256, "Only supports 256 bit sets");
+        Self::default()
+    }
+
+    fn len(&self) -> usize {
+        256
+    }
+
+    fn test(&self, ix: usize) -> bool {
+        self.contains(ix as u8)
+    }
+
+    fn set(&mut self, ix: usize) {
+        self.insert_mut(ix as u8);
+    }
+
+    fn clear(&mut self, ix: usize) {
+        self.remove_mut(ix as u8);
     }
 }
 

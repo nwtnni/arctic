@@ -143,16 +143,20 @@ impl From<Box<KeyIter15>> for node::KeyIter {
 
 #[cfg(feature = "proptest")]
 impl proptest::arbitrary::Arbitrary for Header {
-    type Parameters = u4;
+    type Parameters = (u4, u4);
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
-    fn arbitrary_with(len: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
+        use proptest::bits::SampledBitSetStrategy;
         use proptest::strategy::Strategy as _;
 
-        use crate::raw;
         (
-            proptest::collection::vec(u8::arbitrary(), ..=len.value() as usize)
-                .prop_filter("unique keys", |keys| raw::is_unique(keys)),
+            SampledBitSetStrategy::<crate::raw::set::Set256>::new(
+                min_len.value() as usize..=max_len.value() as usize,
+                u8::MIN as usize..=u8::MAX as usize,
+            )
+            .prop_map(|set| set.iter().collect::<Vec<_>>())
+            .prop_shuffle(),
             bool::arbitrary(),
         )
             .prop_map(|(keys, frozen)| {
@@ -170,10 +174,16 @@ impl proptest::arbitrary::Arbitrary for Header {
 
 #[cfg(test)]
 mod tests {
-    use proptest::arbitrary::any;
-    use proptest::strategy::Strategy as _;
+    #[cfg(feature = "proptest")]
+    mod proptest {
+        use proptest::arbitrary::any_with;
+        use proptest::strategy::Strategy as _;
+        use ribbit::Integer as _;
+        use ribbit::u4;
 
-    crate::raw::node::header::tests::impl_suite!(
-        any::<crate::raw::node::node_15::Header>().prop_map(crate::sync::Atomic::new)
-    );
+        crate::raw::node::header::tests::impl_suite!(
+            any_with::<crate::raw::node::node_15::Header>((u4::new(0), u4::MAX))
+                .prop_map(crate::sync::Atomic::new)
+        );
+    }
 }
