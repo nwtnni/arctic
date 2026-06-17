@@ -6,6 +6,7 @@ use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
+use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 
 #[cfg(feature = "opt-no-int")]
@@ -14,7 +15,7 @@ impl crate::raw::Key for u64 {
     type Write = key::array::Writer<8>;
     type Borrowed = Self;
     type Edge = edge::Le;
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     type Insert<'k> = Self;
 
@@ -49,7 +50,7 @@ impl crate::raw::Key for u64 {
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reader {
     pub(crate) buffer: [u8; 8],
-    len: key::vec::Len,
+    len: Byte,
 }
 
 impl Reader {
@@ -61,16 +62,16 @@ impl Reader {
         let buffer = buffer.to_be_bytes();
         Self {
             buffer,
-            len: key::vec::Len((bits as usize) >> 3),
+            len: Byte((bits as usize) >> 3),
         }
     }
 }
 
 impl key::Read for Reader {
-    const LEN: Option<Self::Len> = Some(key::vec::Len(8));
+    const LEN: Option<Self::Len> = Some(Byte(8));
 
     type Edge = edge::Le;
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn len(&self) -> Self::Len {
@@ -97,8 +98,8 @@ impl key::Read for Reader {
     }
 
     #[inline]
-    fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> key::vec::Len {
-        key::vec::Len(
+    fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Byte {
+        Byte(
             self.buffer
                 .into_iter()
                 .zip(edge)
@@ -130,7 +131,7 @@ impl key::Read for Reader {
             .iter()
             .zip(&other.buffer[..len.bytes()])
             .position(|(l, r)| l != r)
-            .map(key::vec::Len)
+            .map(Byte)
             .unwrap_or(len);
         let mut buffer = [0u8; 8];
         buffer[..len_prefix.bytes()].copy_from_slice(&self.buffer[..len_prefix.bytes()]);
@@ -141,11 +142,7 @@ impl key::Read for Reader {
     }
 
     fn split_last(self) -> Option<(Self, u8)> {
-        let len = self
-            .len
-            .0
-            .checked_sub(Self::Len::BYTE.0)
-            .map(key::vec::Len)?;
+        let len = self.len.0.checked_sub(Self::Len::BYTE.0).map(Byte)?;
 
         Some((
             Self {
@@ -210,7 +207,7 @@ impl<'k> From<&'k u64> for Reader {
 }
 
 impl key::Write<Reader> for key::array::Writer<8> {
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn new(prefix: Reader, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
@@ -235,6 +232,6 @@ impl key::Write<Reader> for key::array::Writer<8> {
             .for_each(|(out, r#in)| {
                 *out = r#in;
             });
-        start + key::vec::Len::BYTE + edge.len().into()
+        start + Byte::BYTE + edge.len().into()
     }
 }

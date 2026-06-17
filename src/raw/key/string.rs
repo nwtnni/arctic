@@ -11,6 +11,7 @@ use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
+use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
@@ -172,7 +173,7 @@ impl Key for NonNullString {
     type Borrowed = NonNullStr;
     type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -262,11 +263,11 @@ impl key::Read for Reader<'_> {
     const LEN: Option<Self::Len> = None;
 
     type Edge = edge::Le;
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn len(&self) -> Self::Len {
-        key::vec::Len(self.slice.len() + self.terminate as usize)
+        Byte(self.slice.len() + self.terminate as usize)
     }
 
     #[inline]
@@ -302,7 +303,7 @@ impl key::Read for Reader<'_> {
 
     #[inline]
     fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        key::vec::Len(((edge.raw() ^ key::read_u64(self.slice)).trailing_zeros() as usize) >> 3)
+        Byte(((edge.raw() ^ key::read_u64(self.slice)).trailing_zeros() as usize) >> 3)
     }
 
     #[inline]
@@ -359,7 +360,7 @@ impl key::Read for Reader<'_> {
 pub struct Writer(pub(super) Vec<u8>);
 
 impl<'k> key::Write<Reader<'k>> for Writer {
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn new(prefix: Reader<'k>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
@@ -381,7 +382,7 @@ impl<'k> key::Write<Reader<'k>> for Writer {
         self.0.truncate(start.0);
         self.0.push(node);
         self.0.extend(edge);
-        key::vec::Len(self.0.len())
+        Byte(self.0.len())
     }
 }
 

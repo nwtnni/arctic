@@ -2,8 +2,6 @@
 
 use core::num::NonZeroUsize;
 
-use ribbit::u14;
-
 use crate::NonPrefixVec;
 use crate::raw::Key;
 use crate::raw::edge;
@@ -11,6 +9,7 @@ use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::edge::Slice;
 use crate::raw::key;
+use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
@@ -77,7 +76,7 @@ impl Key for &'_ NonPrefixSlice {
     type Read<'k> = Reader<'k>;
     type Write = Writer;
     type Edge = edge::Slice;
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -137,13 +136,13 @@ impl<'k> From<&'k NonPrefixSlice> for Reader<'k> {
 }
 
 impl key::Read for Reader<'_> {
-    const LEN: Option<key::vec::Len> = None;
+    const LEN: Option<Byte> = None;
 
     type Edge = edge::Slice;
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     fn len(&self) -> Self::Len {
-        key::vec::Len(self.0.len())
+        Byte(self.0.len())
     }
 
     fn get_edge(
@@ -160,17 +159,17 @@ impl key::Read for Reader<'_> {
 
     fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
         let other = unsafe { meta.as_slice() };
-        key::vec::Len(key::common_prefix(self.0, other))
+        Byte(key::common_prefix(self.0, other))
     }
 
     #[inline]
-    fn prefix(self, len: key::vec::Len) -> Self {
+    fn prefix(self, len: Byte) -> Self {
         validate!(self.len() >= len);
         Reader(&self.0[..len.bytes()])
     }
 
     #[inline]
-    fn suffix(self, len: key::vec::Len) -> Self {
+    fn suffix(self, len: Byte) -> Self {
         validate!(self.len() >= len);
         Reader(&self.0[len.bytes()..])
     }
@@ -191,11 +190,11 @@ impl key::Read for Reader<'_> {
 #[derive(Clone, Default, Debug)]
 pub struct Writer {
     last: ribbit::Packed<edge::Slice>,
-    len: key::vec::Len,
+    len: Byte,
 }
 
 impl key::Write<Reader<'_>> for Writer {
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     fn new(prefix: Reader, key: ribbit::Packed<edge::Slice>) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
@@ -204,14 +203,8 @@ impl key::Write<Reader<'_>> for Writer {
 
     fn replace(&mut self, start: Self::Len, _: u8, edge: ribbit::Packed<edge::Slice>) -> Self::Len {
         validate!(start <= self.len);
-        self.len = start + key::vec::Len::BYTE + edge.len().into();
+        self.len = start + Byte::BYTE + edge.len().into();
         self.last = edge;
         self.len
-    }
-}
-
-impl From<u14> for key::vec::Len {
-    fn from(value: u14) -> Self {
-        Self(value.value() as usize)
     }
 }

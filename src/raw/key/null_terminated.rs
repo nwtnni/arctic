@@ -1,6 +1,8 @@
 //! Support for dynamically sized keys that end with a null terminator.
 
+use core::borrow::Borrow;
 use core::num::NonZeroUsize;
+use core::ops::Deref;
 
 pub mod slice;
 pub mod vec;
@@ -60,6 +62,13 @@ impl core::borrow::Borrow<NullTerminatedSlice> for NullTerminatedVec {
     }
 }
 
+impl AsRef<NullTerminatedSlice> for NullTerminatedVec {
+    #[inline]
+    fn as_ref(&self) -> &NullTerminatedSlice {
+        self.as_null_terminated_slice()
+    }
+}
+
 /// Newtype guaranteeing this slice (a) is not empty,
 /// (b) does not contain interior null bytes,
 /// and (c) ends with a null terminator.
@@ -111,5 +120,41 @@ impl NullTerminatedSlice {
     #[inline]
     pub const fn len(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.0.len()).expect("NullTerminatedSlice is non-empty")
+    }
+
+    /// Return a borrowed slice of the underlying bytes.
+    #[inline]
+    pub const fn as_slice(&self) -> &[u8] {
+        // SAFETY: `NullTerminatedSlice` is `repr(transparent)`
+        unsafe { core::mem::transmute::<&NullTerminatedSlice, &[u8]>(self) }
+    }
+}
+
+impl<'a> From<&'a NullTerminatedSlice> for &'a [u8] {
+    #[inline]
+    fn from(slice: &'a NullTerminatedSlice) -> &'a [u8] {
+        slice.as_slice()
+    }
+}
+
+impl Borrow<[u8]> for NullTerminatedSlice {
+    #[inline]
+    fn borrow(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl AsRef<[u8]> for NullTerminatedSlice {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl Deref for NullTerminatedSlice {
+    type Target = [u8];
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
     }
 }

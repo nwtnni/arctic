@@ -6,6 +6,7 @@ use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
+use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
@@ -15,7 +16,7 @@ impl<const N: usize> Key for [u8; N] {
     type Borrowed = [u8; N];
     type Insert<'k> = &'k Self;
     type Edge = edge::Le;
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -69,7 +70,7 @@ impl<const N: usize> Default for Writer<N> {
 }
 
 impl<'k, const N: usize> key::Write<key::vec::Reader<'k, N>> for Writer<N> {
-    type Len = key::vec::Len;
+    type Len = Byte;
 
     #[inline]
     fn new(prefix: key::vec::Reader<'k, N>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
@@ -94,7 +95,7 @@ impl<'k, const N: usize> key::Write<key::vec::Reader<'k, N>> for Writer<N> {
             .for_each(|(out, r#in)| {
                 *out = r#in;
             });
-        start + key::vec::Len::BYTE + edge.len().into()
+        start + Byte::BYTE + edge.len().into()
     }
 }
 

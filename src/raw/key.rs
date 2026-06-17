@@ -3,6 +3,7 @@
 pub mod array;
 mod discard;
 pub mod int;
+mod len;
 pub mod non_null;
 pub mod null_terminated;
 pub mod slice;
@@ -11,14 +12,13 @@ pub mod string;
 pub mod vec;
 
 pub(crate) use discard::Discard;
+pub(crate) use len::Bit;
+pub(crate) use len::Byte;
+pub(crate) use len::Len;
 
 use core::borrow::Borrow;
 use core::fmt;
 use core::fmt::Debug;
-use core::ops::Add;
-use core::ops::AddAssign;
-use core::ops::Sub;
-use core::ops::SubAssign;
 
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
@@ -150,30 +150,6 @@ pub(crate) trait Write<R: Read>: fmt::Debug + Default {
 
     /// Replace bytes starting at `start` with bytes from `node` and `edge`
     fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<R::Edge>) -> Self::Len;
-}
-
-/// Key length.
-pub(crate) trait Len:
-    Sized
-    + Copy
-    + AddAssign
-    + Add<Output = Self>
-    + SubAssign
-    + Sub<Output = Self>
-    + PartialOrd
-    + fmt::Debug
-{
-    /// Length of an empty key.
-    const ZERO: Self;
-
-    /// Length of a key with a single byte.
-    const BYTE: Self;
-
-    /// Return the key length in bits.
-    fn bits(self) -> usize;
-
-    /// Return the key length in bytes.
-    fn bytes(self) -> usize;
 }
 
 // TODO: optimize?

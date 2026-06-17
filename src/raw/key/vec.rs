@@ -2,13 +2,8 @@
 
 use core::borrow::Borrow as _;
 use core::fmt;
-use core::ops::Add;
-use core::ops::AddAssign;
-use core::ops::Sub;
-use core::ops::SubAssign;
 
 use ribbit::u6;
-use ribbit::u14;
 
 use crate::NonPrefixSlice;
 use crate::raw::Key;
@@ -16,6 +11,7 @@ use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
+use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 
@@ -70,7 +66,7 @@ impl Key for NonPrefixVec {
     type Borrowed = NonPrefixSlice;
     type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
-    type Len = Len;
+    type Len = Byte;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -139,14 +135,14 @@ impl<const N: usize> Default for Reader<'_, N> {
 }
 
 impl<const N: usize> key::Read for Reader<'_, N> {
-    const LEN: Option<Self::Len> = if N == usize::MAX { None } else { Some(Len(N)) };
+    const LEN: Option<Self::Len> = if N == usize::MAX { None } else { Some(Byte(N)) };
 
     type Edge = edge::Le;
-    type Len = Len;
+    type Len = Byte;
 
     #[inline]
     fn len(&self) -> Self::Len {
-        Len(self.0.len())
+        Byte(self.0.len())
     }
 
     #[inline]
@@ -176,7 +172,7 @@ impl<const N: usize> key::Read for Reader<'_, N> {
 
     #[inline]
     fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        Len(((edge.raw() ^ key::read_u64(self.0)).trailing_zeros() as usize) >> 3)
+        Byte(((edge.raw() ^ key::read_u64(self.0)).trailing_zeros() as usize) >> 3)
     }
 
     #[inline]
@@ -208,7 +204,7 @@ impl<const N: usize> key::Read for Reader<'_, N> {
 pub struct Writer(pub(super) Vec<u8>);
 
 impl<'k> key::Write<Reader<'k, { usize::MAX }>> for Writer {
-    type Len = Len;
+    type Len = Byte;
 
     #[inline]
     fn new(prefix: Reader<'k, { usize::MAX }>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
@@ -225,82 +221,12 @@ impl<'k> key::Write<Reader<'k, { usize::MAX }>> for Writer {
         self.0.truncate(start.0);
         self.0.push(node);
         self.0.extend(edge);
-        Len(self.0.len())
+        Byte(self.0.len())
     }
 }
 
 impl fmt::Debug for Writer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
-    }
-}
-
-#[doc(hidden)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Len(pub(super) usize);
-
-impl key::Len for Len {
-    const ZERO: Self = Self(0);
-    const BYTE: Self = Self(1);
-
-    #[inline]
-    fn bits(self) -> usize {
-        self.0 << 3
-    }
-
-    #[inline]
-    fn bytes(self) -> usize {
-        self.0
-    }
-}
-
-impl From<u6> for Len {
-    #[inline]
-    fn from(len: u6) -> Self {
-        Self((len.value() >> 3) as usize)
-    }
-}
-
-impl From<Len> for u6 {
-    #[inline]
-    fn from(len: Len) -> Self {
-        u6::extract_u64((len.0 << 3) as u64, 0)
-    }
-}
-
-impl From<Len> for u14 {
-    #[inline]
-    fn from(len: Len) -> Self {
-        u14::extract_u64(len.0 as u64, 0)
-    }
-}
-
-impl Add for Len {
-    type Output = Self;
-    #[inline]
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl AddAssign for Len {
-    #[inline]
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-    }
-}
-
-impl Sub for Len {
-    type Output = Self;
-    #[inline]
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl SubAssign for Len {
-    #[inline]
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
     }
 }
