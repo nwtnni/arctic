@@ -7,7 +7,7 @@ use core::ops::Deref;
 pub mod slice;
 pub mod vec;
 
-/// Newtype guaranteeing this [`Vec<u8>`] (a) is not empty,
+/// Newtype guaranteeing this [`Vec<u8>`] (a) has length > 1,
 /// (b) does not contain interior null bytes,
 /// and (c) ends with a null terminator.
 #[repr(transparent)]
@@ -17,7 +17,7 @@ pub struct NullTerminatedVec(Vec<u8>);
 impl NullTerminatedVec {
     /// # Safety
     ///
-    /// Caller must guarantee that `vec` (a) is non-empty,
+    /// Caller must guarantee that `vec` (a) has length > 1,
     /// (b) does not contain interior null bytes, and (c) ends with a null byte.
     #[inline]
     pub const unsafe fn new_unchecked(vec: Vec<u8>) -> Self {
@@ -69,7 +69,7 @@ impl AsRef<NullTerminatedSlice> for NullTerminatedVec {
     }
 }
 
-/// Newtype guaranteeing this slice (a) is not empty,
+/// Newtype guaranteeing this slice (a) has length > 1,
 /// (b) does not contain interior null bytes,
 /// and (c) ends with a null terminator.
 #[repr(transparent)]
@@ -79,7 +79,7 @@ pub struct NullTerminatedSlice([u8]);
 impl NullTerminatedSlice {
     /// # Safety
     ///
-    /// Caller must guarantee that `slice` (a) is non-empty,
+    /// Caller must guarantee that `slice` (a) has length > 1,
     /// (b) does not contain interior null bytes, and (c) ends with a null byte.
     #[inline]
     pub const unsafe fn new_unchecked(slice: &[u8]) -> &Self {
@@ -89,7 +89,7 @@ impl NullTerminatedSlice {
 
     /// Return a `NullTerminatedSlice` if `slice` satisfies conditions of [`NullTerminatedSlice::new_unchecked`].
     pub const fn new(slice: &[u8]) -> Option<&Self> {
-        if slice.is_empty() {
+        if slice.len() <= 1 {
             return None;
         }
 

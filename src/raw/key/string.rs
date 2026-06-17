@@ -3,6 +3,7 @@
 use core::borrow::Borrow as _;
 use core::num::NonZeroUsize;
 
+use crate::NonNullVec;
 use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::key::Byte;
@@ -164,6 +165,7 @@ impl Key for NonNullString {
     type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
     type Len = Byte;
+    type Split = NonNullVec;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -201,6 +203,10 @@ impl Key for NonNullString {
                 .unwrap(),
             unsafe { NonNullStr::new_unchecked(str::from_utf8_unchecked(key)) }
         )
+    }
+
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
+        todo!()
     }
 }
 

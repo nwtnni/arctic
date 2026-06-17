@@ -1,14 +1,15 @@
 //! Auxiliary types for use with [`crate::sequential::Set`].
 
+use core::borrow::Borrow as _;
+
 use crate::raw;
 use crate::raw::Key;
-use crate::raw::key::Read as _;
 use crate::sequential::Map;
 
 /// Non-concurrent set. (TODO: support iteration.)
 #[repr(transparent)]
 pub struct Set<K: Key> {
-    map: Map<K, raw::Set>,
+    map: Map<K::Split, raw::Set>,
 }
 
 impl<K> Default for Set<K>
@@ -31,7 +32,7 @@ where
     }
 
     pub fn contains_key(&self, key: &K::Borrowed) -> bool {
-        let (reader, byte) = K::Read::from(key).split_last().expect("Key is non-empty");
+        let (reader, byte) = K::split_last(key);
 
         self.map
             .get_impl(reader)
@@ -39,9 +40,7 @@ where
     }
 
     pub fn insert(&mut self, key: K::Insert<'_>) -> bool {
-        let (reader, byte) = K::insert_as_read(key)
-            .split_last()
-            .expect("Key is non-empty");
+        let (reader, byte) = K::split_last(key.borrow());
 
         self.map.entry_impl(reader).or_default().insert_mut(byte)
     }

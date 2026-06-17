@@ -67,6 +67,7 @@ impl Key for NonPrefixVec {
     type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
     type Len = Byte;
+    type Split = NonPrefixVec;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -95,6 +96,10 @@ impl Key for NonPrefixVec {
         Self: 'k,
     {
         unsafe { NonPrefixSlice::new_unchecked(&writer.0) }
+    }
+
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
+        todo!()
     }
 }
 
@@ -136,6 +141,43 @@ impl<'k, T: Default> Reader<'k, T> {
     }
 }
 
+impl<'k, T: Terminate> Reader<'k, T> {
+    pub(super) fn split_last(&self) -> Option<(Self, u8)> {
+        let (byte, slice) = self.slice.split_last()?;
+        Some((
+            Self {
+                slice,
+                terminate: self.terminate,
+            },
+            *byte,
+        ))
+    }
+
+    pub(super) fn get_byte(&self, index: usize) -> Option<u8> {
+        if let Some(byte) = self.slice.get(index) {
+            return Some(*byte);
+        }
+
+        (self.terminate.get() && index == self.slice.len()).then_some(0)
+    }
+}
+
+impl<'k> Reader<'k, ()> {
+    pub(super) fn split_second_last(&self) -> Option<(Reader<'k, bool>, u8)> {
+        let (slice, last) = self.slice.split_last_chunk::<2>()?;
+        validate_eq!(last[1], 0);
+        Some((
+            Reader {
+                slice,
+                terminate: true,
+            },
+            last[0],
+        ))
+    }
+}
+
+impl<'k> Reader<'k, bool> {}
+
 impl<T: Default> Default for Reader<'_, T> {
     #[inline]
     fn default() -> Self {
@@ -164,13 +206,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
 
     #[inline]
     fn get_byte(&self, index: u6) -> Option<u8> {
-        let index = index.bytes();
-
-        if let Some(byte) = self.slice.get(index) {
-            return Some(*byte);
-        }
-
-        (self.terminate.get() && index == self.slice.len()).then_some(0)
+        self.get_byte(index.bytes())
     }
 
     #[inline]
@@ -224,17 +260,6 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
                     && index == other.slice.len(),
             ),
         }
-    }
-
-    fn split_last(self) -> Option<(Self, u8)> {
-        let (byte, slice) = self.slice.split_last()?;
-        Some((
-            Reader {
-                slice,
-                terminate: self.terminate,
-            },
-            *byte,
-        ))
     }
 }
 

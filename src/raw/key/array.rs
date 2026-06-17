@@ -4,6 +4,7 @@ use core::fmt;
 
 use crate::raw::Key;
 use crate::raw::edge;
+use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
@@ -17,6 +18,7 @@ impl<const N: usize> Key for [u8; N] {
     type Insert<'k> = &'k Self;
     type Edge = edge::Le;
     type Len = Byte;
+    type Split = [u8; N];
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -45,6 +47,14 @@ impl<const N: usize> Key for [u8; N] {
         Self: 'k,
     {
         &writer.0
+    }
+
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
+        const {
+            assert!(N > 0);
+        }
+
+        todo!()
     }
 }
 
@@ -90,7 +100,7 @@ impl<'k, const N: usize> key::Read for Reader<'k, N> {
     }
 
     fn get_byte(&self, index: <ribbit::Packed<Self::Edge> as edge::Meta>::Len) -> Option<u8> {
-        self.0.get_byte(index)
+        self.0.get_byte(index.bytes())
     }
 
     fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
@@ -107,12 +117,6 @@ impl<'k, const N: usize> key::Read for Reader<'k, N> {
 
     fn common_prefix(self, other: Self) -> Self {
         Self(self.0.common_prefix(other.0))
-    }
-
-    fn split_last(self) -> Option<(Self, u8)> {
-        self.0
-            .split_last()
-            .map(|(reader, byte)| (Self(reader), byte))
     }
 }
 

@@ -71,6 +71,11 @@ pub trait Key: Borrow<Self::Borrowed> {
     #[expect(private_bounds)]
     type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
+    /// Key type after splitting off last meaningful byte.
+    ///
+    /// Used by set implementation.
+    type Split: Key;
+
     /// Convert the key type to the insert type.
     fn as_insert(&self) -> Self::Insert<'_>;
 
@@ -92,6 +97,9 @@ pub trait Key: Borrow<Self::Borrowed> {
     unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
     where
         Self: 'k;
+
+    /// Split a key into a reader and the last meaningful byte.
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8);
 }
 
 pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
@@ -139,8 +147,6 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     fn prefix(self, end: Self::Len) -> Self;
     fn suffix(self, start: Self::Len) -> Self;
     fn common_prefix(self, other: Self) -> Self;
-
-    fn split_last(self) -> Option<(Self, u8)>;
 }
 
 pub(crate) trait Write<R: Read>: fmt::Debug + Default {

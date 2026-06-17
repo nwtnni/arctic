@@ -53,9 +53,9 @@ impl Key for &'_ NonPrefixSlice {
         // let len = reader.len().min(7);
 
         let mut buffer = [0u8; 16];
-        let len = reader.0.len().min(15);
+        let len = reader.0.slice.len().min(15);
 
-        buffer[..len].copy_from_slice(&reader.0[..len]);
+        buffer[..len].copy_from_slice(&reader.0.slice[..len]);
 
         // hazard::prefix::Le::new_hazard(u64::from_le_bytes(buffer), len << 3)
         Le::new_hazard(u128::from_le_bytes(buffer), len << 3)

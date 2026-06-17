@@ -14,6 +14,7 @@ impl Key for NonNullVec {
     type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
     type Len = Byte;
+    type Split = Self;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -47,6 +48,10 @@ impl Key for NonNullVec {
         if_validate!(NonNullSlice::new(key).unwrap(), unsafe {
             NonNullSlice::new_unchecked(key)
         })
+    }
+
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
+        todo!()
     }
 }
 

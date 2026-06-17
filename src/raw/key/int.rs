@@ -19,6 +19,7 @@ macro_rules! impl_key {
                 type Write = Writer<$ty>;
                 type Borrowed = Self;
                 type Insert<'k> = Self;
+                type Split = Self;
 
                 type Edge = edge::Be;
                 type Len = Bit;
@@ -46,6 +47,18 @@ macro_rules! impl_key {
                 #[inline]
                 unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k> where Self: 'k{
                     writer.0
+                }
+
+                #[inline]
+                fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
+                    let reader = Reader::from(key);
+                    (
+                        Reader {
+                            buffer: reader.buffer,
+                            len: reader.len.0.checked_sub(Self::Len::BYTE.0).map(Bit).expect("Non-empty"),
+                        },
+                        reader.buffer.least_significant_u8(),
+                    )
                 }
             }
 
@@ -170,17 +183,6 @@ impl<I: Int> key::Read for Reader<I> {
             buffer: self.buffer,
             len,
         }
-    }
-
-    #[inline]
-    fn split_last(self) -> Option<(Self, u8)> {
-        Some((
-            Self {
-                buffer: self.buffer,
-                len: self.len.0.checked_sub(Self::Len::BYTE.0).map(Bit)?,
-            },
-            self.buffer.least_significant_u8(),
-        ))
     }
 }
 

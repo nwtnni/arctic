@@ -2,6 +2,8 @@
 
 use core::num::NonZeroUsize;
 
+use ribbit::u14;
+
 use crate::NonPrefixVec;
 use crate::raw::Key;
 use crate::raw::edge;
@@ -12,6 +14,7 @@ use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
+use crate::raw::key::Terminate;
 
 /// Newtype guaranteeing this slice (a) is non-empty,
 /// and (b) is not a prefix of any other [`NonPrefixVec`] or [`NonPrefixSlice`].
@@ -67,16 +70,17 @@ impl<'a> From<&'a NonPrefixSlice> for &'a [u8] {
     }
 }
 
-impl Key for &'_ NonPrefixSlice {
+impl<'a> Key for &'a NonPrefixSlice {
     type Borrowed = NonPrefixSlice;
     type Insert<'k>
         = Self
     where
         Self: 'k;
-    type Read<'k> = Reader<'k>;
+    type Read<'k> = Reader<'k, ()>;
     type Write = Writer;
     type Edge = edge::Slice;
     type Len = Byte;
+    type Split = &'a NonPrefixSlice;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -102,47 +106,47 @@ impl Key for &'_ NonPrefixSlice {
     where
         Self: 'k,
     {
-        let len = writer.len.bytes();
-        let suffix = unsafe { writer.last.as_slice() };
-        unsafe {
-            NonPrefixSlice::new_unchecked(core::slice::from_raw_parts(
-                suffix.as_ptr().byte_sub(len - suffix.len()),
-                len,
-            ))
-        }
+        unsafe { NonPrefixSlice::new_unchecked(writer.as_slice_unchecked()) }
+    }
+
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
+        todo!()
+    }
+}
+
+impl<'k> From<&'k NonPrefixSlice> for Reader<'k, ()> {
+    #[inline]
+    fn from(key: &'k NonPrefixSlice) -> Self {
+        Self(crate::raw::key::vec::Reader {
+            slice: key,
+            terminate: (),
+        })
     }
 }
 
 /// Key reader that can represent byte prefixes of [`NonPrefixSlice`].
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Reader<'k>(pub(crate) &'k [u8]);
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reader<'k, T>(pub(crate) crate::raw::key::vec::Reader<'k, T>);
 
-impl<'k> Reader<'k> {
+impl<'k, T: Default> Reader<'k, T> {
     /// Construct a [`Reader`] representing `prefix`, for use in scan operations.
     ///
     /// Note that `prefix` does not need to satisfy any particular properties:
     /// it may be empty, or be a prefix of another key.
     #[inline]
-    pub const fn new_prefix(prefix: &'k [u8]) -> Self {
-        Self(prefix)
+    pub fn new_prefix(prefix: &'k [u8]) -> Self {
+        Self(crate::raw::key::vec::Reader::new_prefix(prefix))
     }
 }
 
-impl<'k> From<&'k NonPrefixSlice> for Reader<'k> {
-    #[inline]
-    fn from(key: &'k NonPrefixSlice) -> Self {
-        Self(key)
-    }
-}
-
-impl key::Read for Reader<'_> {
+impl<T: Terminate> key::Read for Reader<'_, T> {
     const LEN: Option<Byte> = None;
 
     type Edge = edge::Slice;
     type Len = Byte;
 
     fn len(&self) -> Self::Len {
-        Byte(self.0.len())
+        self.0.len()
     }
 
     fn get_edge(
@@ -150,39 +154,31 @@ impl key::Read for Reader<'_> {
         len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
     ) -> ribbit::Packed<Self::Edge> {
         let len = len.bytes().min(self.len().bytes());
-        Slice::new(&self.0[..len])
+        Slice::new(&self.0.slice[..len])
     }
 
-    fn get_byte(&self, index: <ribbit::Packed<Self::Edge> as edge::Meta>::Len) -> Option<u8> {
-        self.0.get(index.bytes()).copied()
+    fn get_byte(&self, index: u14) -> Option<u8> {
+        self.0.get_byte(index.bytes())
     }
 
-    fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
+    fn match_prefix(&self, meta: ribbit::Packed<edge::Slice>) -> Self::Len {
         let other = unsafe { meta.as_slice() };
-        Byte(key::common_prefix(self.0, other))
+        Byte(key::common_prefix(self.0.slice, other))
     }
 
     #[inline]
-    fn prefix(self, len: Byte) -> Self {
-        validate!(self.len() >= len);
-        Reader(&self.0[..len.bytes()])
+    fn prefix(self, end: Byte) -> Self {
+        Self(self.0.prefix(end))
     }
 
     #[inline]
-    fn suffix(self, len: Byte) -> Self {
-        validate!(self.len() >= len);
-        Reader(&self.0[len.bytes()..])
+    fn suffix(self, start: Byte) -> Self {
+        Self(self.0.suffix(start))
     }
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        let index = key::common_prefix(self.0, other.0);
-        Self(&self.0[..index])
-    }
-
-    fn split_last(self) -> Option<(Self, u8)> {
-        let (byte, slice) = self.0.split_last()?;
-        Some((Reader(slice), *byte))
+        Self(self.0.common_prefix(other.0))
     }
 }
 
@@ -193,10 +189,18 @@ pub struct Writer {
     len: Byte,
 }
 
-impl key::Write<Reader<'_>> for Writer {
+impl Writer {
+    pub(super) unsafe fn as_slice_unchecked<'a>(&self) -> &'a [u8] {
+        let len = self.len.bytes();
+        let suffix = unsafe { self.last.as_slice() };
+        unsafe { core::slice::from_raw_parts(suffix.as_ptr().byte_sub(len - suffix.len()), len) }
+    }
+}
+
+impl<T: Terminate> key::Write<Reader<'_, T>> for Writer {
     type Len = Byte;
 
-    fn new(prefix: Reader, key: ribbit::Packed<edge::Slice>) -> (Self, Self::Len) {
+    fn new(prefix: Reader<'_, T>, key: ribbit::Packed<edge::Slice>) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         (Writer { last: key, len }, len)
     }

@@ -1,5 +1,6 @@
 use core::borrow::Borrow as _;
 
+use crate::NonNullVec;
 use crate::NullTerminatedSlice;
 use crate::NullTerminatedVec;
 use crate::raw::Key;
@@ -16,6 +17,7 @@ impl Key for NullTerminatedVec {
     type Insert<'k> = &'k Self::Borrowed;
     type Edge = edge::Le;
     type Len = Byte;
+    type Split = NonNullVec;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -46,6 +48,10 @@ impl Key for NullTerminatedVec {
         if_validate!(NullTerminatedSlice::new(&writer.0).unwrap(), unsafe {
             NullTerminatedSlice::new_unchecked(&writer.0)
         })
+    }
+
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
+        todo!()
     }
 }
 
