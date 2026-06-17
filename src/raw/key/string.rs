@@ -6,6 +6,7 @@ use core::num::NonZeroUsize;
 use crate::NonNullVec;
 use crate::raw::Key;
 use crate::raw::edge;
+use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::vec::Writer;
 
@@ -156,7 +157,7 @@ impl<'a> From<&'a NonNullStr> for &'a str {
     }
 }
 
-pub type Reader<'k> = crate::raw::key::vec::Reader<'k, bool>;
+pub type Reader<'k> = key::vec::Reader<'k, bool>;
 
 impl Key for NonNullString {
     type Read<'k> = Reader<'k>;

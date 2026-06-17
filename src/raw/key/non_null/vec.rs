@@ -2,10 +2,11 @@ use crate::Key;
 use crate::NonNullSlice;
 use crate::NonNullVec;
 use crate::raw::edge;
+use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::vec::Writer;
 
-pub type Reader<'k> = crate::raw::key::vec::Reader<'k, bool>;
+pub type Reader<'k> = key::vec::Reader<'k, bool>;
 
 impl Key for NonNullVec {
     type Read<'k> = Reader<'k>;

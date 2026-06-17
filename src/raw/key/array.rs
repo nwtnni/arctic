@@ -68,15 +68,10 @@ impl<'k, const N: usize> From<&'k [u8; N]> for Reader<'k, N> {
     }
 }
 
-/// Key reader that can represent byte prefixes of arrays.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reader<'k, const N: usize>(pub(crate) key::vec::Reader<'k, ()>);
 
 impl<'k, const N: usize> Reader<'k, N> {
-    /// Construct a [`Reader`] representing `prefix`, for use in scan operations.
-    ///
-    /// Note that `prefix` does not need to satisfy any particular properties:
-    /// it may be empty, or be a prefix of another key.
     #[inline]
     pub fn new_prefix(prefix: &'k [u8]) -> Self {
         Self(key::vec::Reader::new_prefix(prefix))

@@ -5,6 +5,7 @@ mod discard;
 pub mod int;
 mod len;
 pub mod non_null;
+pub mod non_prefix;
 pub mod null_terminated;
 pub mod slice;
 mod slow;

@@ -2,6 +2,7 @@ use crate::Key;
 use crate::NonNullSlice;
 use crate::NonNullVec;
 use crate::raw::edge;
+use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::slice::Writer;
 
@@ -61,7 +62,7 @@ impl<'k> From<&'k NonNullVec> for Reader<'k> {
 impl<'k> From<&'k NonNullSlice> for Reader<'k> {
     #[inline]
     fn from(key: &'k NonNullSlice) -> Self {
-        Self(crate::raw::key::vec::Reader {
+        Self(key::vec::Reader {
             slice: key,
             terminate: true,
         })

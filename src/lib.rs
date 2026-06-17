@@ -95,17 +95,17 @@ pub use raw::key::non_null::NonNullSlice;
 #[doc(inline)]
 pub use raw::key::non_null::NonNullVec;
 #[doc(inline)]
+pub use raw::key::non_prefix::NonPrefixSlice;
+#[doc(inline)]
+pub use raw::key::non_prefix::NonPrefixVec;
+#[doc(inline)]
 pub use raw::key::null_terminated::NullTerminatedSlice;
 #[doc(inline)]
 pub use raw::key::null_terminated::NullTerminatedVec;
 #[doc(inline)]
-pub use raw::key::slice::NonPrefixSlice;
-#[doc(inline)]
 pub use raw::key::string::NonNullStr;
 #[doc(inline)]
 pub use raw::key::string::NonNullString;
-#[doc(inline)]
-pub use raw::key::vec::NonPrefixVec;
 pub(crate) use sync::Atomic;
 
 /// Key order for scan operations (e.g., [`concurrent::Shard::entries`]).

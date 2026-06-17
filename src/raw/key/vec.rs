@@ -1,11 +1,7 @@
-//! Support for [`Vec<u8>`] keys ([`NonPrefixVec`]).
-
-use core::borrow::Borrow as _;
+//! Support for owned dynamically sized keys ([`Vec<u8>`]).
 
 use ribbit::u6;
 
-use crate::NonPrefixSlice;
-use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
@@ -15,112 +11,6 @@ use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 use crate::raw::key::Terminate;
 
-/// Newtype guaranteeing this [`Vec`] (a) is not empty, and (b) is not a prefix of
-/// any other [`NonPrefixVec`] or [`NonPrefixSlice`].
-#[repr(transparent)]
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NonPrefixVec(Vec<u8>);
-
-impl NonPrefixVec {
-    /// # Safety
-    ///
-    /// Caller must guarantee that `vec` is neither empty, nor a prefix of any
-    /// other [`NonPrefixVec`] or [`NonPrefixSlice`].
-    pub const unsafe fn new_unchecked(vec: Vec<u8>) -> Self {
-        Self(vec)
-    }
-
-    #[inline]
-    pub const fn as_non_prefix_slice(&self) -> &NonPrefixSlice {
-        // SAFETY: `self.0` is not a prefix
-        unsafe { NonPrefixSlice::new_unchecked(self.0.as_slice()) }
-    }
-}
-
-impl From<NonPrefixVec> for Vec<u8> {
-    #[inline]
-    fn from(NonPrefixVec(vec): NonPrefixVec) -> Self {
-        vec
-    }
-}
-
-impl core::ops::Deref for NonPrefixVec {
-    type Target = NonPrefixSlice;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.as_non_prefix_slice()
-    }
-}
-
-impl core::borrow::Borrow<NonPrefixSlice> for NonPrefixVec {
-    #[inline]
-    fn borrow(&self) -> &NonPrefixSlice {
-        self.as_non_prefix_slice()
-    }
-}
-
-impl Key for NonPrefixVec {
-    type Read<'k> = Reader<'k, ()>;
-    type Write = Writer;
-    type Borrowed = NonPrefixSlice;
-    type Insert<'k> = &'k Self::Borrowed;
-    type Edge = edge::Le;
-    type Len = Byte;
-    type Split = NonPrefixVec;
-
-    #[inline]
-    fn as_insert(&self) -> Self::Insert<'_> {
-        self.borrow()
-    }
-
-    #[inline]
-    fn insert_as_read<'k>(insert: Self::Insert<'k>) -> Self::Read<'k>
-    where
-        Self: 'k,
-    {
-        Reader::from(insert)
-    }
-
-    #[inline]
-    fn insert_to_key<'k>(insert: Self::Insert<'k>) -> Self
-    where
-        Self: 'k,
-    {
-        insert.to_non_prefix_vec()
-    }
-
-    #[inline]
-    unsafe fn write_as_insert<'k>(writer: &'k Self::Write) -> Self::Insert<'k>
-    where
-        Self: 'k,
-    {
-        unsafe { NonPrefixSlice::new_unchecked(&writer.0) }
-    }
-
-    fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
-        todo!()
-    }
-}
-
-impl<'k> From<&'k NonPrefixVec> for Reader<'k, ()> {
-    #[inline]
-    fn from(key: &'k NonPrefixVec) -> Self {
-        Self::from(key.as_non_prefix_slice())
-    }
-}
-
-impl<'k> From<&'k NonPrefixSlice> for Reader<'k, ()> {
-    #[inline]
-    fn from(key: &'k NonPrefixSlice) -> Self {
-        Self {
-            slice: key,
-            terminate: (),
-        }
-    }
-}
-
-/// Key reader that can represent byte prefixes.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k, T> {
     pub(crate) slice: &'k [u8],
@@ -130,8 +20,7 @@ pub struct Reader<'k, T> {
 impl<'k, T: Default> Reader<'k, T> {
     /// Construct a [`Reader`] representing `prefix`, for use in scan operations.
     ///
-    /// Note that `prefix` does not need to satisfy any particular properties:
-    /// it may be empty, or be a prefix of another key.
+    /// Note that `prefix` does not need to satisfy any particular properties.
     #[inline]
     pub fn new_prefix(prefix: &'k [u8]) -> Self {
         Self {

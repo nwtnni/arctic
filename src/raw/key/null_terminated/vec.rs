@@ -5,10 +5,11 @@ use crate::NullTerminatedSlice;
 use crate::NullTerminatedVec;
 use crate::raw::Key;
 use crate::raw::edge;
+use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::vec::Writer;
 
-pub type Reader<'k> = crate::raw::key::vec::Reader<'k, ()>;
+pub type Reader<'k> = key::vec::Reader<'k, ()>;
 
 impl Key for NullTerminatedVec {
     type Read<'k> = Reader<'k>;

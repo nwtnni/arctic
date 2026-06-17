@@ -1,14 +1,14 @@
 use crate::Key;
-use crate::NonNullSlice;
-use crate::NullTerminatedSlice;
-use crate::NullTerminatedVec;
+use crate::NonPrefixSlice;
 use crate::raw::edge;
 use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::slice::Writer;
 
-impl<'a> Key for &'a NullTerminatedSlice {
-    type Borrowed = NullTerminatedSlice;
+pub type Reader<'k> = key::slice::Reader<'k, ()>;
+
+impl<'a> Key for &'a NonPrefixSlice {
+    type Borrowed = NonPrefixSlice;
     type Insert<'k>
         = Self
     where
@@ -17,7 +17,7 @@ impl<'a> Key for &'a NullTerminatedSlice {
     type Write = Writer;
     type Edge = edge::Slice;
     type Len = Byte;
-    type Split = &'a NonNullSlice;
+    type Split = &'a NonPrefixSlice;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -43,7 +43,7 @@ impl<'a> Key for &'a NullTerminatedSlice {
     where
         Self: 'k,
     {
-        unsafe { NullTerminatedSlice::new_unchecked(writer.as_slice_unchecked()) }
+        unsafe { NonPrefixSlice::new_unchecked(writer.as_slice_unchecked()) }
     }
 
     fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
@@ -51,18 +51,9 @@ impl<'a> Key for &'a NullTerminatedSlice {
     }
 }
 
-pub type Reader<'k> = key::slice::Reader<'k, ()>;
-
-impl<'k> From<&'k NullTerminatedVec> for Reader<'k> {
+impl<'k> From<&'k NonPrefixSlice> for Reader<'k> {
     #[inline]
-    fn from(key: &'k NullTerminatedVec) -> Self {
-        Self::from(key.as_null_terminated_slice())
-    }
-}
-
-impl<'k> From<&'k NullTerminatedSlice> for Reader<'k> {
-    #[inline]
-    fn from(key: &'k NullTerminatedSlice) -> Self {
+    fn from(key: &'k NonPrefixSlice) -> Self {
         Self(key::vec::Reader {
             slice: key,
             terminate: (),
