@@ -170,9 +170,9 @@ unsafe impl header::Header for Header {
         iter: &mut KeyIter63,
     ) {
         // NOTE: only writers need to ensure meta consistency
-        let len = self.meta.load_packed(Ordering::Relaxed).len().value();
-        let indices = core::array::from_fn(|i| self.indices[i].load(Ordering::Relaxed));
-        node::simd::keys_47(indices, lower, upper, len, iter);
+        let len = self.len();
+        let indices = self.indices();
+        node::simd::keys_47(indices, len, lower, upper, iter);
     }
 
     fn min<L: node::Lower>(&self, _lower: L) -> Option<KeyIndex> {
@@ -222,6 +222,14 @@ impl Header {
         let row = key / 16;
         let col = (key % 16) * 8;
         (row, col)
+    }
+
+    pub(super) fn len(&self) -> u8 {
+        self.meta.load_packed(Ordering::Relaxed).len().value()
+    }
+
+    pub(super) fn indices(&self) -> [u128; 16] {
+        core::array::from_fn(|i| self.indices[i].load(Ordering::Relaxed))
     }
 }
 

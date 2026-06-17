@@ -215,9 +215,9 @@ pub(super) fn sort_15(out: &mut KeyIter15) {
 #[inline]
 pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     indices: [u128; 16],
+    len: u8,
     lower: L,
     upper: U,
-    len: u8,
     out: &mut KeyIter63,
 ) {
     validate!(len <= 0x7F, "AVX2 only supports signed byte comparison");
@@ -259,6 +259,14 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
 
     out.0.head = 0;
     out.0.tail = len;
+
+    // HACK: make it easier to test against fallback
+    if_validate! {
+        out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
+            entry.key = 0;
+            entry.index = 0;
+        })
+    }
 }
 
 /// https://en.wikipedia.org/wiki/Bitonic_sorter
@@ -635,6 +643,7 @@ mod tests {
 
         use crate::raw::node::KeyIter3;
         use crate::raw::node::KeyIter15;
+        use crate::raw::node::KeyIter63;
         use crate::raw::node::simd;
 
         proptest::proptest! {
@@ -703,6 +712,26 @@ mod tests {
 
                 let mut fallback = KeyIter15::default();
                 simd::keys_15_fallback(raw, len, Some(lower), Some(upper), &mut fallback);
+
+                assert_eq!(
+                    simd, fallback,
+                    "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
+                );
+            }
+
+            #[test]
+            fn keys_47(
+                header in proptest::arbitrary::any_with::<crate::raw::node::node_47::Header>((1, 47)),
+                (lower, upper) in crate::raw::node::header::tests::bound()
+            ) {
+                let indices = header.indices();
+                let len = header.len();
+
+                let mut simd = KeyIter63::default();
+                simd::avx2::keys_47(indices, len, Some(lower), Some(upper), &mut simd);
+
+                let mut fallback = KeyIter63::default();
+                simd::keys_47_fallback(indices, len, Some(lower), Some(upper), &mut fallback);
 
                 assert_eq!(
                     simd, fallback,

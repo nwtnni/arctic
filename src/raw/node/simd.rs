@@ -198,24 +198,24 @@ fn sort_15_fallback(iter: &mut KeyIter15) {
 #[inline]
 pub(super) fn keys_47<L: node::Lower, U: node::Upper>(
     indices: [u128; 16],
+    len: u8,
     lower: L,
     upper: U,
-    len: u8,
     out: &mut KeyIter63,
 ) {
     simd!(
         "opt-no-node47-keys",
-        avx2::keys_47(indices, lower, upper, len, out),
-        keys_47_fallback(indices, lower, upper, len, out),
+        avx2::keys_47(indices, len, lower, upper, out),
+        keys_47_fallback(indices, len, lower, upper, out),
     )
 }
 
 #[inline]
 pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
     indices: [u128; 16],
+    len: u8,
     lower: L,
     upper: U,
-    len: u8,
     out: &mut KeyIter63,
 ) {
     let i = lower.get() / 16;
