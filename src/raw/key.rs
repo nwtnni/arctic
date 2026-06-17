@@ -3,6 +3,8 @@
 pub mod array;
 mod discard;
 pub mod int;
+pub mod non_null;
+pub mod null_terminated;
 pub mod slice;
 mod slow;
 pub mod string;
