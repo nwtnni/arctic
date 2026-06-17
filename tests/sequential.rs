@@ -1,3 +1,5 @@
+#![cfg(feature = "proptest")]
+
 use core::borrow::Borrow as _;
 use core::fmt::Debug;
 use core::ops::ControlFlow;
