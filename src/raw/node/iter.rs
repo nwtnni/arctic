@@ -489,7 +489,7 @@ impl KeyIter15 {
 }
 
 #[repr(C, align(8))]
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default)]
 pub(crate) struct KeyIter256 {
     head: u16,
     tail: u16,
@@ -561,6 +561,15 @@ impl From<KeyIter256> for node::KeyIter {
     #[inline]
     fn from(iter: KeyIter256) -> Self {
         node::KeyIter::new_256(iter)
+    }
+}
+
+impl Debug for KeyIter256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyIter256")
+            .field("head", &self.head)
+            .field("tail", &self.tail)
+            .finish()
     }
 }
 

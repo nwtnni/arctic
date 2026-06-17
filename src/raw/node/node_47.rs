@@ -34,19 +34,23 @@ const_assert_size_align!(Node47, 1024, 64);
 #[derive(Clone)]
 pub(super) struct Header {
     indices: [Atomic<u128>; 16],
+    // Place `meta` after `indices to make sure former
+    // is 16-byte aligned for SIMD.
     meta: Atomic<Meta>,
 }
+
+// NOTE: we fill in uninitialized indices with 0x7F as opposed to
+// - 0x00:
+//   - Readers can distinguish an uninitialized index without loading `meta`
+//   - Writers don't have to serialize writes to `meta` and `indices`
+// - 0xFF:
+//   - AVX2 only supports signed byte-wise comparison
+const UNINIT: u128 = 0x7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F;
 
 impl Default for Header {
     fn default() -> Self {
         Self {
-            // NOTE: fill in uninitialized indices with 0x7F so that
-            // readers can call `get` without comparing against the
-            // length. Don't use 0xFF because AVX2 only supports
-            // signed byte-wise comparison.
-            indices: core::array::from_fn(|_| {
-                Atomic::new_packed(0x7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F)
-            }),
+            indices: core::array::from_fn(|_| Atomic::new_packed(UNINIT)),
             meta: Atomic::new_packed(Meta::DEFAULT),
         }
     }
@@ -165,7 +169,8 @@ unsafe impl header::Header for Header {
         upper: U,
         iter: &mut KeyIter63,
     ) {
-        let len = self.meta_consistent().len().value();
+        // NOTE: only writers need to ensure meta consistency
+        let len = self.meta.load_packed(Ordering::Relaxed).len().value();
         let indices = core::array::from_fn(|i| self.indices[i].load(Ordering::Relaxed));
         node::simd::keys_47(indices, lower, upper, len, iter);
     }
@@ -240,8 +245,8 @@ impl Debug for Header {
     }
 }
 
-#[derive(Copy, Clone, ribbit::Pack)]
-#[ribbit(size = 16)]
+#[derive(Copy, Clone, Debug, ribbit::Pack)]
+#[ribbit(size = 16, derive(Debug))]
 struct Meta {
     last: u8,
     frozen: bool,
@@ -290,7 +295,7 @@ impl proptest::arbitrary::Arbitrary for Header {
             bool::arbitrary(),
         )
             .prop_map(|(keys, frozen)| {
-                let mut indices = [0u128; 16];
+                let mut indices = [UNINIT; 16];
                 for (i, key) in keys.iter().enumerate() {
                     let (row, col) = Self::key_to_row_col(*key);
                     indices[row as usize] ^= (0x7F ^ i as u128) << col;

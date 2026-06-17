@@ -1,5 +1,6 @@
 use core::ops::Deref;
 use core::ops::DerefMut;
+use core::sync::atomic::Ordering;
 
 cfg_select! {
     feature = "shuttle" => {
@@ -37,6 +38,18 @@ macro_rules! impl_raw {
             pub(crate) const fn new(value: $inner) -> Self {
                 Self(atomic::$atomic::new(value))
             }
+
+            #[inline]
+            pub(crate) fn load(&self, ordering: Ordering) -> $inner {
+                // HACK: when nesting shuttle inside proptest, the latter calls
+                // `Debug::fmt` on atomic types outside of the shuttle execution context.
+                #[cfg(feature = "shuttle")]
+                if shuttle_core::runtime::execution::ExecutionState::try_with(|_| ()).is_err() {
+                    return unsafe { self.0.raw_load() };
+                }
+
+                self.0.load(ordering)
+            }
         }
 
         impl Deref for $atomic {
@@ -55,6 +68,7 @@ macro_rules! impl_raw {
         }
 
         impl Clone for $atomic {
+            #[inline]
             fn clone(&self) -> Self {
                 Self::new(self.load(core::sync::atomic::Ordering::Relaxed))
             }
@@ -76,7 +90,7 @@ where
     cfg_select! {
         feature = "shuttle" => { shuttle::check_dfs(run, None); }
         _ => {
-            for _ in .._count {
+            for _ in 0.._count {
                 run();
             }
         }

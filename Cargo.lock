@@ -67,6 +67,7 @@ dependencies = [
  "seize",
  "serde",
  "shuttle",
+ "shuttle-core",
 ]
 
 [[package]]
