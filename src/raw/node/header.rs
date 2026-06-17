@@ -31,7 +31,7 @@ pub(in crate::raw) unsafe trait Header: Debug + Default + Sized {
         unsafe { Self::initialize_unchecked(&mut node.header, keys) };
 
         for (out, r#in) in node.edges.iter_mut().zip(edges) {
-            out.set_packed(*r#in);
+            *out.get_mut_packed() = *r#in;
         }
 
         node

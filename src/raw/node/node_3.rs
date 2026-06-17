@@ -151,13 +151,13 @@ impl Node<3, Atomic<Header>> {
     ) -> (ribbit::Packed<Edge<M>>, NonNull<Atomic<Edge<M>>>) {
         let mut node = Box::new(Self::default());
 
-        node.header.set_packed(ribbit::Packed::<Header>::new(
+        *node.header.get_mut_packed() = ribbit::Packed::<Header>::new(
             u48::new(keys[0] as u64 | ((keys[1] as u64) << 16)),
             false,
             const { u2::new(2) },
-        ));
-        node.edges[0].set_packed(edges[0].erase());
-        node.edges[1].set_packed(edges[1].erase());
+        );
+        *node.edges[0].get_mut_packed() = edges[0].erase();
+        *node.edges[1].get_mut_packed() = edges[1].erase();
 
         let tail = NonNull::from(&node.edges[0]);
         let head = Edge::new_node(meta, node::Ptr::new_node_3(node));
@@ -171,11 +171,8 @@ impl Node<3, Atomic<Header>> {
         value: u64,
     ) -> (ribbit::Packed<Edge<M>>, NonNull<Atomic<Edge<M>>>) {
         let mut head = Box::new(Self::default());
-        head.header.set_packed(ribbit::Packed::<Header>::new(
-            u48::new(byte as u64),
-            false,
-            const { u2::new(1) },
-        ));
+        *head.header.get_mut_packed() =
+            ribbit::Packed::<Header>::new(u48::new(byte as u64), false, const { u2::new(1) });
 
         let mut tail = NonNull::from(&head.edges[0]);
 
@@ -183,22 +180,20 @@ impl Node<3, Atomic<Header>> {
             let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
 
             let Some(byte) = reader.get_byte(edge.len()) else {
-                unsafe { tail.as_mut() }.set_packed(Edge::<M>::new_value(edge, value).erase());
+                *unsafe { tail.as_mut() }.get_mut_packed() =
+                    Edge::<M>::new_value(edge, value).erase();
                 break;
             };
 
             reader = reader.suffix(R::Len::BYTE + edge.len().into());
 
             let mut node = Box::new(Self::default());
-            node.header.set_packed(ribbit::Packed::<Header>::new(
-                u48::new(byte as u64),
-                false,
-                const { u2::new(1) },
-            ));
+            *node.header.get_mut_packed() =
+                ribbit::Packed::<Header>::new(u48::new(byte as u64), false, const { u2::new(1) });
 
             let next = NonNull::from(&node.edges[0]);
-            unsafe { tail.as_mut() }
-                .set_packed(Edge::<M>::new_node(edge, node::Ptr::new_node_3(node)).erase());
+            *unsafe { tail.as_mut() }.get_mut_packed() =
+                Edge::<M>::new_node(edge, node::Ptr::new_node_3(node)).erase();
             tail = next;
         }
 

@@ -891,9 +891,9 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "ribbit"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fa7adab93ad4bf486a3632843a95c5099da08b2601235e81e263ff98889545e"
+checksum = "b60b4e9676f7e5fc5002a65fdee0692164eb2f4c87eb4a43e26303bb1f074961"
 dependencies = [
  "arbitrary-int",
  "portable-atomic",

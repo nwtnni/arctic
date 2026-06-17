@@ -36,7 +36,7 @@ unsafe impl node::Header for Header {
 
         let mut node = Box::new(node::Node::default());
         for (index, edge) in core::iter::zip(keys, edges) {
-            node.edges[*index as usize].set_packed(*edge);
+            *node.edges[*index as usize].get_mut_packed() = *edge;
         }
         node
     }

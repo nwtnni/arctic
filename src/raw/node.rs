@@ -587,7 +587,7 @@ impl PtrPacked {
                 |mut node_3| match unsafe {
                     Edge::<M>::from_raw_mut(&mut node_3.as_mut().edges_mut()[0])
                 }
-                .get_packed()
+                .get_mut_packed()
                 .child()
                 {
                     None => unreachable!(),

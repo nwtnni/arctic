@@ -64,11 +64,11 @@ unsafe impl header::Header for Header {
             row.set(new);
         }
 
-        self.meta.set_packed(ribbit::Packed::<Meta>::new(
+        *self.meta.get_mut_packed() = ribbit::Packed::<Meta>::new(
             keys.last().copied().unwrap(),
             false,
             u6::new(keys.len() as u8),
-        ));
+        );
     }
 
     fn freeze(&self) -> usize {

@@ -522,12 +522,12 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
         let new_value = V::into_raw(value);
 
         if self.replace {
-            let old = unsafe { self.cursor.edge_mut().get_packed() };
+            let old = unsafe { *self.cursor.edge_mut().get_mut_packed() };
             let old_node = old.as_node().expect("Replace implies node");
             let (smo, new) = unsafe { old_node.replace(old.meta()) };
             // No concurrent operations, so must be node replacement with larger node
             validate_eq!(smo, crate::raw::Smo::ReplaceNode);
-            unsafe { self.cursor.edge_mut() }.set_packed(new);
+            *unsafe { self.cursor.edge_mut() }.get_mut_packed() = new;
             stat::increment(stat::Counter::FreeRetire);
             unsafe { old_node.deallocate() };
         }
@@ -544,7 +544,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
             } => match self.cursor.create_path(old, new_value) {
                 Err(Frozen) => unreachable!(),
                 Ok((head, tail)) => unsafe {
-                    self.cursor.edge_mut().set_packed(head);
+                    *self.cursor.edge_mut().get_mut_packed() = head;
 
                     let value = match tail {
                         None => self.cursor.as_value_unchecked(),
