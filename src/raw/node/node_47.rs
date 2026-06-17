@@ -182,6 +182,14 @@ unsafe impl header::Header for Header {
     fn max<U: node::Upper>(&self, _upper: U) -> Option<KeyIndex> {
         todo!()
     }
+
+    fn len(&self) -> usize {
+        self.len() as usize
+    }
+
+    fn is_frozen(&self) -> bool {
+        self.meta.load_packed(Ordering::Relaxed).frozen()
+    }
 }
 
 impl Header {

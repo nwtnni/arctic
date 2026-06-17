@@ -5,12 +5,12 @@ use core::sync::atomic::Ordering;
 cfg_select! {
     feature = "shuttle" => {
         use shuttle::sync::atomic;
-        pub(crate) use shuttle::thread;
+        pub use shuttle::thread;
         pub use shuttle::sync::Arc;
     }
     _ => {
         pub use std::sync::Arc;
-        pub(crate) use std::thread;
+        pub use std::thread;
         use ribbit::atomic;
     }
 }
@@ -83,16 +83,27 @@ impl_raw!(u64, AtomicU64);
 impl_raw!(u128, AtomicU128);
 
 #[doc(hidden)]
-pub fn check_dfs<F>(_count: usize, run: F)
+pub fn check_dfs<F>(_count: Option<usize>, run: F)
 where
     F: Fn() + Send + Sync + 'static,
 {
     cfg_select! {
-        feature = "shuttle" => { shuttle::check_dfs(run, None); }
+        feature = "shuttle" => { shuttle::check_dfs(run, _count); }
         _ => {
-            for _ in 0.._count {
-                run();
-            }
+            run();
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn check_pct<F>(_count: usize, _depth: usize, run: F)
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    cfg_select! {
+        feature = "shuttle" => { shuttle::check_pct(run, _count, _depth); }
+        _ => {
+            run();
         }
     }
 }

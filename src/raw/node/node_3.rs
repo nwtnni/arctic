@@ -118,6 +118,16 @@ unsafe impl header::Header for Atomic<Header> {
         let header = self.load_packed(Ordering::Relaxed);
         node::simd::max_3(header.into_raw(), header.len(), upper)
     }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.load_packed(Ordering::Relaxed).len().value() as usize
+    }
+
+    #[inline]
+    fn is_frozen(&self) -> bool {
+        self.load_packed(Ordering::Relaxed).frozen()
+    }
 }
 
 impl HeaderPacked {

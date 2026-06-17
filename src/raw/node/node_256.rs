@@ -107,4 +107,14 @@ unsafe impl node::Header for Header {
         //         }
         //     })
     }
+
+    #[inline]
+    fn len(&self) -> usize {
+        CAPACITY
+    }
+
+    #[inline]
+    fn is_frozen(&self) -> bool {
+        false
+    }
 }

@@ -163,7 +163,7 @@ impl Set8Packed {
 pub(super) struct Set256<R>([ribbit::Atomic<u64, R>; 4]);
 
 impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
-    fn contains(&self, byte: u8) -> bool {
+    pub(super) fn contains(&self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
         self.0[i].load(Ordering::Relaxed) & bit == bit
     }
@@ -179,7 +179,7 @@ impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
     }
 
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    fn remove_mut(&mut self, byte: u8) -> bool {
+    pub(super) fn remove_mut(&mut self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
         let row = self.0[i].get_mut_packed();
         let old = (*row & bit) > 0;
@@ -194,17 +194,28 @@ impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
         (i as usize, 1u64 << j)
     }
 
-    #[expect(unused)]
-    pub(super) fn len(&self) -> u8 {
+    #[cfg_attr(not(test), expect(unused))]
+    pub(super) fn len(&self) -> usize {
         self.0
             .iter()
-            .map(|row| row.load(Ordering::Relaxed).count_ones() as u8)
+            .map(|row| row.load(Ordering::Relaxed).count_ones() as usize)
             .sum()
     }
 
     #[cfg_attr(not(feature = "proptest"), expect(unused))]
     pub(super) fn iter(&self) -> Iter256 {
         Iter256(core::array::from_fn(|i| self.0[i].load(Ordering::Relaxed)))
+    }
+}
+
+impl<R: ribbit::atomic::Raw<u64>> Eq for Set256<R> {}
+
+impl<R: ribbit::atomic::Raw<u64>> PartialEq for Set256<R> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0
+            .iter()
+            .map(|row| row.load(Ordering::Relaxed))
+            .eq(other.0.iter().map(|row| row.load(Ordering::Relaxed)))
     }
 }
 

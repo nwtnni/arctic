@@ -194,6 +194,18 @@ pub(crate) enum Type {
     Node256 = 3,
 }
 
+impl Type {
+    #[cfg_attr(not(test), expect(unused))]
+    pub(crate) const fn capacity(self) -> usize {
+        match self {
+            Self::Node3 => 3,
+            Self::Node15 => 15,
+            Self::Node47 => 47,
+            Self::Node256 => 256,
+        }
+    }
+}
+
 /// Optimization for branching on node type.
 ///
 /// We use a manual if-else chain instead of a match here because LLVM generates
