@@ -60,140 +60,152 @@ pub(in crate::raw) unsafe trait Header:
 
 #[cfg(test)]
 pub(super) mod tests {
-    #![cfg_attr(not(feature = "proptest"), expect(unused))]
+    /// Correctness properties that hold for sequential executions.
+    pub(crate) mod sequential {
+        use crate::raw::node::KeyIndex;
+        use crate::raw::node::header::Header;
+        use crate::raw::set::Set256;
 
-    /// A successful `get` means `get_or_insert` returns the same index
-    pub(crate) fn get_implies_get_or_insert<H>(header: H)
-    where
-        H: crate::raw::node::header::Header,
-    {
-        for key in u8::MIN..=u8::MAX {
-            if let Some(index) = header.get(key) {
-                assert_eq!(header.get_or_insert(key), Some(index));
+        /// A successful `get` means `get_or_insert` returns the same index
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn get_implies_get_or_insert<H: Header>(header: H) {
+            for key in u8::MIN..=u8::MAX {
+                if let Some(index) = header.get(key) {
+                    assert_eq!(header.get_or_insert(key), Some(index));
+                }
             }
         }
-    }
 
-    /// A successful `get_or_insert` means `get` returns the same index
-    pub(crate) fn get_or_insert_implies_get<H>(header: H)
-    where
-        H: crate::raw::node::header::Header,
-    {
-        for key in u8::MIN..=u8::MAX {
-            if let Some(index) = header.get_or_insert(key) {
+        /// A successful `get_or_insert` means `get` returns the same index
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn get_or_insert_implies_get<H: Header>(header: H) {
+            for key in u8::MIN..=u8::MAX {
+                if let Some(index) = header.get_or_insert(key) {
+                    assert_eq!(header.get(key), Some(index));
+                }
+            }
+        }
+
+        /// Consecutive `get_or_insert` calls return the same index
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn get_or_insert_idempotent<H: Header>(header: H, key: u8) {
+            let index = header.get_or_insert(key);
+            for _ in 0..5 {
+                assert_eq!(header.get_or_insert(key), index);
+            }
+        }
+
+        /// Every entry returned from `keys`:
+        /// 1. Is consistent with `get` and `get_or_insert`
+        /// 2. Has a unique key byte and index
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn keys_get_consistent<H: Header>(header: H, lower: u8, upper: u8) {
+            let mut key_set = Set256::<core::sync::atomic::AtomicU64>::default();
+            let mut index_set = Set256::<core::sync::atomic::AtomicU64>::default();
+
+            let mut keys = H::KeyIter::default();
+            header.keys(Some(lower), Some(upper), &mut keys);
+
+            for KeyIndex { key, index } in keys {
                 assert_eq!(header.get(key), Some(index));
+                assert_eq!(header.get_or_insert(key), Some(index));
+
+                assert!((lower..=upper).contains(&key));
+                assert!(key_set.insert_mut(key));
+                assert!(index_set.insert_mut(index));
+            }
+        }
+
+        /// Freezing prevents insertion
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn freeze_no_insert<H: Header>(header: H) {
+            header.freeze();
+
+            for key in 0..=u8::MAX {
+                match header.get(key) {
+                    None => assert!(header.get_or_insert(key).is_none()),
+                    Some(index) => assert_eq!(header.get_or_insert(key), Some(index)),
+                }
             }
         }
     }
 
-    /// Consecutive `get_or_insert` calls return the same index
-    pub(crate) fn get_or_insert_idempotent<H>(header: H, key: u8)
-    where
-        H: crate::raw::node::header::Header,
-    {
-        let index = header.get_or_insert(key);
-        for _ in 0..5 {
-            assert_eq!(header.get_or_insert(key), index);
-        }
-    }
-
-    /// Every key returned from `keys` is visible to `get` and `get_or_insert`
-    pub(crate) fn keys_get_consistent<H>(header: H, lower: u8, upper: u8)
-    where
-        H: crate::raw::node::header::Header,
-    {
-        let mut keys = H::KeyIter::default();
-        header.keys(Some(lower), Some(upper), &mut keys);
-        for KeyIndex { key, index } in keys {
-            assert_eq!(header.get(key), Some(index));
-            assert_eq!(header.get_or_insert(key), Some(index));
-        }
-    }
-
-    /// Freezing prevents insertion
-    pub(crate) fn freeze_no_insert<H>(header: H)
-    where
-        H: crate::raw::node::header::Header,
-    {
-        header.freeze();
-
-        for key in 0..=u8::MAX {
-            match header.get(key) {
-                None => assert!(header.get_or_insert(key).is_none()),
-                Some(index) => assert_eq!(header.get_or_insert(key), Some(index)),
-            }
-        }
-    }
-
-    /// Concurrent calls to `get_or_insert` return the same index
-    pub(crate) fn get_or_insert_concurrent_consistent<H>(header: H, key: u8)
-    where
-        H: crate::raw::node::header::Header,
-    {
-        crate::sync::check_dfs(1, move || {
-            let header = header.clone();
-            crate::sync::thread::scope(|scope| {
-                let a = scope.spawn(|| header.get_or_insert(key));
-                let b = header.get_or_insert(key);
-                let a = a.join().unwrap();
-                assert_eq!(a, b);
-            });
-        })
-    }
-
-    // Guarantees lower >= upper
-    #[cfg(feature = "proptest")]
-    proptest::prop_compose! {
-        pub(crate) fn bound()
-        (lower in u8::MIN..=u8::MAX)
-        (lower in proptest::strategy::Just(lower), upper in lower..=u8::MAX) -> (u8, u8) {
-            (lower, upper)
+    /// Correctness properties that hold for concurrent executions.
+    pub(crate) mod concurrent {
+        /// Concurrent calls to `get_or_insert` return the same index
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn get_or_insert_consistent<H>(header: H, key: u8)
+        where
+            H: crate::raw::node::header::Header,
+        {
+            crate::sync::check_dfs(1, move || {
+                let header = header.clone();
+                crate::sync::thread::scope(|scope| {
+                    let a = scope.spawn(|| header.get_or_insert(key));
+                    let b = header.get_or_insert(key);
+                    let a = a.join().unwrap();
+                    assert_eq!(a, b);
+                });
+            })
         }
     }
 
     macro_rules! impl_suite {
         ($strategy:expr) => {
             #[cfg(feature = "proptest")]
-            proptest::proptest! {
-                #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
+            mod sequential {
+                #[allow(unused)]
+                use proptest::strategy::Strategy as _;
 
-                #[test]
-                fn get_implies_get_or_insert(header in $strategy) {
-                    crate::raw::node::header::tests::get_implies_get_or_insert(header)
-                }
+                use crate::raw::node::header::tests::sequential;
+                use crate::raw::node::iter::bound;
 
-                #[test]
-                fn get_or_insert_implies_get(header in $strategy) {
-                    crate::raw::node::header::tests::get_or_insert_implies_get(header)
-                }
+                proptest::proptest! {
+                    #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
 
-                #[test]
-                fn get_or_insert_idempotent(header in $strategy, key: u8) {
-                    crate::raw::node::header::tests::get_or_insert_idempotent(header, key)
-                }
+                    #[test]
+                    fn get_implies_get_or_insert(header in $strategy) {
+                        sequential::get_implies_get_or_insert(header)
+                    }
 
-                #[test]
-                fn keys_get_consistent(header in $strategy, (lower, upper) in crate::raw::node::header::tests::bound()) {
-                    crate::raw::node::header::tests::keys_get_consistent(header, lower, upper)
-                }
+                    #[test]
+                    fn get_or_insert_implies_get(header in $strategy) {
+                        sequential::get_or_insert_implies_get(header)
+                    }
 
-                #[test]
-                fn freeze_no_insert(header in $strategy) {
-                    crate::raw::node::header::tests::freeze_no_insert(header)
+                    #[test]
+                    fn get_or_insert_idempotent(header in $strategy, key: u8) {
+                        sequential::get_or_insert_idempotent(header, key)
+                    }
+
+                    #[test]
+                    fn keys_get_consistent(header in $strategy, (lower, upper) in bound()) {
+                        sequential::keys_get_consistent(header, lower, upper)
+                    }
+
+                    #[test]
+                    fn freeze_no_insert(header in $strategy) {
+                        sequential::freeze_no_insert(header)
+                    }
                 }
             }
 
-            #[cfg(all(feature = "proptest", feature = "shuttle"))]
-            proptest::proptest! {
-                #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
-                #[test]
-                fn get_or_insert_concurrent_consistent(header in $strategy, key: u8) {
-                    crate::raw::node::header::tests::get_or_insert_concurrent_consistent(header, key)
+            #[cfg(feature = "proptest")]
+            mod concurrent {
+                #[allow(unused)]
+                use proptest::strategy::Strategy as _;
+
+                use crate::raw::node::header::tests::concurrent;
+
+                proptest::proptest! {
+                    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+                    #[test]
+                    fn get_or_insert_concurrent_consistent(header in $strategy, key: u8) {
+                        concurrent::get_or_insert_consistent(header, key)
+                    }
                 }
             }
         };
     }
     pub(crate) use impl_suite;
-
-    use crate::raw::node::KeyIndex;
 }

@@ -246,16 +246,11 @@ impl proptest::arbitrary::Arbitrary for Header {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "proptest")]
-    mod proptest {
-        use proptest::arbitrary::any_with;
-        use proptest::strategy::Strategy as _;
-        use ribbit::Integer as _;
-        use ribbit::u2;
-
-        crate::raw::node::header::tests::impl_suite!(
-            any_with::<crate::raw::node::node_3::Header>((u2::new(0), u2::MAX))
-                .prop_map(crate::sync::Atomic::new)
-        );
-    }
+    crate::raw::node::header::tests::impl_suite!(
+        proptest::arbitrary::any_with::<crate::raw::node::node_3::Header>((
+            ribbit::u2::new(0),
+            <ribbit::u2 as ribbit::Integer>::MAX,
+        ))
+        .prop_map(crate::sync::Atomic::new)
+    );
 }

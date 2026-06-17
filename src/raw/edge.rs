@@ -305,90 +305,97 @@ pub(crate) enum Child {
 
 #[cfg(test)]
 mod tests {
-    use core::fmt::Debug;
+    /// Correctness properties that hold for sequential executions.
+    pub(crate) mod sequential {
+        use core::fmt::Debug;
 
-    use crate::raw::edge::Len;
-    use crate::raw::edge::Meta;
+        use crate::raw::edge::Len;
+        use crate::raw::edge::Meta;
 
-    /// An expansion followed by a compression results in the same edge.
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(super) fn expand_compress_inverse<M>(meta: M)
-    where
-        M: ribbit::Pack<Packed: Meta<Len: Debug>>,
-    {
-        let meta = meta.pack();
+        /// An expansion followed by a compression results in the same edge.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn expand_compress_inverse<M>(meta: M)
+        where
+            M: ribbit::Pack<Packed: Meta<Len: Debug>>,
+        {
+            let meta = meta.pack();
 
-        for index in meta.len().range_to() {
-            let Some((parent, byte, child)) = meta.try_expand(index) else {
-                assert_eq!(index, meta.len());
-                continue;
-            };
+            for index in meta.len().range_to() {
+                let Some((parent, byte, child)) = meta.try_expand(index) else {
+                    assert_eq!(index, meta.len());
+                    continue;
+                };
 
-            let actual = parent.try_compress(byte, child).unwrap();
-            assert!(
-                actual == meta
+                let actual = parent.try_compress(byte, child).unwrap();
+                assert!(
+                    actual == meta
                     // NOTE: `Eq` implementation ignores flags for scan
                     // purposes, so we check them manually here.
                     && actual.is_frozen() == meta.is_frozen()
                     && actual.is_value() == meta.is_value(),
-                "Expand compress mismatch:\n\
+                    "Expand compress mismatch:\n\
                 {meta:x?}@{index:x?}\n\
                 {parent:x?} - {byte:x?} - {child:x?}\n\
                 {actual:x?}",
-            );
+                );
+            }
         }
-    }
 
-    /// An expansion (a) preserves total key bytes, and (b) preserves flags in the child edge.
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
-    pub(super) fn expand_correct<M>(meta: M)
-    where
-        M: ribbit::Pack<Packed: Meta<Len: Debug>>,
-    {
-        let meta = meta.pack();
+        /// An expansion (a) preserves total key bytes, and (b) preserves flags in the child edge.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn expand_correct<M>(meta: M)
+        where
+            M: ribbit::Pack<Packed: Meta<Len: Debug>>,
+        {
+            let meta = meta.pack();
 
-        for index in meta.len().range_to() {
-            let Some((parent, byte, child)) = meta.try_expand(index) else {
-                assert_eq!(index, meta.len());
-                continue;
-            };
+            for index in meta.len().range_to() {
+                let Some((parent, byte, child)) = meta.try_expand(index) else {
+                    assert_eq!(index, meta.len());
+                    continue;
+                };
 
-            assert_eq!(
-                meta.len(),
-                parent.len() + <ribbit::Packed::<M> as Meta>::Len::BYTE + child.len(),
-                "Expand length mismatch:\n\
+                assert_eq!(
+                    meta.len(),
+                    parent.len() + <ribbit::Packed::<M> as Meta>::Len::BYTE + child.len(),
+                    "Expand length mismatch:\n\
                 {meta:x?}@{index:x?}\n\
                 {parent:x?} - {byte:x?} - {child:x?}",
-            );
+                );
 
-            assert!(
-                meta.is_frozen() == child.is_frozen() && meta.is_value() == child.is_value(),
-                "Expand child mismatch:\n\
+                assert!(
+                    meta.is_frozen() == child.is_frozen() && meta.is_value() == child.is_value(),
+                    "Expand child mismatch:\n\
                 {meta:x?}@{index:x?}\n\
                 {parent:x?} - {byte:x?} - {child:x?}",
-            );
+                );
 
-            assert!(
-                !parent.is_frozen() && !parent.is_value(),
-                "Expand parent mismatch:\n\
+                assert!(
+                    !parent.is_frozen() && !parent.is_value(),
+                    "Expand parent mismatch:\n\
                 {meta:x?}@{index:x?}\n\
                 {parent:x?} - {byte:x?} - {child:x?}",
-            );
+                );
+            }
         }
     }
 
     macro_rules! impl_suite {
         ($type:ty) => {
             #[cfg(feature = "proptest")]
-            proptest::proptest! {
-                #[test]
-                fn expand_compress_inverse(meta: $type) {
-                    crate::raw::edge::tests::expand_compress_inverse(meta)
-                }
+            mod sequential {
+                use crate::raw::edge::tests::sequential;
 
-                #[test]
-                fn expand_correct(meta: $type) {
-                    crate::raw::edge::tests::expand_correct(meta)
+                proptest::proptest! {
+                    #[test]
+                    fn expand_compress_inverse(meta: $type) {
+                        sequential::expand_compress_inverse(meta)
+                    }
+
+                    #[test]
+                    fn expand_correct(meta: $type) {
+                        sequential::expand_correct(meta)
+                    }
                 }
             }
         };

@@ -276,3 +276,181 @@ fn iter_15<L: node::Lower, U: node::Upper>(
             key,
         })
 }
+
+#[cfg(test)]
+mod tests {
+    /// Correctness properties that hold for sequential executions.
+    pub(crate) mod sequential {
+        use ribbit::u2;
+        use ribbit::u4;
+
+        use crate::raw::node::KeyIter15;
+        use crate::raw::node::KeyIter47;
+        use crate::raw::node::iter::KeyIter3;
+        use crate::raw::node::node_3;
+        use crate::raw::node::node_15;
+        use crate::raw::node::node_47;
+        use crate::raw::node::simd;
+
+        /// `get_3` matches output of fallback.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn get_3_correct<F: Fn(u64, u8) -> u8>(header: node_3::Header, get_3: F) {
+            let raw = ribbit::Pack::pack(header).into_raw();
+            for key in u8::MIN..=u8::MAX {
+                let simd = get_3(raw, key);
+                let fallback = simd::get_3_fallback(raw, key);
+
+                assert_eq!(
+                    simd, fallback,
+                    "SIMD does not match fallback for header {header:#x?} and key {key:#x?}",
+                );
+            }
+        }
+
+        /// `get_15` matches output of fallback.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn get_15_correct<F: Fn(u128, u8) -> u8>(header: node_15::Header, get_15: F) {
+            let raw = ribbit::Pack::pack(header).into_raw();
+            for key in u8::MIN..=u8::MAX {
+                let simd = get_15(raw, key);
+                let fallback = simd::get_15_fallback(raw, key);
+
+                assert_eq!(
+                    simd, fallback,
+                    "SIMD does not match fallback for header {header:#x?} and key {key:#x?}",
+                );
+            }
+        }
+
+        /// `keys_3` matches output of fallback.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn keys_3_correct<F: Fn(u64, u2, Option<u8>, Option<u8>, &mut KeyIter3)>(
+            header: node_3::Header,
+            lower: u8,
+            upper: u8,
+            keys_3: F,
+        ) {
+            let header = ribbit::Pack::pack(header);
+            let raw = header.into_raw();
+            let len = header.len();
+
+            let mut simd = KeyIter3::default();
+            keys_3(raw, len, Some(lower), Some(upper), &mut simd);
+
+            let mut fallback = KeyIter3::default();
+            simd::keys_3_fallback(raw, len, Some(lower), Some(upper), &mut fallback);
+
+            assert_eq!(
+                simd, fallback,
+                "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
+            );
+        }
+
+        /// `keys_15` matches output of fallback.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn keys_15_correct<F: Fn(u128, u4, Option<u8>, Option<u8>, &mut KeyIter15)>(
+            header: node_15::Header,
+            lower: u8,
+            upper: u8,
+            keys_15: F,
+        ) {
+            let header = ribbit::Pack::pack(header);
+            let raw = header.into_raw();
+            let len = header.len();
+
+            let mut simd = KeyIter15::default();
+            keys_15(raw, len, Some(lower), Some(upper), &mut simd);
+
+            let mut fallback = KeyIter15::default();
+            simd::keys_15_fallback(raw, len, Some(lower), Some(upper), &mut fallback);
+
+            assert_eq!(
+                simd, fallback,
+                "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
+            );
+        }
+
+        /// `keys_47` matches output of fallback.
+        #[cfg_attr(not(feature = "proptest"), expect(unused))]
+        pub(crate) fn keys_47_correct<
+            F: Fn([u128; 16], u8, Option<u8>, Option<u8>, &mut KeyIter47),
+        >(
+            header: node_47::Header,
+            lower: u8,
+            upper: u8,
+            keys_47: F,
+        ) {
+            let indices = header.indices();
+            let len = header.len();
+
+            let mut simd = KeyIter47::default();
+            keys_47(indices, len, Some(lower), Some(upper), &mut simd);
+
+            let mut fallback = KeyIter47::default();
+            simd::keys_47_fallback(indices, len, Some(lower), Some(upper), &mut fallback);
+
+            assert_eq!(
+                simd, fallback,
+                "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
+            );
+        }
+    }
+
+    macro_rules! impl_suite {
+        ($mod:ident) => {
+            #[cfg(feature = "proptest")]
+            mod sequential {
+                use proptest::arbitrary::any_with;
+                use ribbit::Integer as _;
+                use ribbit::u2;
+                use ribbit::u4;
+
+                use crate::raw::node::simd::tests::sequential;
+                use crate::raw::node::iter::bound;
+                use crate::raw::node::node_3;
+                use crate::raw::node::node_15;
+                use crate::raw::node::node_47;
+                use crate::raw::node::simd::$mod;
+
+                proptest::proptest! {
+                    #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
+
+                    #[test]
+                    fn get_3_correct(header in any_with::<node_3::Header>((u2::new(0), u2::MAX))) {
+                        sequential::get_3_correct(header, $mod::get_3)
+                    }
+
+                    #[test]
+                    fn get_15_correct(header in any_with::<node_15::Header>((u4::new(0), u4::MAX))) {
+                        sequential::get_15_correct(header, $mod::get_15)
+                    }
+
+                    #[test]
+                    fn keys_3_correct(
+                        header in any_with::<node_3::Header>((u2::new(0), u2::MAX)),
+                        (lower, upper) in bound()
+                    ) {
+                        sequential::keys_3_correct(header, lower, upper, $mod::keys_3)
+                    }
+
+                    #[test]
+                    fn keys_15(
+                        header in any_with::<node_15::Header>((u4::new(0), u4::MAX)),
+                        (lower, upper) in bound()
+                    ) {
+                        sequential::keys_15_correct(header, lower, upper, $mod::keys_15)
+                    }
+
+                    #[test]
+                    fn keys_47(
+                        header in any_with::<node_47::Header>((1, 47)),
+                        (lower, upper) in bound()
+                    ) {
+                        sequential::keys_47_correct(header, lower, upper, $mod::keys_47)
+                    }
+                }
+            }
+        };
+    }
+    pub(crate) use impl_suite;
+}

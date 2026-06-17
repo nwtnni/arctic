@@ -324,12 +324,7 @@ impl proptest::arbitrary::Arbitrary for Header {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "proptest")]
-    mod proptest {
-        use proptest::arbitrary::any_with;
-
-        crate::raw::node::header::tests::impl_suite!(
-            any_with::<crate::raw::node::node_47::Header>((1, 47))
-        );
-    }
+    crate::raw::node::header::tests::impl_suite!(proptest::prelude::any_with::<
+        crate::raw::node::node_47::Header,
+    >((1, 47)));
 }

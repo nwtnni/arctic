@@ -168,7 +168,7 @@ impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
         self.0[i].load(Ordering::Relaxed) & bit == bit
     }
 
-    fn insert_mut(&mut self, byte: u8) -> bool {
+    pub(super) fn insert_mut(&mut self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
         let row = self.0[i].get_mut_packed();
         if *row & bit == bit {

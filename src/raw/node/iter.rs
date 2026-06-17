@@ -156,6 +156,16 @@ impl Upper for Option<u8> {
     }
 }
 
+// Strategy that generates (lower: u8, upper: u8) bound with lower <= upper
+#[cfg(feature = "proptest")]
+proptest::prop_compose! {
+    pub(super) fn bound()
+    (lower in u8::MIN..=u8::MAX)
+    (lower in proptest::strategy::Just(lower), upper in lower..=u8::MAX) -> (u8, u8) {
+        (lower, upper)
+    }
+}
+
 /// Iterator over (key byte, edge index). Heavily optimized for space because
 /// (a) scan operations require keeping a stack of `KeyIter`s, and
 /// (b) most of them are `KeyIter3`, which is 8 bytes.
