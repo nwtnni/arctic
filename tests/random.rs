@@ -1,8 +1,11 @@
 use core::borrow::Borrow as _;
-use core::hash::Hasher as _;
 use std::sync::Barrier;
 
 use arctic::raw::Key;
+use rand::RngExt;
+use rand::SeedableRng;
+use rand::distr::StandardUniform;
+use rand::rngs::Xoshiro256PlusPlus;
 
 mod u64 {
     use arctic::raw::Key;
@@ -174,10 +177,12 @@ mod boxed {
 }
 
 mod vec {
-    use core::hash::Hasher as _;
-
     use arctic::NonPrefixVec;
     use arctic::raw::Key;
+    use rand::SeedableRng as _;
+    use rand::distr::Distribution as _;
+    use rand::distr::SampleString;
+    use rand::distr::StandardUniform;
 
     use super::Workload;
     use super::test_map;
@@ -204,15 +209,15 @@ mod vec {
         type Value = u64;
 
         fn key(&self, index: usize) -> Self::Key<'_> {
-            let mut hasher = rapidhash::fast::RapidHasher::default_const();
-            hasher.write_usize(index);
-            let len = hasher.finish() % 16 + 16;
-            let mut buffer = Vec::new();
-            for i in 0..len {
-                hasher.write_u64(i);
-                buffer.push(hasher.finish() as u8);
-            }
-            unsafe { NonPrefixVec::new_unchecked(buffer) }
+            let mut rng = rand::rngs::Xoshiro256PlusPlus::seed_from_u64(index as u64);
+            let len = rand::distr::Uniform::new_inclusive(16usize, 32usize)
+                .unwrap()
+                .sample(&mut rng);
+
+            let mut buffer = StandardUniform.sample_string(&mut rng, len);
+            buffer.push('\0');
+
+            unsafe { NonPrefixVec::new_unchecked(buffer.into_bytes()) }
         }
 
         fn value(&self, index: usize) -> Self::Value {
@@ -232,10 +237,13 @@ mod vec {
 }
 
 mod slice {
-    use core::hash::Hasher as _;
 
     use arctic::NonPrefixSlice;
     use arctic::raw::Key;
+    use rand::SeedableRng as _;
+    use rand::distr::Distribution as _;
+    use rand::distr::SampleString as _;
+    use rand::distr::StandardUniform;
 
     use super::Workload;
     use super::test_map;
@@ -260,16 +268,13 @@ mod slice {
     impl Slice {
         fn new(key_count: usize) -> Self {
             let mut outer = Vec::new();
-            for index in 0..key_count {
-                let mut hasher = rapidhash::fast::RapidHasher::default_const();
-                hasher.write_usize(index);
-                let len = hasher.finish() % 16 + 16;
-                let mut inner = Vec::new();
-                for i in 0..len {
-                    hasher.write_u64(i);
-                    inner.push(hasher.finish() as u8);
-                }
-                outer.push(inner);
+            let mut rng = rand::rngs::Xoshiro256PlusPlus::seed_from_u64(key_count as u64);
+            let len = rand::distr::Uniform::new_inclusive(16usize, 32usize).unwrap();
+            for _ in 0..key_count {
+                let len = len.sample(&mut rng);
+                let mut inner = StandardUniform.sample_string(&mut rng, len);
+                inner.push('\0');
+                outer.push(inner.into_bytes());
             }
             Self(outer)
         }
@@ -300,9 +305,10 @@ mod slice {
 }
 
 mod array {
-    use core::hash::Hasher as _;
-
     use arctic::raw::Key;
+    use rand::RngExt as _;
+    use rand::SeedableRng as _;
+    use rand::rngs::Xoshiro256PlusPlus;
 
     use super::Workload;
     use super::test_map;
@@ -329,14 +335,7 @@ mod array {
         type Value = u64;
 
         fn key(&self, index: usize) -> Self::Key<'_> {
-            let mut hasher = rapidhash::fast::RapidHasher::default_const();
-            hasher.write_usize(index);
-            let mut buffer = [0u8; N];
-            for (i, byte) in buffer.iter_mut().enumerate() {
-                hasher.write_usize(i);
-                *byte = hasher.finish() as u8;
-            }
-            buffer
+            Xoshiro256PlusPlus::seed_from_u64(index as u64).random()
         }
 
         fn value(&self, index: usize) -> Self::Value {
@@ -383,13 +382,12 @@ where
     assert_eq!(key_count % thread_count, 0);
 
     let barrier = &Barrier::new(thread_count);
+
     let items = if hash {
-        let mut indices = (0..key_count)
-            .map(|index| {
-                let mut hasher = rapidhash::fast::RapidHasher::default_const();
-                hasher.write_usize(index);
-                hasher.finish() as usize
-            })
+        let mut indices = Xoshiro256PlusPlus::seed_from_u64((thread_count * key_count) as u64)
+            .sample_iter(StandardUniform)
+            .map(|index: u64| index as usize)
+            .take(key_count)
             .collect::<Vec<_>>();
         indices.sort_unstable();
         indices.dedup();
