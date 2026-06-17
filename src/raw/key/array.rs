@@ -1,7 +1,5 @@
 //! Support for byte array keys (`[u8; N]`).
 
-use core::fmt;
-
 use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -117,6 +115,7 @@ impl<'k, const N: usize> key::Read for Reader<'k, N> {
 
 #[doc(hidden)]
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Writer<const N: usize>(pub(super) [u8; N]);
 
 impl<const N: usize> Default for Writer<N> {
@@ -153,11 +152,5 @@ impl<'k, const N: usize> key::Write<Reader<'k, N>> for Writer<N> {
                 *out = r#in;
             });
         start + Byte::BYTE + edge.len().into()
-    }
-}
-
-impl<const N: usize> fmt::Debug for Writer<N> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
     }
 }
