@@ -38,7 +38,7 @@ use ribbit::u4;
 
 use crate::raw::node::KeyIter3;
 use crate::raw::node::KeyIter15;
-use crate::raw::node::KeyIter63;
+use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
 /// https://richardstartin.github.io/posts/finding-bytes
@@ -218,7 +218,7 @@ pub(super) fn keys_47<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     len: u8,
     lower: L,
     upper: U,
-    out: &mut KeyIter63,
+    out: &mut KeyIter47,
 ) {
     validate!(len <= 0x7F, "AVX2 only supports signed byte comparison");
 
@@ -643,7 +643,7 @@ mod tests {
 
         use crate::raw::node::KeyIter3;
         use crate::raw::node::KeyIter15;
-        use crate::raw::node::KeyIter63;
+        use crate::raw::node::KeyIter47;
         use crate::raw::node::simd;
 
         proptest::proptest! {
@@ -727,10 +727,10 @@ mod tests {
                 let indices = header.indices();
                 let len = header.len();
 
-                let mut simd = KeyIter63::default();
+                let mut simd = KeyIter47::default();
                 simd::avx2::keys_47(indices, len, Some(lower), Some(upper), &mut simd);
 
-                let mut fallback = KeyIter63::default();
+                let mut fallback = KeyIter47::default();
                 simd::keys_47_fallback(indices, len, Some(lower), Some(upper), &mut fallback);
 
                 assert_eq!(

@@ -187,7 +187,7 @@ pub(crate) union KeyIter {
     /// Stored in `Box`.
     ///
     /// Same reasoning as `node_15`.
-    node_47: NonNull<KeyIter63>,
+    node_47: NonNull<KeyIter47>,
 
     /// Stored inline.
     ///
@@ -214,7 +214,7 @@ const TYPE_SHIFT_PTR: usize = if cfg!(target_endian = "little") {
 const _: () = assert!(align_of::<KeyIter15>() == 32);
 const TYPE_15: usize = (node::Type::Node15 as usize) << TYPE_SHIFT_PTR;
 
-const _: () = assert!(align_of::<KeyIter63>() == 32);
+const _: () = assert!(align_of::<KeyIter47>() == 32);
 const TYPE_47: usize = (node::Type::Node47 as usize) << TYPE_SHIFT_PTR;
 
 /// Enum with a single possible bit representation.
@@ -268,7 +268,7 @@ impl KeyIter {
     }
 
     #[inline]
-    pub(super) fn new_47(node_47: Box<KeyIter63>) -> Self {
+    pub(super) fn new_47(node_47: Box<KeyIter47>) -> Self {
         let iter = Self {
             node_47: NonNull::from(Box::leak(node_47)).map_addr(|addr| {
                 validate_eq!(
@@ -306,7 +306,7 @@ impl KeyIter {
     }
 
     #[inline]
-    unsafe fn as_node_47_unchecked(&self) -> NonNull<KeyIter63> {
+    unsafe fn as_node_47_unchecked(&self) -> NonNull<KeyIter47> {
         validate_eq!(self.r#type(), node::Type::Node47.pack());
 
         unsafe {
@@ -407,13 +407,15 @@ pub(in crate::raw) struct KeyIter3(pub(super) KeyIterN<3>);
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct KeyIter15(pub(super) KeyIterN<15>);
 
+// NOTE: has 63 entries instead of 47 to allow
+// unmasked 16-byte SIMD writes.
 #[repr(C, align(32))]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct KeyIter63(pub(super) KeyIterN<63>);
+pub(super) struct KeyIter47(pub(super) KeyIterN<63>);
 
 const_assert_size_align!(KeyIter3, 8, 8);
 const_assert_size_align!(KeyIter15, 32, 32);
-const_assert_size_align!(KeyIter63, 128, 32);
+const_assert_size_align!(KeyIter47, 128, 32);
 
 macro_rules! impl_key_iter {
     ($ty:ty, $len:expr $(,)?) => {
@@ -462,7 +464,7 @@ macro_rules! impl_key_iter {
 
 impl_key_iter!(KeyIter3, 3);
 impl_key_iter!(KeyIter15, 15);
-impl_key_iter!(KeyIter63, 63);
+impl_key_iter!(KeyIter47, 63);
 
 impl KeyIter3 {
     #[inline]

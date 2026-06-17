@@ -16,7 +16,7 @@ use crate::raw::node;
 use crate::raw::node::Node;
 use crate::raw::node::header;
 use crate::raw::node::iter::KeyIndex;
-use crate::raw::node::iter::KeyIter63;
+use crate::raw::node::iter::KeyIter47;
 use crate::stat;
 
 const CAPACITY: usize = 47;
@@ -58,7 +58,7 @@ impl Default for Header {
 
 unsafe impl header::Header for Header {
     const TYPE: node::Type = node::Type::Node47;
-    type KeyIter = KeyIter63;
+    type KeyIter = KeyIter47;
 
     unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
         for (i, key) in keys.iter().enumerate() {
@@ -167,7 +167,7 @@ unsafe impl header::Header for Header {
         &self,
         lower: L,
         upper: U,
-        iter: &mut KeyIter63,
+        iter: &mut KeyIter47,
     ) {
         // NOTE: only writers need to ensure meta consistency
         let len = self.len();
@@ -236,7 +236,7 @@ impl Header {
 impl Debug for Header {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let meta = self.meta.load_packed(Ordering::Relaxed);
-        let mut iter = KeyIter63::default();
+        let mut iter = KeyIter47::default();
         header::Header::keys(
             self,
             Unbound::<()>::default(),
@@ -271,9 +271,9 @@ impl Default for MetaPacked {
     }
 }
 
-impl From<Box<KeyIter63>> for node::KeyIter {
+impl From<Box<KeyIter47>> for node::KeyIter {
     #[inline]
-    fn from(iter: Box<KeyIter63>) -> Self {
+    fn from(iter: Box<KeyIter47>) -> Self {
         node::KeyIter::new_47(iter)
     }
 }

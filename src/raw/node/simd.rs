@@ -9,7 +9,7 @@ use ribbit::u4;
 use crate::raw::node;
 use crate::raw::node::KeyIter3;
 use crate::raw::node::KeyIter15;
-use crate::raw::node::KeyIter63;
+use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
 #[inline]
@@ -201,7 +201,7 @@ pub(super) fn keys_47<L: node::Lower, U: node::Upper>(
     len: u8,
     lower: L,
     upper: U,
-    out: &mut KeyIter63,
+    out: &mut KeyIter47,
 ) {
     simd!(
         "opt-no-node47-keys",
@@ -216,7 +216,7 @@ pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
     len: u8,
     lower: L,
     upper: U,
-    out: &mut KeyIter63,
+    out: &mut KeyIter47,
 ) {
     let i = lower.get() / 16;
     let j = upper.get() / 16;

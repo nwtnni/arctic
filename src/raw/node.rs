@@ -43,7 +43,7 @@ use crate::raw::iter::Unbound;
 use crate::raw::node::header::Header;
 use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::iter::KeyIter15;
-use crate::raw::node::iter::KeyIter63;
+use crate::raw::node::iter::KeyIter47;
 use crate::raw::node::iter::KeyIter256;
 use crate::stat;
 
@@ -385,7 +385,7 @@ impl PtrPacked {
             },
             |node| {
                 let node = unsafe { node.as_ref() };
-                let mut iter = Box::new(KeyIter63::default());
+                let mut iter = Box::new(KeyIter47::default());
                 node.keys(lower, upper, &mut iter);
                 (iter.into(), node.edges())
             },
@@ -436,7 +436,7 @@ impl PtrPacked {
                 },
                 |node| {
                     let node = unsafe { node.as_ref() };
-                    let mut iter = Box::new(KeyIter63::default());
+                    let mut iter = Box::new(KeyIter47::default());
                     node.keys(lower, upper, &mut iter);
                     Err((iter.into(), node.edges()))
                 },
