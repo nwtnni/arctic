@@ -184,12 +184,19 @@ fn read_u64(slice: &[u8]) -> u64 {
     u64::from_le_bytes(buffer)
 }
 
-pub(crate) trait Terminate: Copy + Debug + Default + Eq {
+pub(crate) trait Terminate:
+    Copy + Debug + Default + Eq + ribbit::Pack<Packed = Self>
+{
+    const FALSE: Self;
+
     fn new(terminate: bool) -> Self;
     fn get(self) -> bool;
+    fn try_compress(byte: u8) -> usize;
 }
 
 impl Terminate for () {
+    const FALSE: Self = ();
+
     #[inline]
     fn new(_: bool) -> Self {}
 
@@ -197,9 +204,16 @@ impl Terminate for () {
     fn get(self) -> bool {
         false
     }
+
+    #[inline]
+    fn try_compress(_: u8) -> usize {
+        1
+    }
 }
 
 impl Terminate for bool {
+    const FALSE: Self = false;
+
     #[inline]
     fn new(terminate: bool) -> Self {
         terminate
@@ -208,5 +222,10 @@ impl Terminate for bool {
     #[inline]
     fn get(self) -> bool {
         self
+    }
+
+    #[inline]
+    fn try_compress(byte: u8) -> usize {
+        (byte > 0) as usize
     }
 }

@@ -2,10 +2,9 @@ use core::borrow::Borrow as _;
 use std::sync::Barrier;
 
 use arctic::raw::Key;
-use rand::RngExt;
 use rand::SeedableRng;
-use rand::distr::StandardUniform;
 use rand::rngs::Xoshiro256PlusPlus;
+use rand::seq::SliceRandom;
 
 mod u64 {
     use arctic::raw::Key;
@@ -236,14 +235,12 @@ mod vec {
     }
 }
 
-mod slice {
-
-    use arctic::NonPrefixSlice;
+mod non_null_slice {
+    use arctic::NonNullSlice;
     use arctic::raw::Key;
     use rand::SeedableRng as _;
     use rand::distr::Distribution as _;
     use rand::distr::SampleString as _;
-    use rand::distr::StandardUniform;
 
     use super::Workload;
     use super::test_map;
@@ -269,11 +266,12 @@ mod slice {
         fn new(key_count: usize) -> Self {
             let mut outer = Vec::new();
             let mut rng = rand::rngs::Xoshiro256PlusPlus::seed_from_u64(key_count as u64);
-            let len = rand::distr::Uniform::new_inclusive(16usize, 32usize).unwrap();
+            let dist_char =
+                rand::distr::uniform::Uniform::<char>::new_inclusive(1 as char, char::MAX).unwrap();
+            let dist_len = rand::distr::Uniform::new_inclusive(1usize, 8usize).unwrap();
             for _ in 0..key_count {
-                let len = len.sample(&mut rng);
-                let mut inner = StandardUniform.sample_string(&mut rng, len);
-                inner.push('\0');
+                let len = dist_len.sample(&mut rng);
+                let inner = dist_char.sample_string(&mut rng, len);
                 outer.push(inner.into_bytes());
             }
             Self(outer)
@@ -281,11 +279,11 @@ mod slice {
     }
 
     impl Workload for Slice {
-        type Key<'k> = &'k NonPrefixSlice;
+        type Key<'k> = &'k NonNullSlice;
         type Value = u64;
 
         fn key(&self, index: usize) -> Self::Key<'_> {
-            unsafe { NonPrefixSlice::new_unchecked(self.0[index].as_slice()) }
+            unsafe { NonNullSlice::new_unchecked(self.0[index].as_slice()) }
         }
 
         fn value(&self, index: usize) -> Self::Value {
@@ -373,7 +371,7 @@ trait Workload: Sized + Sync {
     );
 }
 
-fn test_map<'k, K: Workload>(key_set: &'k K, thread_count: usize, key_count: usize, hash: bool)
+fn test_map<'k, K: Workload>(key_set: &'k K, thread_count: usize, key_count: usize, shuffle: bool)
 where
     for<'a> &'a <K::Key<'k> as Key>::Borrowed: Sync + core::fmt::Debug,
     <K::Value as arctic::concurrent::Value>::Borrowed: core::fmt::Debug,
@@ -383,28 +381,23 @@ where
 
     let barrier = &Barrier::new(thread_count);
 
-    let items = if hash {
-        let mut indices = Xoshiro256PlusPlus::seed_from_u64((thread_count * key_count) as u64)
-            .sample_iter(StandardUniform)
-            .map(|index: u64| index as usize)
-            .take(key_count)
-            .collect::<Vec<_>>();
-        indices.sort_unstable();
-        indices.dedup();
-        indices
-            .into_iter()
-            .map(|index| (index, key_set.key(index)))
-            .collect::<Vec<_>>()
+    let mut items = (0..key_count)
+        .map(|index| (index, key_set.key(index)))
+        .collect::<Vec<_>>();
+    items.sort_unstable_by(|(_, key_a), (_, key_b)| key_a.cmp(key_b));
+    items.dedup_by(|(_, key_a), (_, key_b)| key_a == key_b);
+
+    if shuffle {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64((thread_count * key_count) as u64);
+        items.shuffle(&mut rng);
     } else {
-        (0..key_count)
-            .map(|index| (index, key_set.key(index)))
-            .collect::<Vec<_>>()
-    };
+        items.sort_unstable_by_key(|(index, _)| *index);
+    }
 
     let map = &arctic::concurrent::Map::<K::Key<'_>, _>::default();
 
     std::thread::scope(|scope| {
-        for chunk in items.chunks_exact(key_count / thread_count) {
+        for chunk in items.chunks(key_count / thread_count) {
             scope.spawn(move || {
                 barrier.wait();
 
@@ -414,13 +407,19 @@ where
                         .ok()
                         .as_deref()
                         .unwrap_or_else(|| panic!("Key {:?} should not be present", key.borrow()));
+
+                    if map.get(key.borrow()).is_none() {
+                        panic!("failed to find {:x?}", key);
+                    }
                 }
 
                 barrier.wait();
 
                 for (index, key) in chunk.iter().take(chunk.len() / 2) {
                     // FIXME: change to recursive removal after figuring out retiring
-                    let value = map.remove(key.borrow()).unwrap();
+                    let value = map
+                        .remove(key.borrow())
+                        .unwrap_or_else(|| panic!("failed to find {:x?}", key));
                     key_set.validate(*index, key.borrow(), &value);
                 }
 

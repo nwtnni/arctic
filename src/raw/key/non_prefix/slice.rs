@@ -14,8 +14,8 @@ impl<'a> Key for &'a NonPrefixSlice {
     where
         Self: 'k;
     type Read<'k> = Reader<'k>;
-    type Write = Writer;
-    type Edge = edge::Slice;
+    type Write = Writer<()>;
+    type Edge = edge::Slice<()>;
     type Len = Byte;
     type Split = &'a NonPrefixSlice;
 

@@ -4,7 +4,7 @@ use core::ops::Sub;
 use core::ops::SubAssign;
 
 use ribbit::u6;
-use ribbit::u14;
+use ribbit::u13;
 
 /// Key length.
 pub(crate) trait Len:
@@ -56,9 +56,9 @@ impl From<u6> for Byte {
     }
 }
 
-impl From<u14> for Byte {
+impl From<u13> for Byte {
     #[inline]
-    fn from(len: u14) -> Self {
+    fn from(len: u13) -> Self {
         Self(len.value() as usize)
     }
 }
@@ -70,10 +70,10 @@ impl From<Byte> for u6 {
     }
 }
 
-impl From<Byte> for u14 {
+impl From<Byte> for u13 {
     #[inline]
     fn from(len: Byte) -> Self {
-        u14::extract_u64(len.0 as u64, 0)
+        u13::extract_u64(len.0 as u64, 0)
     }
 }
 

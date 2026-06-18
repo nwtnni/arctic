@@ -30,6 +30,7 @@ impl<'k, T: Default> Reader<'k, T> {
     }
 }
 
+#[expect(private_bounds)]
 impl<'k, T: Terminate> Reader<'k, T> {
     pub(super) fn split_last(&self) -> Option<(Self, u8)> {
         let (byte, slice) = self.slice.split_last()?;
@@ -131,7 +132,9 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
         let start = start.bytes();
 
         Self {
-            slice: self.slice.get(start..).unwrap_or_default(),
+            // NOTE: slice key implementation requires us to preserve the
+            // `self.slice` pointer, even if the slice is empty.
+            slice: self.slice.get(start..).unwrap_or(&self.slice[..0]),
             terminate: T::new(self.terminate.get() && (start <= self.slice.len())),
         }
     }

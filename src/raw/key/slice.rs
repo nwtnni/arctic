@@ -1,6 +1,6 @@
 //! Support for borrowed dynamically sized `&[u8]` keys.
 
-use ribbit::u14;
+use ribbit::u13;
 
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -25,7 +25,7 @@ impl<'k, T: Default> Reader<'k, T> {
 impl<T: Terminate> key::Read for Reader<'_, T> {
     const LEN: Option<Byte> = None;
 
-    type Edge = edge::Slice;
+    type Edge = edge::Slice<T>;
     type Len = Byte;
 
     fn len(&self) -> Self::Len {
@@ -36,17 +36,26 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
         &self,
         len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
     ) -> ribbit::Packed<Self::Edge> {
-        let len = len.bytes().min(self.len().bytes());
-        Slice::new(&self.0.slice[..len])
+        let min = len.bytes().min(self.0.slice.len());
+        Slice::new(&self.0.slice[..min]).with_terminate(T::new(
+            self.0.terminate.get() && len.bytes() == self.0.slice.len() + 1,
+        ))
     }
 
-    fn get_byte(&self, index: u14) -> Option<u8> {
+    fn get_byte(&self, index: u13) -> Option<u8> {
         self.0.get_byte(index.bytes())
     }
 
-    fn match_prefix(&self, meta: ribbit::Packed<edge::Slice>) -> Self::Len {
+    fn match_prefix(&self, meta: ribbit::Packed<edge::Slice<T>>) -> Self::Len {
         let other = unsafe { meta.as_slice() };
-        Byte(key::common_prefix(self.0.slice, other))
+
+        let index = key::common_prefix(self.0.slice, other);
+        let terminate = self.0.terminate.get()
+            && index == self.0.slice.len()
+            && index == other.len()
+            && meta.terminate().get();
+
+        Byte(index + terminate as usize)
     }
 
     #[inline]
@@ -67,12 +76,14 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
 
 #[doc(hidden)]
 #[derive(Clone, Default, Debug)]
-pub struct Writer {
-    last: ribbit::Packed<edge::Slice>,
+#[expect(private_bounds)]
+pub struct Writer<T: Terminate> {
+    last: ribbit::Packed<edge::Slice<T>>,
     len: Byte,
 }
 
-impl Writer {
+#[expect(private_bounds)]
+impl<T: Terminate> Writer<T> {
     pub(super) unsafe fn as_slice_unchecked<'a>(&self) -> &'a [u8] {
         let len = self.len.bytes();
         let suffix = unsafe { self.last.as_slice() };
@@ -80,15 +91,20 @@ impl Writer {
     }
 }
 
-impl<T: Terminate> key::Write<Reader<'_, T>> for Writer {
+impl<T: Terminate> key::Write<Reader<'_, T>> for Writer<T> {
     type Len = Byte;
 
-    fn new(prefix: Reader<'_, T>, key: ribbit::Packed<edge::Slice>) -> (Self, Self::Len) {
+    fn new(prefix: Reader<'_, T>, key: ribbit::Packed<edge::Slice<T>>) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         (Writer { last: key, len }, len)
     }
 
-    fn replace(&mut self, start: Self::Len, _: u8, edge: ribbit::Packed<edge::Slice>) -> Self::Len {
+    fn replace(
+        &mut self,
+        start: Self::Len,
+        _: u8,
+        edge: ribbit::Packed<edge::Slice<T>>,
+    ) -> Self::Len {
         validate!(start <= self.len);
         self.len = start + Byte::BYTE + edge.len().into();
         self.last = edge;

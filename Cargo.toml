@@ -38,7 +38,7 @@ base64 = { version = "0.22.1", optional = true }
 hdrhistogram = { version = "7.5.4", optional = true, default-features = false, features = ["serialization"] }
 libc = { version = "0.2.176", optional = true }
 proptest = { version = "1.9.0", optional = true }
-ribbit = { version = "0.2.0", features = ["atomic-u128"] }
+ribbit = { version = "0.2.1", features = ["atomic-u128"] }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 shuttle = { git = "https://github.com/nwtnni/shuttle.git", optional = true }
 shuttle-core = { git = "https://github.com/nwtnni/shuttle.git", optional = true }

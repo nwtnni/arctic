@@ -13,8 +13,8 @@ impl<'a> Key for &'a NonNullSlice {
     where
         Self: 'k;
     type Read<'k> = Reader<'k>;
-    type Write = Writer;
-    type Edge = edge::Slice;
+    type Write = Writer<bool>;
+    type Edge = edge::Slice<bool>;
     type Len = Byte;
     type Split = &'a NonNullSlice;
 
