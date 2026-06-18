@@ -47,7 +47,8 @@ impl<'a> Key for &'a NullTerminatedSlice {
     }
 
     fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
-        todo!()
+        let (reader, last) = Reader::from(key).0.split_second_last().expect("Non-empty");
+        (key::slice::Reader(reader), last)
     }
 }
 

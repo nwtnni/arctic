@@ -207,7 +207,7 @@ impl Key for NonNullString {
     }
 
     fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
-        todo!()
+        Reader::from(key).split_last().expect("Non-empty")
     }
 }
 

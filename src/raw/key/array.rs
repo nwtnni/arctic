@@ -16,6 +16,7 @@ impl<const N: usize> Key for [u8; N] {
     type Insert<'k> = &'k Self;
     type Edge = edge::Le;
     type Len = Byte;
+    // NOTE: should be [u8; N - 1] ideally, but not supported yet.
     type Split = [u8; N];
 
     #[inline]
@@ -52,7 +53,8 @@ impl<const N: usize> Key for [u8; N] {
             assert!(N > 0);
         }
 
-        todo!()
+        let (reader, last) = Reader::from(key).0.split_last().expect("Non-empty");
+        (Reader(reader), last)
     }
 }
 

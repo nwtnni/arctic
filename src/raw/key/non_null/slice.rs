@@ -46,11 +46,12 @@ impl<'a> Key for &'a NonNullSlice {
     }
 
     fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
-        todo!()
+        let (reader, last) = Reader::from(key).0.split_last().expect("Non-empty");
+        (key::slice::Reader(reader), last)
     }
 }
 
-pub type Reader<'k> = crate::raw::key::slice::Reader<'k, bool>;
+pub type Reader<'k> = key::slice::Reader<'k, bool>;
 
 impl<'k> From<&'k NonNullVec> for Reader<'k> {
     #[inline]
