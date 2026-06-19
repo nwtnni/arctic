@@ -8,6 +8,7 @@ use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
+use crate::raw::key::r#unsized;
 
 impl<const N: usize> Key for [u8; N] {
     type Read<'k> = Reader<'k, N>;
@@ -16,8 +17,8 @@ impl<const N: usize> Key for [u8; N] {
     type Insert<'k> = &'k Self;
     type Edge = edge::Le;
     type Len = Byte;
-    // NOTE: should be [u8; N - 1] ideally, but not supported yet.
-    type Split = [u8; N];
+    // // NOTE: should be [u8; N - 1] ideally, but not supported yet.
+    // type Split = [u8; N];
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -48,33 +49,30 @@ impl<const N: usize> Key for [u8; N] {
         &writer.0
     }
 
-    fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
-        const {
-            assert!(N > 0);
-        }
-
-        let (reader, last) = Reader::from(key).0.split_last().expect("Non-empty");
-        (Reader(reader), last)
-    }
+    // fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
+    //     const {
+    //         assert!(N > 0);
+    //     }
+    //
+    //     let (last, slice) = key.split_last().expect("Non-empty");
+    //     (Reader(r#unsized::owned::Reader::new_prefix(slice)), *last)
+    // }
 }
 
 impl<'k, const N: usize> From<&'k [u8; N]> for Reader<'k, N> {
     #[inline]
     fn from(array: &'k [u8; N]) -> Self {
-        Self(key::vec::Reader {
-            slice: array,
-            terminate: (),
-        })
+        Self(r#unsized::owned::Reader::new_prefix(array))
     }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Reader<'k, const N: usize>(pub(crate) key::vec::Reader<'k, ()>);
+pub struct Reader<'k, const N: usize>(pub(crate) r#unsized::owned::Reader<'k, ()>);
 
 impl<'k, const N: usize> Reader<'k, N> {
     #[inline]
     pub fn new_prefix(prefix: &'k [u8]) -> Self {
-        Self(key::vec::Reader::new_prefix(prefix))
+        Self(r#unsized::owned::Reader::new_prefix(prefix))
     }
 }
 

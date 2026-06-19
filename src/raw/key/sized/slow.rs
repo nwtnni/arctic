@@ -12,7 +12,7 @@ use crate::raw::key::Len as _;
 #[cfg(feature = "opt-no-int")]
 impl crate::raw::Key for u64 {
     type Read<'k> = Reader;
-    type Write = key::array::Writer<8>;
+    type Write = key::sized::array::Writer<8>;
     type Borrowed = Self;
     type Edge = edge::Le;
     type Len = Byte;
@@ -194,7 +194,7 @@ impl<'k> From<&'k u64> for Reader {
     }
 }
 
-impl key::Write<Reader> for key::array::Writer<8> {
+impl key::Write<Reader> for key::sized::array::Writer<8> {
     type Len = Byte;
 
     #[inline]
@@ -208,7 +208,7 @@ impl key::Write<Reader> for key::array::Writer<8> {
             .for_each(|(out, r#in)| {
                 *out = r#in;
             });
-        (key::array::Writer(buffer), len)
+        (key::sized::array::Writer(buffer), len)
     }
 
     #[inline]

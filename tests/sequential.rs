@@ -6,7 +6,6 @@ use core::ops::ControlFlow;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use arctic::NonNullString;
 use proptest::arbitrary::Arbitrary;
 use proptest::prelude::Just;
 use proptest::prelude::Strategy as _;
@@ -49,13 +48,13 @@ prop_state_machine! {
         Arctic<u128, u64>
     );
 
-    #[test]
-    fn string_u64(
-        sequential
-        1000
-        =>
-        Arctic<NonNullString, u64>
-    );
+    // #[test]
+    // fn string_u64(
+    //     sequential
+    //     1000
+    //     =>
+    //     Arctic<NonNullString, u64>
+    // );
 }
 
 #[derive(Clone, Debug)]

@@ -1,21 +1,19 @@
 //! Implementations of [`Key`].
 
-pub mod array;
 mod discard;
-pub mod int;
 mod len;
-pub mod non_null;
-pub mod non_prefix;
-pub mod null_terminated;
-pub mod slice;
-mod slow;
-pub mod string;
-pub mod vec;
+pub mod sized;
+pub mod r#unsized;
 
 pub(crate) use discard::Discard;
 pub(crate) use len::Bit;
 pub(crate) use len::Byte;
 pub(crate) use len::Len;
+
+pub use r#unsized::BoxedSlice;
+pub use r#unsized::NonNull;
+pub use r#unsized::Slice;
+pub use r#unsized::Terminated;
 
 use core::borrow::Borrow;
 use core::fmt;
@@ -72,10 +70,10 @@ pub trait Key: Borrow<Self::Borrowed> {
     #[expect(private_bounds)]
     type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
 
-    /// Key type after splitting off last meaningful byte.
-    ///
-    /// Used by set implementation.
-    type Split: Key;
+    // /// Key type after splitting off last meaningful byte.
+    // ///
+    // /// Used by set implementation.
+    // type Split: Key;
 
     /// Convert the key type to the insert type.
     fn as_insert(&self) -> Self::Insert<'_>;
@@ -99,8 +97,8 @@ pub trait Key: Borrow<Self::Borrowed> {
     where
         Self: 'k;
 
-    /// Split a key into a reader and the last meaningful byte.
-    fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8);
+    // /// Split a key into a reader and the last meaningful byte.
+    // fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8);
 }
 
 pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
@@ -157,75 +155,4 @@ pub(crate) trait Write<R: Read>: fmt::Debug + Default {
 
     /// Replace bytes starting at `start` with bytes from `node` and `edge`
     fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<R::Edge>) -> Self::Len;
-}
-
-// TODO: optimize?
-#[inline]
-fn common_prefix(left: &[u8], right: &[u8]) -> usize {
-    core::iter::zip(left, right)
-        .position(|(l, r)| l != r)
-        .unwrap_or_else(|| left.len().min(right.len()))
-}
-
-// TODO: optimize?
-#[inline]
-fn read_u64(slice: &[u8]) -> u64 {
-    if slice.len() >= 8 {
-        return unsafe { slice.as_ptr().cast::<u64>().read_unaligned() };
-    }
-
-    // FIXME: try to avoid memcpy?
-    // https://github.com/llvm/llvm-project/issues/87440
-    // https://github.com/rust-lang/rust/issues/92993
-    // https://github.com/rust-lang/rust/pull/37573
-    let mut buffer = [0u8; 8];
-    buffer[..slice.len()].copy_from_slice(slice);
-
-    u64::from_le_bytes(buffer)
-}
-
-pub(crate) trait Terminate:
-    Copy + Debug + Default + Eq + ribbit::Pack<Packed = Self>
-{
-    const FALSE: Self;
-
-    fn new(terminate: bool) -> Self;
-    fn get(self) -> bool;
-    fn try_compress(byte: u8) -> usize;
-}
-
-impl Terminate for () {
-    const FALSE: Self = ();
-
-    #[inline]
-    fn new(_: bool) -> Self {}
-
-    #[inline]
-    fn get(self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn try_compress(_: u8) -> usize {
-        1
-    }
-}
-
-impl Terminate for bool {
-    const FALSE: Self = false;
-
-    #[inline]
-    fn new(terminate: bool) -> Self {
-        terminate
-    }
-
-    #[inline]
-    fn get(self) -> bool {
-        self
-    }
-
-    #[inline]
-    fn try_compress(byte: u8) -> usize {
-        (byte > 0) as usize
-    }
 }

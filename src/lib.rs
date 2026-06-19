@@ -91,21 +91,8 @@ pub use raw::Key;
 #[doc(inline)]
 pub use raw::iter::Range;
 #[doc(inline)]
-pub use raw::key::non_null::NonNullSlice;
-#[doc(inline)]
-pub use raw::key::non_null::NonNullVec;
-#[doc(inline)]
-pub use raw::key::non_prefix::NonPrefixSlice;
-#[doc(inline)]
-pub use raw::key::non_prefix::NonPrefixVec;
-#[doc(inline)]
-pub use raw::key::null_terminated::NullTerminatedSlice;
-#[doc(inline)]
-pub use raw::key::null_terminated::NullTerminatedVec;
-#[doc(inline)]
-pub use raw::key::string::NonNullStr;
-#[doc(inline)]
-pub use raw::key::string::NonNullString;
+pub use raw::key;
+
 pub(crate) use sync::Atomic;
 
 /// Key order for scan operations (e.g., [`concurrent::Shard::entries`]).
@@ -154,18 +141,21 @@ pub(crate) fn cold() {}
 mod tests {
     use crate::Ascend;
     use crate::Descend;
-    use crate::NonNullString;
-    use crate::NonPrefixSlice;
-    use crate::NonPrefixVec;
     use crate::concurrent::Map;
+    use crate::key::BoxedSlice;
+    use crate::key::NonNull;
+    use crate::key::Slice;
+    use crate::key::Terminated;
+    use crate::key::r#unsized::BoxedStr;
+    use crate::key::r#unsized::Str;
     use crate::raw::key::Read as _;
 
     #[test]
     fn smoke() {
-        let map = Map::<NonPrefixVec, _>::default();
-        map.upsert(unsafe { NonPrefixSlice::new_unchecked(b"abcd") }, 1u64);
+        let map = Map::<BoxedStr<NonNull>, _>::default();
+        map.upsert(unsafe { Slice::new_unchecked("abcd") }, 1u64);
         assert_eq!(
-            map.get(unsafe { NonPrefixSlice::new_unchecked(b"abcd") })
+            map.get(unsafe { Slice::new_unchecked("abcd") })
                 .as_deref()
                 .copied(),
             Some(1)
@@ -342,7 +332,7 @@ mod tests {
 
     #[test]
     fn split_edges() {
-        let mut key = (0..100).collect::<Vec<_>>();
+        let mut key = (1..100).collect::<Vec<_>>();
         insert_all(core::iter::from_fn(|| {
             if key.is_empty() {
                 None
@@ -350,49 +340,46 @@ mod tests {
                 let mut next = key.clone();
                 next.push(0);
                 key.pop();
-                Some(unsafe { NonPrefixVec::new_unchecked(next) })
+                let next = next.into_boxed_slice();
+                Some(BoxedSlice::<Terminated<0>>::new(next).unwrap())
             }
         }));
     }
 
     #[test]
     fn one_long_key() {
-        insert_all([NonNullString::new("a".repeat(1000)).unwrap()]);
+        insert_all([BoxedStr::<NonNull>::new("a".repeat(1000)).unwrap()]);
     }
 
     #[test]
     fn short_key() {
-        insert_all([NonNullString::new("\n".to_string()).unwrap()]);
+        insert_all([BoxedStr::<NonNull>::new("\n".to_string()).unwrap()]);
     }
 
     #[test]
     fn two_long_keys() {
         insert_all([
-            NonNullString::new("a".repeat(1000)).unwrap(),
-            NonNullString::new("b".repeat(1000)).unwrap(),
+            BoxedStr::<NonNull>::new("a".repeat(1000)).unwrap(),
+            BoxedStr::<NonNull>::new("b".repeat(1000)).unwrap(),
         ]);
     }
 
     #[test]
     fn smoke_key_slice() {
-        let keys = [b"ad".as_slice(), b"abc".as_slice()];
-        let map = crate::concurrent::Map::<&NonPrefixSlice, u64>::new();
-        map.insert(unsafe { NonPrefixSlice::new_unchecked(keys[0]) }, 0)
+        let keys = ["ad", "abc"];
+        let map = crate::concurrent::Map::<&Str<NonNull>, u64>::new();
+        map.insert(Str::new(keys[0]).unwrap(), 0)
             .unwrap_or_else(|(_, _)| panic!());
-        map.insert(unsafe { NonPrefixSlice::new_unchecked(keys[1]) }, 1)
+        map.insert(Str::new(keys[1]).unwrap(), 1)
             .unwrap_or_else(|(_, _)| panic!());
 
-        let temp = b"adabc".to_vec();
+        let temp = "adabc";
         assert_eq!(
-            map.get(unsafe { NonPrefixSlice::new_unchecked(&temp[..2]) })
-                .as_deref()
-                .copied(),
+            map.get(Str::new(&temp[..2]).unwrap()).as_deref().copied(),
             Some(0)
         );
         assert_eq!(
-            map.get(unsafe { NonPrefixSlice::new_unchecked(&temp[2..]) })
-                .as_deref()
-                .copied(),
+            map.get(Str::new(&temp[2..]).unwrap()).as_deref().copied(),
             Some(1)
         );
     }
@@ -402,17 +389,14 @@ mod tests {
         let keys = (0..10)
             .map(|i| "a".repeat(100) + &i.to_string())
             .collect::<Vec<_>>();
-        let map = crate::concurrent::Map::<&NonPrefixSlice, u64>::new();
+        let map = crate::concurrent::Map::<&Slice<NonNull>, u64>::new();
         for (i, key) in keys.iter().enumerate() {
-            map.insert(
-                unsafe { NonPrefixSlice::new_unchecked(key.as_bytes()) },
-                i as u64,
-            )
-            .unwrap();
+            map.insert(Slice::new(key.as_bytes()).unwrap(), i as u64)
+                .unwrap();
         }
         for (i, key) in keys.iter().enumerate() {
             assert_eq!(
-                map.get(unsafe { NonPrefixSlice::new_unchecked(key.as_bytes()) },)
+                map.get(Slice::new(key.as_bytes()).unwrap())
                     .as_deref()
                     .copied(),
                 Some(i as u64)

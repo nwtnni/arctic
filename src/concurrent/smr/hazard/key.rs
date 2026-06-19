@@ -1,13 +1,13 @@
-use crate::NonNullSlice;
-use crate::NonPrefixSlice;
-use crate::NullTerminatedSlice;
 use crate::concurrent::smr::hazard;
+use crate::key::r#unsized::BoxedSlice;
+use crate::key::r#unsized::Slice;
+use crate::key::r#unsized::Terminate;
 use crate::raw;
 use crate::raw::Int;
 use crate::raw::key;
 use crate::raw::key::Len;
 use crate::raw::key::Read as _;
-use crate::raw::key::Terminate;
+use crate::raw::key::r#unsized;
 
 pub trait Key: raw::Key {
     #[expect(private_bounds)]
@@ -53,7 +53,9 @@ impl Key for u64 {
 impl_integer!(u64);
 
 #[inline]
-fn hazard_integer<I: Int>(reader: key::int::Reader<I>) -> ribbit::Packed<hazard::prefix::Be> {
+fn hazard_integer<I: Int>(
+    reader: key::sized::int::Reader<I>,
+) -> ribbit::Packed<hazard::prefix::Be> {
     hazard::prefix::Be::new_hazard(
         reader.buffer.most_significant_u64(),
         if I::BITS < 64 {
@@ -64,34 +66,34 @@ fn hazard_integer<I: Int>(reader: key::int::Reader<I>) -> ribbit::Packed<hazard:
     )
 }
 
-impl<T: Terminate, K: for<'k> raw::Key<Read<'k> = key::vec::Reader<'k, T>>> Key for K {
+impl<I, R> Key for BoxedSlice<I, R>
+where
+    I: r#unsized::Invariant,
+    R: ?Sized + r#unsized::borrowed::Raw,
+{
     type Prefix = Le;
 
     #[inline]
     fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
-        hazard_vec(reader)
+        hazard_unsized(reader)
     }
 }
 
-macro_rules! impl_slice {
-    ($ty:ty) => {
-        impl Key for &'_ $ty {
-            type Prefix = Le;
+impl<I, R> Key for &'_ Slice<I, R>
+where
+    I: r#unsized::Invariant,
+    R: ?Sized + r#unsized::borrowed::Raw,
+{
+    type Prefix = Le;
 
-            #[inline]
-            fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
-                hazard_slice(reader)
-            }
-        }
-    };
+    #[inline]
+    fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
+        hazard_unsized(reader.0)
+    }
 }
 
-impl_slice!(NonPrefixSlice);
-impl_slice!(NonNullSlice);
-impl_slice!(NullTerminatedSlice);
-
 #[inline]
-fn hazard_vec<T: key::Terminate>(reader: key::vec::Reader<'_, T>) -> ribbit::Packed<Le> {
+fn hazard_unsized<T: Terminate>(reader: r#unsized::owned::Reader<'_, T>) -> ribbit::Packed<Le> {
     let prefix = if reader.slice.len() >= 16 {
         unsafe { reader.slice.as_ptr().cast::<u128>().read_unaligned() }
     } else {
@@ -103,16 +105,11 @@ fn hazard_vec<T: key::Terminate>(reader: key::vec::Reader<'_, T>) -> ribbit::Pac
     Le::new_hazard(prefix, reader.len().bytes().min(15) << 3)
 }
 
-#[inline]
-fn hazard_slice<T: key::Terminate>(reader: key::slice::Reader<'_, T>) -> ribbit::Packed<Le> {
-    hazard_vec(reader.0)
-}
-
 impl<const N: usize> Key for [u8; N] {
     type Prefix = Le;
 
     #[inline]
     fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix> {
-        hazard_vec(reader.0)
+        hazard_unsized(reader.0)
     }
 }

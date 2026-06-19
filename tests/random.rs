@@ -175,13 +175,14 @@ mod boxed {
     }
 }
 
-mod vec {
-    use arctic::NonPrefixVec;
+mod boxed_str_terminated {
+    use arctic::key::Terminated;
+    use arctic::key::r#unsized::BoxedStr;
     use arctic::raw::Key;
     use rand::SeedableRng as _;
     use rand::distr::Distribution as _;
     use rand::distr::SampleString;
-    use rand::distr::StandardUniform;
+    use rand::distr::Uniform;
 
     use super::Workload;
     use super::test_map;
@@ -204,7 +205,7 @@ mod vec {
     }
 
     impl Workload for Bytes {
-        type Key<'k> = NonPrefixVec;
+        type Key<'k> = BoxedStr<Terminated<0>>;
         type Value = u64;
 
         fn key(&self, index: usize) -> Self::Key<'_> {
@@ -213,10 +214,12 @@ mod vec {
                 .unwrap()
                 .sample(&mut rng);
 
-            let mut buffer = StandardUniform.sample_string(&mut rng, len);
+            let mut buffer = Uniform::new(1 as char, char::MAX)
+                .unwrap()
+                .sample_string(&mut rng, len);
             buffer.push('\0');
 
-            unsafe { NonPrefixVec::new_unchecked(buffer.into_bytes()) }
+            BoxedStr::<Terminated<0>>::new(buffer).unwrap()
         }
 
         fn value(&self, index: usize) -> Self::Value {
@@ -229,14 +232,15 @@ mod vec {
             key: &<Self::Key<'_> as Key>::Borrowed,
             value: &<Self::Value as arctic::concurrent::Value>::Borrowed,
         ) {
-            assert_eq!(key, self.key(index).as_non_prefix_slice());
+            assert_eq!(key, self.key(index).as_slice());
             assert_eq!(*value, index as u64);
         }
     }
 }
 
-mod non_null_slice {
-    use arctic::NonNullSlice;
+mod slice_non_null {
+    use arctic::key;
+    use arctic::key::NonNull;
     use arctic::raw::Key;
     use rand::SeedableRng as _;
     use rand::distr::Distribution as _;
@@ -279,11 +283,11 @@ mod non_null_slice {
     }
 
     impl Workload for Slice {
-        type Key<'k> = &'k NonNullSlice;
+        type Key<'k> = &'k key::Slice<NonNull>;
         type Value = u64;
 
         fn key(&self, index: usize) -> Self::Key<'_> {
-            unsafe { NonNullSlice::new_unchecked(self.0[index].as_slice()) }
+            key::Slice::new(self.0[index].as_slice()).unwrap()
         }
 
         fn value(&self, index: usize) -> Self::Value {

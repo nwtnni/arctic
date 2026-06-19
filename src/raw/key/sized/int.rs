@@ -19,7 +19,7 @@ macro_rules! impl_key {
                 type Write = Writer<$ty>;
                 type Borrowed = Self;
                 type Insert<'k> = Self;
-                type Split = Self;
+                // type Split = Self;
 
                 type Edge = edge::Be;
                 type Len = Bit;
@@ -49,17 +49,17 @@ macro_rules! impl_key {
                     writer.0
                 }
 
-                #[inline]
-                fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
-                    let reader = Reader::from(key);
-                    (
-                        Reader {
-                            buffer: reader.buffer,
-                            len: reader.len.0.checked_sub(Self::Len::BYTE.0).map(Bit).expect("Non-empty"),
-                        },
-                        reader.buffer.least_significant_u8(),
-                    )
-                }
+                // #[inline]
+                // fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
+                //     let reader = Reader::from(key);
+                //     (
+                //         Reader {
+                //             buffer: reader.buffer,
+                //             len: reader.len.0.checked_sub(Self::Len::BYTE.0).map(Bit).expect("Non-empty"),
+                //         },
+                //         reader.buffer.least_significant_u8(),
+                //     )
+                // }
             }
 
             impl From<$ty> for Reader<$ty> {

@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), expect(unused))]
+
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
