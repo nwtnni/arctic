@@ -23,20 +23,15 @@ pub unsafe trait Invariant:
 #[derive(Copy, Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NonNull;
 
-#[derive(Debug)]
-pub enum NonNullError {
-    Empty,
-    Null(usize),
-}
+#[derive(Clone, Debug)]
+pub struct NonNullError(usize);
 
 impl core::error::Error for NonNullError {}
 
 impl Display for NonNullError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => write!(f, "Empty slice"),
-            Self::Null(index) => write!(f, "Null byte at index {index}"),
-        }
+        write!(f, "Null byte at index ")?;
+        Display::fmt(&self.0, f)
     }
 }
 
@@ -45,12 +40,8 @@ unsafe impl Invariant for NonNull {
     type Terminate = bool;
 
     fn validate(key: &[u8]) -> Result<(), Self::Error> {
-        if key.is_empty() {
-            return Err(NonNullError::Empty);
-        }
-
         if let Some(index) = key.iter().position(|byte| *byte == 0) {
-            return Err(NonNullError::Null(index));
+            return Err(NonNullError(index));
         }
 
         Ok(())
@@ -60,11 +51,10 @@ unsafe impl Invariant for NonNull {
 #[derive(Copy, Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Terminated<const TERMINATOR: u8>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TerminatedError {
-    Empty,
-    Internal(usize),
     Missing,
+    Internal(usize),
 }
 
 impl core::error::Error for TerminatedError {}
@@ -72,11 +62,10 @@ impl core::error::Error for TerminatedError {}
 impl Display for TerminatedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Empty => write!(f, "Empty slice"),
+            Self::Missing => write!(f, "Missing terminator byte"),
             Self::Internal(index) => {
                 write!(f, "Internal terminator byte at index {index}")
             }
-            Self::Missing => write!(f, "Missing terminator byte"),
         }
     }
 }
@@ -86,10 +75,6 @@ unsafe impl<const TERMINATOR: u8> Invariant for Terminated<TERMINATOR> {
     type Terminate = ();
 
     fn validate(key: &[u8]) -> Result<(), Self::Error> {
-        if key.is_empty() {
-            return Err(TerminatedError::Empty);
-        }
-
         match key.iter().position(|byte| *byte == TERMINATOR) {
             None => Err(TerminatedError::Missing),
             Some(index) if index < key.len() - 1 => Err(TerminatedError::Internal(index)),
