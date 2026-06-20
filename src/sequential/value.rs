@@ -5,7 +5,7 @@ use std::rc::Rc;
 /// # Safety
 ///
 /// Implementer must guarantee that `Self` has the same memory layout as a `u64`.
-pub unsafe trait Value {
+pub unsafe trait Value: Sized {
     /// Erase the type of this value, returning a u64.
     fn into_raw(self) -> u64;
 
@@ -22,6 +22,11 @@ pub unsafe trait Value {
 unsafe impl<'v, T: 'v + Sized> Value for &'v T {
     #[inline]
     fn into_raw(self) -> u64 {
+        const {
+            assert!(core::mem::size_of::<Self>() == core::mem::size_of::<u64>());
+            assert!(core::mem::align_of::<Self>() == core::mem::align_of::<u64>());
+        }
+
         (self as *const T).expose_provenance() as u64
     }
 
@@ -36,6 +41,11 @@ unsafe impl<'v, T: 'v + Sized> Value for &'v T {
 unsafe impl<T: Sized> Value for Box<T> {
     #[inline]
     fn into_raw(self) -> u64 {
+        const {
+            assert!(core::mem::size_of::<Self>() == core::mem::size_of::<u64>());
+            assert!(core::mem::align_of::<Self>() == core::mem::align_of::<u64>());
+        }
+
         Box::into_raw(self).expose_provenance() as u64
     }
 
@@ -49,6 +59,11 @@ unsafe impl<T: Sized> Value for Box<T> {
 unsafe impl<T: Sized> Value for Arc<T> {
     #[inline]
     fn into_raw(self) -> u64 {
+        const {
+            assert!(core::mem::size_of::<Self>() == core::mem::size_of::<u64>());
+            assert!(core::mem::align_of::<Self>() == core::mem::align_of::<u64>());
+        }
+
         crate::sync::Arc::into_raw(self.0).expose_provenance() as u64
     }
 
@@ -64,6 +79,11 @@ unsafe impl<T: Sized> Value for Arc<T> {
 unsafe impl<T: Sized> Value for Rc<T> {
     #[inline]
     fn into_raw(self) -> u64 {
+        const {
+            assert!(core::mem::size_of::<Self>() == core::mem::size_of::<u64>());
+            assert!(core::mem::align_of::<Self>() == core::mem::align_of::<u64>());
+        }
+
         Rc::into_raw(self).expose_provenance() as u64
     }
 

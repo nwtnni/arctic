@@ -21,7 +21,7 @@ pub use crate::sequential::value::Arc;
 /// Note: we don't need [`Send`] or [`Sync`] bounds here.
 /// It's fine to create a concurrent map with non-Sync
 /// values; the map instance just won't implement Sync.
-pub trait Value: Sized + sequential::Value + Borrow<Self::Borrowed> {
+pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
     /// We need this extra layer of indirection relative to [`crate::sequential::Map`]
     /// because edges can be concurrently modified.
     ///
