@@ -1,13 +1,13 @@
 use core::borrow::Borrow as _;
 use std::sync::Barrier;
 
-use arctic::raw::Key;
+use arctic::Key;
 use rand::SeedableRng;
 use rand::rngs::Xoshiro256PlusPlus;
 use rand::seq::SliceRandom;
 
 mod u64 {
-    use arctic::raw::Key;
+    use arctic::Key;
 
     use super::Workload;
     use super::test_map;
@@ -55,7 +55,7 @@ mod u64 {
 }
 
 mod arced {
-    use arctic::raw::Key;
+    use arctic::Key;
 
     use super::Workload;
     use super::test_map;
@@ -118,7 +118,7 @@ mod arced {
 }
 
 mod boxed {
-    use arctic::raw::Key;
+    use arctic::Key;
 
     use super::Workload;
     use super::test_map;
@@ -176,9 +176,9 @@ mod boxed {
 }
 
 mod boxed_str_terminated {
+    use arctic::Key;
     use arctic::key::BoxedStr;
     use arctic::key::Terminated;
-    use arctic::raw::Key;
     use rand::SeedableRng as _;
     use rand::distr::Distribution as _;
     use rand::distr::SampleString;
@@ -239,9 +239,9 @@ mod boxed_str_terminated {
 }
 
 mod slice_non_null {
+    use arctic::Key;
     use arctic::key;
     use arctic::key::NonNull;
-    use arctic::raw::Key;
     use rand::SeedableRng as _;
     use rand::distr::Distribution as _;
     use rand::distr::SampleString as _;
@@ -307,7 +307,7 @@ mod slice_non_null {
 }
 
 mod array {
-    use arctic::raw::Key;
+    use arctic::Key;
     use rand::RngExt as _;
     use rand::SeedableRng as _;
     use rand::rngs::Xoshiro256PlusPlus;

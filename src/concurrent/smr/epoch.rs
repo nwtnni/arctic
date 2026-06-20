@@ -1,4 +1,5 @@
 use core::cell::UnsafeCell;
+use core::num::NonZeroU64;
 use core::sync::atomic::Ordering;
 
 use crossbeam_epoch::LocalHandle;
@@ -7,7 +8,6 @@ use crate::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
-use crate::raw::node;
 use crate::stat;
 
 pub struct Epoch {
@@ -71,13 +71,12 @@ impl<K: Key, V: Value> Smr<K, V> for Box<Epoch> {
 }
 
 impl<V: Value> smr::Guard<V> for crossbeam_epoch::Guard {
-    unsafe fn retire_node(&mut self, _bits: usize, node: ribbit::Packed<node::Ptr>) {
+    unsafe fn retire_node(&mut self, _bits: usize, node: NonZeroU64) {
         stat::increment(stat::Counter::Retire);
 
         unsafe {
             self.defer_unchecked(move || {
-                stat::increment(stat::Counter::FreeRetire);
-                node.deallocate();
+                smr::deallocate_node(node);
             });
         }
     }
@@ -86,7 +85,7 @@ impl<V: Value> smr::Guard<V> for crossbeam_epoch::Guard {
         stat::increment(stat::Counter::Retire);
 
         unsafe {
-            self.defer_unchecked(move || drop(V::from_raw_unchecked(value)));
+            self.defer_unchecked(move || smr::deallocate_value::<V>(value));
         }
     }
 }

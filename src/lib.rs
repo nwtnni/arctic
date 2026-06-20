@@ -81,7 +81,7 @@ macro_rules! simd {
 }
 
 pub mod concurrent;
-pub mod raw;
+pub(crate) mod raw;
 pub mod sequential;
 pub mod stat;
 pub mod sync;

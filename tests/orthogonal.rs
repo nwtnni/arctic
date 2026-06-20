@@ -8,7 +8,7 @@ use rand::Rng as _;
 use rand::RngExt as _;
 use rand::SeedableRng;
 
-trait Orthogonal: arctic::raw::Key {
+trait Orthogonal: arctic::Key {
     fn is_thread(&self, thread: u8) -> bool;
     fn mask(self, thread: u8) -> Self;
 }

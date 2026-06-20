@@ -1,5 +1,3 @@
-#![expect(rustdoc::private_intra_doc_links)]
-
 //! Weakly typed implementation of adaptive radix tree.
 //!
 //! The purpose of this module is to re-use as much code as possible between the
@@ -23,18 +21,17 @@ mod int;
 pub(crate) mod iter;
 pub mod key;
 pub(crate) mod map;
-pub mod node;
+pub(crate) mod node;
 pub(crate) mod set;
 pub(crate) mod shard;
 
 pub(crate) use cursor::Cursor;
 pub(crate) use edge::Edge;
+pub(crate) use int::Int;
 pub use key::Key;
 pub(crate) use map::Map;
 pub(crate) use set::Set;
 pub(crate) use shard::Shard;
-
-pub(crate) use int::Int;
 
 #[derive(Debug)]
 pub(crate) struct Frozen;

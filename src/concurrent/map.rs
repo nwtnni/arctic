@@ -1008,7 +1008,7 @@ where
                         Ordering::Acquire,
                     ) {
                         Ok(_) => {
-                            unsafe { guard.retire_node(cursor.len().bits(), old_node) };
+                            unsafe { guard.retire_node(cursor.len().bits(), old_node.into_raw()) };
                         }
                         Err(_) => {
                             // Does not go through SMR because `new` is still thread-local
@@ -1032,7 +1032,9 @@ where
             match cursor.freeze() {
                 Err(_) => return Err(initial),
                 Ok(None) => (),
-                Ok(Some(node)) => unsafe { guard.retire_node(cursor.len().bits(), node) },
+                Ok(Some(node)) => unsafe {
+                    guard.retire_node(cursor.len().bits(), node.into_raw())
+                },
             }
         }
     }
@@ -1089,7 +1091,7 @@ where
                     Err(_) => return Err(initial),
                     Ok(None) => continue,
                     Ok(Some(node)) => unsafe {
-                        guard.retire_node(cursor.len().bits(), node);
+                        guard.retire_node(cursor.len().bits(), node.into_raw());
                         continue;
                     },
                 },
@@ -1171,7 +1173,7 @@ where
                 Some(Err(Frozen)) => match cursor.freeze()? {
                     None => continue,
                     Some(node) => unsafe {
-                        guard.retire_node(cursor.len().bits(), node);
+                        guard.retire_node(cursor.len().bits(), node.into_raw());
                         continue;
                     },
                 },
@@ -1221,7 +1223,7 @@ where
                             Err(_) => unreachable!("Recursive remove requires path"),
                             Ok(None) => continue,
                             Ok(Some(node)) => unsafe {
-                                guard.retire_node(cursor.len().bits(), node);
+                                guard.retire_node(cursor.len().bits(), node.into_raw());
                                 continue;
                             },
                         },
@@ -1245,7 +1247,7 @@ where
                         Ordering::Acquire,
                     ) {
                         Ok(old) => {
-                            unsafe { guard.retire_node(cursor.len().bits(), target) };
+                            unsafe { guard.retire_node(cursor.len().bits(), target.into_raw()) };
                             trim = old.meta().len();
                             continue 'outer;
                         }

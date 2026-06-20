@@ -1,5 +1,6 @@
 use core::cell::Cell;
 use core::marker::PhantomData;
+use core::num::NonZeroU64;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
@@ -54,7 +55,7 @@ impl<G, V> Default for Guard<G, V> {
 }
 
 impl<G, V: Value> smr::Guard<V> for Guard<G, V> {
-    unsafe fn retire_node(&mut self, _bits: usize, _edge: ribbit::Packed<crate::raw::node::Ptr>) {
+    unsafe fn retire_node(&mut self, _bits: usize, _node: NonZeroU64) {
         if cfg!(feature = "stat-garbage") {
             GARBAGE_LOCAL.set(GARBAGE_LOCAL.get() + 1);
 

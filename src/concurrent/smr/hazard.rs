@@ -75,7 +75,6 @@ use crate::Atomic;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
-use crate::raw::node;
 use crate::stat;
 
 #[repr(C, align(64))]
@@ -281,7 +280,7 @@ pub struct Guard<'g, K: Key, V: Value> {
 }
 
 impl<'g, K: Key, V: Value> smr::Guard<V> for Guard<'g, K, V> {
-    unsafe fn retire_node(&mut self, _bits: usize, node: ribbit::Packed<node::Ptr>) {
+    unsafe fn retire_node(&mut self, _bits: usize, node: NonZeroU64) {
         stat::increment(stat::Counter::Retire);
 
         let prefix = self
@@ -310,7 +309,7 @@ impl<'g, K: Key, V: Value> smr::Guard<V> for Guard<'g, K, V> {
             }
         }
 
-        local.retired.push((prefix, node.into_raw().get()));
+        local.retired.push((prefix, node.get()));
     }
 
     unsafe fn retire_value(&mut self, value: u64) {

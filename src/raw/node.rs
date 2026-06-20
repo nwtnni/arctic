@@ -30,9 +30,6 @@ pub(crate) use iter::KeyIter;
 pub(crate) use iter::Lower;
 pub(crate) use iter::Upper;
 pub(super) use node_3::Node3;
-use node_15::Node15;
-use node_47::Node47;
-use node_256::Node256;
 
 use crate::Atomic;
 use crate::raw::Edge;
@@ -45,6 +42,9 @@ use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::iter::KeyIter15;
 use crate::raw::node::iter::KeyIter47;
 use crate::raw::node::iter::KeyIter256;
+use crate::raw::node::node_15::Node15;
+use crate::raw::node::node_47::Node47;
+use crate::raw::node::node_256::Node256;
 use crate::stat;
 
 /// A node is a partial mapping from `u8` to [`edge::Raw`].
@@ -261,8 +261,8 @@ pub(super) use dispatch;
 /// But takes up 8 bytes, is compatible with `ribbit`, and avoids
 /// jump tables when dispatching (see [`crate::raw::node::dispatch`]).
 #[derive(Copy, Clone, ribbit::Pack)]
-#[ribbit(size = 64, derive(Eq), non_zero)]
-pub struct Ptr {
+#[ribbit(size = 64, derive(Eq), non_zero, new(vis = ""))]
+pub(crate) struct Ptr {
     #[ribbit(size = 2, get(vis = "pub(crate)"))]
     r#type: crate::raw::node::Type,
 
@@ -480,10 +480,12 @@ impl PtrPacked {
         dispatch_all!(self, |node| unsafe { node.as_ref().max(upper) })
     }
 
+    /// Deallocate this node.
+    ///
     /// # Safety
     ///
     /// Caller must ensure there are no other references to this node.
-    pub unsafe fn deallocate(self) {
+    pub(crate) unsafe fn deallocate(self) {
         dispatch_all!(self, |node| drop(unsafe { Box::from_raw(node.as_ptr()) }))
     }
 

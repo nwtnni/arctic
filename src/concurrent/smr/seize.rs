@@ -4,7 +4,6 @@ use crate::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
-use crate::raw::node;
 use crate::stat;
 
 use seize::Guard as _;
@@ -38,14 +37,13 @@ impl<K: Key, V: Value> Smr<K, V> for Seize {
 }
 
 impl<'g, V: Value> smr::Guard<V> for seize::LocalGuard<'g> {
-    unsafe fn retire_node(&mut self, _bits: usize, node: ribbit::Packed<node::Ptr>) {
+    unsafe fn retire_node(&mut self, _bits: usize, node: NonZeroU64) {
         stat::increment(stat::Counter::Retire);
 
         unsafe {
-            self.defer_retire(node.into_raw().get() as *mut (), |ptr, _| {
-                stat::increment(stat::Counter::FreeRetire);
-                let ptr = NonZeroU64::new(ptr as u64).unwrap();
-                node::Ptr::from_raw_unchecked(ptr).deallocate();
+            self.defer_retire(node.get() as *mut (), |ptr, _| {
+                let node = NonZeroU64::new(ptr as u64).unwrap();
+                smr::deallocate_node(node);
             })
         }
     }
@@ -58,11 +56,9 @@ impl<'g, V: Value> smr::Guard<V> for seize::LocalGuard<'g> {
         // and passes the `ptr` argument directly to it...
         //
         // See: [`seize::raw::Collector::add`] and [`seize::raw::Collector::try_retire`].
-        //
         unsafe {
             self.defer_retire(value as *mut (), |ptr, _| {
-                stat::increment(stat::Counter::FreeRetire);
-                drop(V::from_raw_unchecked(ptr as u64))
+                smr::deallocate_value::<V>(ptr as u64)
             });
         }
     }
