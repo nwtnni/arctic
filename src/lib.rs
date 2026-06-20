@@ -83,7 +83,9 @@ macro_rules! simd {
 pub mod concurrent;
 pub(crate) mod raw;
 pub mod sequential;
+#[doc(hidden)]
 pub mod stat;
+#[doc(hidden)]
 pub mod sync;
 
 #[doc(inline)]

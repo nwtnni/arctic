@@ -1,3 +1,6 @@
+//! Abstraction layer for mocking synchronization primitives
+//! with concurrency testing frameworks.
+
 use core::ops::Deref;
 use core::ops::DerefMut;
 use core::sync::atomic::Ordering;
