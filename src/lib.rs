@@ -1,16 +1,26 @@
-//! This crate contains the primary implementation of
+//! This is the original implementation of
 //! [Arctic: a practical lock-free adaptive radix tree](https://www.usenix.org/conference/osdi26/presentation/ni).
-//! The main contribution is [`concurrent::Map`], which implements
-//! a thread-safe map interface, and also supports
-//! **[non-linearizable](https://en.wikipedia.org/wiki/Linearizability)**
-//! iteration over key ranges and prefixes,
-//! somewhat like a [`std::collections::BTreeMap`] wrapped in a
-//! [`std::sync::Mutex`].
+//!
+//! The main data structure is [`concurrent::Map`],
+//! which is a thread-safe [map](https://en.wikipedia.org/wiki/Associative_array) that provides
+//! [lock-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm#Lock-freedom),
+//! [linearizable](https://en.wikipedia.org/wiki/Linearizability)
+//! writes (e.g., [`upsert`][concurrent::Map::upsert], [`remove`][concurrent::Map::remove]);
+//! [wait-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm#Wait-freedom),
+//! linearizable reads (i.e., [`get`][concurrent::Map::get]);
+//! and wait-free, **non-linearizable** scans
+//! over key ranges and prefixes, in sorted order.
+//!
+//! This crate also includes [`sequential::Map`], which shares
+//! the same underlying structure as [`concurrent::Map`], but
+//! gives up thread safety in exchange for single threaded performance
+//! and a more convenient API. The borrow checker allows us to
+//! safely take advantage of both APIs at runtime, via [`concurrent::Map::as_sequential`].
 //!
 //! # Why use this crate?
 //!
-//! As far as we know (corrections welcome!), out of all index data structures that (a) are [lock-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm)
-//! and (b) support scan operations, [`concurrent::Map`] provides the highest scalability and throughput.
+//! As far as we know (corrections welcome!), out of all map data structures that (a) are lock-free
+//! and (b) support ordered scan operations, [`concurrent::Map`] provides the highest scalability and throughput.
 //! In fact, under various conditions (integer keys, skewed requests, update-heavy),
 //! we even out-perform data structures without properties (a) and/or (b).
 //! Our benchmarking infrastructure is in [this repository](https://github.com/nwtnni/index-bench);
@@ -22,7 +32,7 @@
 //!   have excellent performance, but do not support scan operations.
 //! - Concurrent B+-trees (e.g., [scc::TreeIndex](https://codeberg.org/wvwwvwwv/scalable-concurrent-containers))
 //!   have good performance, but are typically not lock-free.
-//! - Concurrent skip lists (e.g., [crossbeam_skiplist](https://docs.rs/crossbeam-skiplist/latest/crossbeam_skiplist/))
+//! - Concurrent skiplists (e.g., [crossbeam_skiplist](https://docs.rs/crossbeam-skiplist/latest/crossbeam_skiplist/))
 //!   have poor performance on modern hardware (low cache locality),
 //!   although there are lock-free implementations.
 //!
@@ -103,12 +113,12 @@ pub use raw::key;
 #[expect(private_bounds)]
 pub trait Order: seal::Seal {}
 
-/// Ascending [lexicographic order](https://en.wikipedia.org/wiki/Lexicographic_order).
+/// Ascending key order.
 ///
 /// Also see [`Order`].
 pub struct Ascend;
 
-/// Descending [lexicographic order](https://en.wikipedia.org/wiki/Lexicographic_order).
+/// Descending key order.
 ///
 /// Also see [`Order`].
 pub struct Descend;
