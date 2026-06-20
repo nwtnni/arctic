@@ -1,12 +1,12 @@
 use core::ops::RangeFull;
 
-use crate::Atomic;
 use crate::raw;
 use crate::raw::Cursor;
 use crate::raw::Edge;
 use crate::raw::Key;
 use crate::raw::cursor;
 use crate::raw::iter::PostorderIter;
+use crate::sync::Atomic;
 
 #[repr(transparent)]
 pub(crate) struct Map<K: Key>(Atomic<Edge<K::Edge>>);

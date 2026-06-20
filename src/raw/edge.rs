@@ -16,12 +16,12 @@ use core::sync::atomic::Ordering;
 
 use ribbit::Unpack as _;
 
-use crate::Atomic;
 use crate::raw::edge;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Node3;
+use crate::sync::Atomic;
 
 /// A fat pointer to a value or a node.
 ///

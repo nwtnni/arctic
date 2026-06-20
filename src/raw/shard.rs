@@ -2,7 +2,6 @@ use core::marker::PhantomData;
 use core::ops::RangeFull;
 use core::sync::atomic::Ordering;
 
-use crate::Atomic;
 use crate::Order;
 use crate::raw;
 use crate::raw::Cursor;
@@ -14,6 +13,7 @@ use crate::raw::iter::Range;
 use crate::raw::iter::RangeIter;
 use crate::raw::iter::ValueIter;
 use crate::raw::key::Read as _;
+use crate::sync::Atomic;
 
 pub(crate) struct Shard<'g, 'k, K, R = RangeFull>
 where

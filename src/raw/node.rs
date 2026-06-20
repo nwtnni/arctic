@@ -31,7 +31,6 @@ pub(crate) use iter::Lower;
 pub(crate) use iter::Upper;
 pub(super) use node_3::Node3;
 
-use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::Smo;
 use crate::raw::edge;
@@ -46,6 +45,7 @@ use crate::raw::node::node_15::Node15;
 use crate::raw::node::node_47::Node47;
 use crate::raw::node::node_256::Node256;
 use crate::stat;
+use crate::sync::Atomic;
 
 /// A node is a partial mapping from `u8` to [`edge::Raw`].
 #[derive(Debug)]

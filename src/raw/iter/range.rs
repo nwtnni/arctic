@@ -9,7 +9,6 @@ use core::ops::RangeToInclusive;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use crate::Atomic;
 use crate::Order;
 use crate::raw;
 use crate::raw::Edge;
@@ -19,6 +18,7 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node::Lower as _;
 use crate::raw::node::Upper as _;
+use crate::sync::Atomic;
 
 pub(crate) enum RangeIter<'g, K: key::Read, W: key::Write<K>, R: Range<K>, O> {
     Root {

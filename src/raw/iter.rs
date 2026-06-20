@@ -9,11 +9,11 @@ pub(crate) use range::Unbound;
 use core::ops::ControlFlow;
 use core::ptr::NonNull;
 
-use crate::Atomic;
 use crate::Order;
 use crate::raw::Edge;
 use crate::raw::Key;
 use crate::raw::key;
+use crate::sync::Atomic;
 
 pub(crate) struct EntryIter<'g, 'k, K: Key, R: Range<K::Read<'k>>, O>(
     pub(super) RangeIter<'g, K::Read<'k>, K::Write, R, O>,

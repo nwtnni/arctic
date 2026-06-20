@@ -10,7 +10,6 @@ use core::sync::atomic::Ordering;
 
 use ribbit::u6;
 
-use crate::Atomic;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
 use crate::raw::node::Node;
@@ -18,6 +17,7 @@ use crate::raw::node::header;
 use crate::raw::node::iter::KeyIndex;
 use crate::raw::node::iter::KeyIter47;
 use crate::stat;
+use crate::sync::Atomic;
 
 const CAPACITY: usize = 47;
 

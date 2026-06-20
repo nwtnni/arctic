@@ -93,8 +93,6 @@ pub use raw::iter::Range;
 #[doc(inline)]
 pub use raw::key;
 
-pub(crate) use sync::Atomic;
-
 /// Key order for scan operations (e.g., [`concurrent::Shard::entries`]).
 ///
 /// We take a compile-time argument rather than implementing [`core::iter::DoubleEndedIterator`]

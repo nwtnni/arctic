@@ -71,11 +71,11 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
-use crate::Atomic;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
 use crate::stat;
+use crate::sync::Atomic;
 
 #[repr(C, align(64))]
 #[derive(Default)]

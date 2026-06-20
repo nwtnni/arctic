@@ -5,7 +5,6 @@ use core::sync::atomic::Ordering;
 
 use ribbit::Unpack as _;
 
-use crate::Atomic;
 use crate::Key;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
@@ -15,6 +14,7 @@ use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
+use crate::sync::Atomic;
 
 static RECORD: AtomicBool = AtomicBool::new(false);
 

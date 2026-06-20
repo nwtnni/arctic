@@ -5,7 +5,6 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::Frozen;
 use crate::raw::edge;
@@ -15,6 +14,7 @@ use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Node3;
 use crate::stat;
+use crate::sync::Atomic;
 
 /// Tree traversal state.
 pub(crate) struct Cursor<'g, R: key::Read, P> {

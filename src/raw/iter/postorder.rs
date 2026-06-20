@@ -1,11 +1,11 @@
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
+use crate::sync::Atomic;
 
 pub(crate) struct PostorderIter<'g, M: ribbit::Pack> {
     stack: Vec<RepeatIter<'g, M>>,

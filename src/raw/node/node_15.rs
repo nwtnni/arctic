@@ -5,11 +5,11 @@ use core::sync::atomic::Ordering;
 use ribbit::u4;
 use ribbit::u120;
 
-use crate::Atomic;
 use crate::raw::node;
 use crate::raw::node::KeyIter15;
 use crate::raw::node::Node;
 use crate::raw::node::header;
+use crate::sync::Atomic;
 
 const CAPACITY: usize = 15;
 

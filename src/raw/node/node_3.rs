@@ -6,7 +6,6 @@ use core::sync::atomic::Ordering;
 use ribbit::u2;
 use ribbit::u48;
 
-use crate::Atomic;
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -18,6 +17,7 @@ use crate::raw::node::Node;
 use crate::raw::node::header;
 use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::simd;
+use crate::sync::Atomic;
 
 const CAPACITY: usize = 3;
 
