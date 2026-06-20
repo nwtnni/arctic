@@ -299,7 +299,7 @@ impl<T> Debug for Unbound<T> {
 /// [`Range`][std::ops::Range] (with an exclusive upper bound) is not supported.
 ///
 /// The endpoints of the ranges can be borrowed keys ([`&'_ Key::Borrowed`][crate::Key::Borrowed]),
-/// key prefixes (e.g., [`crate::raw::key::int::Reader`]), or, for integer keys, owned integers.
+/// key prefixes (e.g., [`crate::key::sized::int::Reader`]), or, for integer keys, owned integers.
 #[expect(private_bounds)]
 pub trait Range<R>
 where

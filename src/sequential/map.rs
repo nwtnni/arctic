@@ -50,7 +50,7 @@ use crate::stat;
 /// This is in contrast to the standard library, where [`BTreeMap::range`][std::collections::BTreeMap::range]
 /// directly returns an iterator.
 ///
-/// If the key type (see [`crate::Key`]) is dynamically allocated, like [`crate::NonNullString`],
+/// If the key type (see [`Key`]) is dynamically allocated, like [`BoxedStr`][crate::key::BoxedStr],
 /// iterating over keys can be expensive, as a key buffer must be updated
 /// during traversal, and then cloned once per key. This can be mitigated by
 /// (a) iterating over values instead of entries, (b) using the lending API

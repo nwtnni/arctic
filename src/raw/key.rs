@@ -37,18 +37,18 @@ use crate::raw::edge::Meta as _;
 /// allocated key types, as they need to be constructed and cloned
 /// during traversal; see [`crate::sequential::Map`] for workarounds.
 ///
-/// | Key Family | Example                                       | Insert<'_>                                    | Borrowed                                  | Clone in iterator? |
-/// |------------|-----------------------------------------------|-----------------------------------------------|-------------------------------------------|--------------------|
-/// | Integer    | u64                                           | u64                                           | u64                                       | N                  |
-/// | Array      | [u8; 5]                                       | `&'_ [u8; 5]`                                 | [u8; 5]                                   | Y                  |
-/// | Slice      | [`&'a NonPrefixSlice`][crate::NonPrefixSlice] | [`&'a NonPrefixSlice`][crate::NonPrefixSlice] | [`NonPrefixSlice`][crate::NonPrefixSlice] | N                  |
-/// | Vec        | [`NonNullString`][crate::NonNullString]       | [`&'_ NonNullStr`][crate::NonNullStr]         | [`NonNullStr`][crate::NonNullStr]         | Y                  |
+/// | Key Family  | Example                                   | Insert<'_>                          | Borrowed                        | Clone in iterator? |
+/// |-------------|-------------------------------------------|-------------------------------------|---------------------------------|--------------------|
+/// | Integer     | u64                                       | u64                                 | u64                             | N                  |
+/// | Array       | [u8; 5]                                   | `&'_ [u8; 5]`                       | [u8; 5]                         | Y                  |
+/// | Slice       | [`&'a Slice<NonNull>`][Slice]             | [`&'a Slice<NonNull>`][Slice]       | [`Slice<NonNull>`][Slice]       | N                  |
+/// | Boxed Slice | [`BoxedStr<Terminated<b'\n'>>`][BoxedStr] | [`&'_ Str<Terminated<b'\n'>>`][Str] | [`Str<Terminated<b'\n'>>`][Str] | Y                  |
 pub trait Key: Borrow<Self::Borrowed> {
     /// A non-allocated byte sequence that a key can be cheaply borrowed as.
     type Borrowed: 'static + ?Sized + Debug;
 
-    /// Keys can either have edges that store bytes inline (e.g., [`string::NonNullString`]),
-    /// or as references (e.g., [`slice::NonPrefixSlice`]).
+    /// Keys can either have edges that store bytes inline (e.g., [`BoxedSlice`]),
+    /// or as references (e.g., [`Slice`]).
     ///
     /// The former can take borrowed bytes with any lifetime when inserting,
     /// but the latter can only take borrowed bytes that outlive the key type.
