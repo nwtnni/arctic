@@ -129,19 +129,26 @@ impl<T> Borrow<ArcRef<T>> for crate::sequential::value::Arc<T> {
     }
 }
 
-/// Wrapper type for the contents of an [`Arc<T>`] that allows
-/// an `&ArcRef<T>` reference to safely be cloned back into a
-/// owned [`Arc<T>`].
+/// Transparent wrapper for [`Arc<T>`] pointee that can
+/// be safely cloned into an [`Arc<T>`] via [`ToOwned`].
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub struct ArcRef<T>(T);
 
-impl<T> ArcRef<T> {
+impl<T> Deref for ArcRef<T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> ToOwned for ArcRef<T> {
+    type Owned = Arc<T>;
     /// Clone into an owned `Arc` by incrementing the strong reference count.
-    #[expect(clippy::should_implement_trait)]
-    pub fn clone(inner: &Self) -> Arc<T> {
+    fn to_owned(&self) -> Self::Owned {
         // SAFETY: `ArcRef` is `repr(transparent)`
-        let ptr = unsafe { core::mem::transmute::<&Self, &T>(inner) };
+        let ptr = unsafe { core::mem::transmute::<&Self, &T>(self) };
 
         // SAFETY: SMR guarantees `ptr` is not yet freed,
         // so strong count must be >= 1
@@ -149,13 +156,6 @@ impl<T> ArcRef<T> {
 
         // SAFETY: `ptr` was returned from `Arc::into_raw`
         Arc(unsafe { crate::sync::Arc::from_raw(ptr) })
-    }
-}
-
-impl<T> Deref for ArcRef<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 

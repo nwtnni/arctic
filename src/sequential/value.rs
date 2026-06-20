@@ -1,3 +1,4 @@
+use core::ops::Deref;
 use std::rc::Rc;
 
 /// Values that can be stored in a [`crate::sequential::Map`].
@@ -93,9 +94,10 @@ unsafe impl<T: Sized> Value for Rc<T> {
     }
 }
 
-/// See [`std::sync::Arc`].
+/// Transparent wrapper for [`Arc<T>`][crate::sync::Arc<T>] smart pointer
+/// that can be borrowed as an [`ArcRef<T>`][crate::concurrent::value::ArcRef].
 #[repr(transparent)]
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug)]
 pub struct Arc<T>(pub(crate) crate::sync::Arc<T>);
 
 impl<T> Arc<T> {
@@ -116,6 +118,14 @@ impl<T> From<Arc<T>> for crate::sync::Arc<T> {
     #[inline]
     fn from(Arc(arc): Arc<T>) -> Self {
         arc
+    }
+}
+
+impl<T> Deref for Arc<T> {
+    type Target = crate::sync::Arc<T>;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
