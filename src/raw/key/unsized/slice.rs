@@ -178,7 +178,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     ) -> ribbit::Packed<Self::Edge> {
         let min = len.bytes().min(self.0.slice.len());
         edge::Slice::new(&self.0.slice[..min]).with_terminate(T::new(
-            self.0.terminate.get() && len.bytes() == self.0.slice.len() + 1,
+            self.0.terminate.get() && len.bytes() > self.0.slice.len(),
         ))
     }
 

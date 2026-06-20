@@ -14,6 +14,8 @@ pub use r#unsized::BoxedSlice;
 pub use r#unsized::NonNull;
 pub use r#unsized::Slice;
 pub use r#unsized::Terminated;
+pub type Str<I> = Slice<I, str>;
+pub type BoxedStr<I> = BoxedSlice<I, str>;
 
 use core::borrow::Borrow;
 use core::fmt;

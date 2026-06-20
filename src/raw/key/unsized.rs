@@ -8,8 +8,6 @@ pub mod slice;
 
 pub use boxed_slice::BoxedSlice;
 pub use slice::Slice;
-pub type Str<I> = Slice<I, str>;
-pub type BoxedStr<I> = BoxedSlice<I, str>;
 
 pub unsafe trait Invariant:
     Debug + Default + Hash + Eq + Ord + Send + Sync + 'static

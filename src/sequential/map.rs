@@ -159,12 +159,13 @@ where
     /// # Examples
     ///
     /// ```rust
+    /// use arctic::key::BoxedStr;
+    /// use arctic::key::NonNull;
+    /// use arctic::key::Str;
     /// use arctic::sequential::Map;
-    /// use arctic::NonNullStr;
-    /// use arctic::NonNullString;
     ///
-    /// let mut map = Map::<NonNullString, Box<u64>>::new();
-    /// let key = NonNullStr::new("regent").expect("Non-empty and no null byte");
+    /// let mut map = Map::<BoxedStr<NonNull>, Box<u64>>::new();
+    /// let key = Str::<NonNull>::new("regent").expect("No null byte");
     ///
     /// // Key not present, insert succeeds
     /// match map.insert(key, Box::new(3)) {
@@ -196,12 +197,13 @@ where
     /// # Examples
     ///
     /// ```rust
+    /// use arctic::key::BoxedStr;
+    /// use arctic::key::Terminated;
+    /// use arctic::key::Str;
     /// use arctic::sequential::Map;
-    /// use arctic::NonNullStr;
-    /// use arctic::NonNullString;
     ///
-    /// let mut map = Map::<NonNullString, u64>::new();
-    /// let key = NonNullStr::new("silent").expect("Non-empty and no null byte");
+    /// let mut map = Map::<BoxedStr<Terminated<b'\n'>>, u64>::new();
+    /// let key = Str::new("silent\n").expect("Newline terminated");
     ///
     /// // Key not present, upsert performs insert
     /// match map.upsert(key, 2) {
@@ -275,14 +277,14 @@ where
     /// # Examples
     ///
     /// ```rust
+    /// use arctic::key::Str;
+    /// use arctic::key::NonNull;
     /// use arctic::sequential::Map;
-    /// use arctic::NonNullStr;
-    /// use arctic::NonNullString;
     ///
-    /// let mut counter = Map::<NonNullString, u64>::new();
-    /// let claw = NonNullStr::new("claw").expect("Non-empty and no null byte");
-    /// let hotfix = NonNullStr::new("hotfix").expect("Non-empty and no null byte");
-    /// let hologram = NonNullStr::new("hologram").expect("Non-empty and no null byte");
+    /// let mut counter = Map::<&'static Str<NonNull>, u64>::new();
+    /// let claw = Str::new("claw").expect("No null byte");
+    /// let hotfix = Str::new("hotfix").expect("No null byte");
+    /// let hologram = Str::new("hologram").expect("No null byte");
     ///
     /// for key in [claw, claw, hotfix, hologram, claw] {
     ///     *counter.entry(key).or_default() += 1;

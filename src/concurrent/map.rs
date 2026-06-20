@@ -254,12 +254,12 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// # Examples
     ///
     /// ```rust
+    /// use arctic::key::Str;
+    /// use arctic::key::NonNull;
     /// use arctic::concurrent;
-    /// use arctic::NonNullStr;
-    /// use arctic::NonNullString;
     ///
-    /// let map = concurrent::Map::<NonNullString, u64>::default();
-    /// let key = NonNullStr::new("korlex").expect("Non-empty and no null byte");
+    /// let map = concurrent::Map::<&'static Str<NonNull>, u64>::default();
+    /// let key = Str::new("korlex").expect("No null byte");
     ///
     /// // Key is not present, insert succeeds
     /// match map.insert(key, 3) {
@@ -304,12 +304,13 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// # Examples
     ///
     /// ```rust
+    /// use arctic::key::BoxedStr;
+    /// use arctic::key::Terminated;
+    /// use arctic::key::Str;
     /// use arctic::concurrent;
-    /// use arctic::NonNullString;
-    /// use arctic::NonNullStr;
     ///
-    /// let map = concurrent::Map::<NonNullString, u64>::default();
-    /// let key = NonNullStr::new("arqad").expect("Non-empty and no null byte");
+    /// let map = concurrent::Map::<BoxedStr<Terminated<b'\n'>>, u64>::default();
+    /// let key = Str::new("arqad\n").expect("Newline terminated");
     ///
     /// // Key is not present, upsert performs insert
     /// let upserted = map.upsert(key, 3);
@@ -509,12 +510,13 @@ where
     /// ```rust
     /// use core::ops::ControlFlow;
     ///
+    /// use arctic::key::BoxedStr;
+    /// use arctic::key::NonNull;
+    /// use arctic::key::Str;
     /// use arctic::concurrent;
-    /// use arctic::NonNullStr;
-    /// use arctic::NonNullString;
     ///
-    /// let map = concurrent::Map::<NonNullString, Box<u64>>::default();
-    /// let key = NonNullStr::new("zipir").expect("Non-empty and no null byte");
+    /// let map = concurrent::Map::<BoxedStr<NonNull>, Box<u64>>::default();
+    /// let key = Str::new("zipir").expect("No null byte");
     ///
     /// // Key not present, new value lazily allocated
     /// match map.insert_with(key, || Box::new(10)) {

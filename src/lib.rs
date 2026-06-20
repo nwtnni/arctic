@@ -143,11 +143,11 @@ mod tests {
     use crate::Descend;
     use crate::concurrent::Map;
     use crate::key::BoxedSlice;
+    use crate::key::BoxedStr;
     use crate::key::NonNull;
     use crate::key::Slice;
+    use crate::key::Str;
     use crate::key::Terminated;
-    use crate::key::r#unsized::BoxedStr;
-    use crate::key::r#unsized::Str;
     use crate::raw::key::Read as _;
 
     #[test]

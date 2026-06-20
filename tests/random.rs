@@ -176,8 +176,8 @@ mod boxed {
 }
 
 mod boxed_str_terminated {
+    use arctic::key::BoxedStr;
     use arctic::key::Terminated;
-    use arctic::key::r#unsized::BoxedStr;
     use arctic::raw::Key;
     use rand::SeedableRng as _;
     use rand::distr::Distribution as _;
