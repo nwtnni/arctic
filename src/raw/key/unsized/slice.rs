@@ -15,7 +15,7 @@ use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 use crate::raw::key::r#unsized;
 use crate::raw::key::r#unsized::Terminate;
-use crate::raw::key::r#unsized::owned::BoxedSlice;
+use crate::raw::key::r#unsized::boxed_slice::BoxedSlice;
 
 /// # Safety
 ///
@@ -150,7 +150,7 @@ where
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Reader<'k, T>(pub(crate) r#unsized::owned::Reader<'k, T>);
+pub struct Reader<'k, T>(pub(crate) r#unsized::boxed_slice::Reader<'k, T>);
 
 impl<'k, I, R> From<&'k Slice<I, R>> for Reader<'k, I::Terminate>
 where
@@ -159,14 +159,14 @@ where
 {
     #[inline]
     fn from(key: &'k Slice<I, R>) -> Self {
-        Self(r#unsized::owned::Reader::from(key))
+        Self(r#unsized::boxed_slice::Reader::from(key))
     }
 }
 
 impl<'k, T: Default> Reader<'k, T> {
     #[inline]
     pub fn new_prefix(prefix: &'k [u8]) -> Self {
-        Self(r#unsized::owned::Reader::new_prefix(prefix))
+        Self(r#unsized::boxed_slice::Reader::new_prefix(prefix))
     }
 }
 

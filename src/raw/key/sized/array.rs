@@ -62,17 +62,17 @@ impl<const N: usize> Key for [u8; N] {
 impl<'k, const N: usize> From<&'k [u8; N]> for Reader<'k, N> {
     #[inline]
     fn from(array: &'k [u8; N]) -> Self {
-        Self(r#unsized::owned::Reader::new_prefix(array))
+        Self(r#unsized::boxed_slice::Reader::new_prefix(array))
     }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Reader<'k, const N: usize>(pub(crate) r#unsized::owned::Reader<'k, ()>);
+pub struct Reader<'k, const N: usize>(pub(crate) r#unsized::boxed_slice::Reader<'k, ()>);
 
 impl<'k, const N: usize> Reader<'k, N> {
     #[inline]
     pub fn new_prefix(prefix: &'k [u8]) -> Self {
-        Self(r#unsized::owned::Reader::new_prefix(prefix))
+        Self(r#unsized::boxed_slice::Reader::new_prefix(prefix))
     }
 }
 

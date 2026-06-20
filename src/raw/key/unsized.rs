@@ -3,11 +3,11 @@ use core::fmt::Debug;
 use core::fmt::Display;
 use core::hash::Hash;
 
-pub mod borrowed;
-pub mod owned;
+pub mod boxed_slice;
+pub mod slice;
 
-pub use borrowed::Slice;
-pub use owned::BoxedSlice;
+pub use boxed_slice::BoxedSlice;
+pub use slice::Slice;
 pub type Str<I> = Slice<I, str>;
 pub type BoxedStr<I> = BoxedSlice<I, str>;
 

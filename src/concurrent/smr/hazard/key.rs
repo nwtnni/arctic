@@ -69,7 +69,7 @@ fn hazard_integer<I: Int>(
 impl<I, R> Key for BoxedSlice<I, R>
 where
     I: r#unsized::Invariant,
-    R: ?Sized + r#unsized::borrowed::Raw,
+    R: ?Sized + r#unsized::slice::Raw,
 {
     type Prefix = Le;
 
@@ -82,7 +82,7 @@ where
 impl<I, R> Key for &'_ Slice<I, R>
 where
     I: r#unsized::Invariant,
-    R: ?Sized + r#unsized::borrowed::Raw,
+    R: ?Sized + r#unsized::slice::Raw,
 {
     type Prefix = Le;
 
@@ -93,7 +93,9 @@ where
 }
 
 #[inline]
-fn hazard_unsized<T: Terminate>(reader: r#unsized::owned::Reader<'_, T>) -> ribbit::Packed<Le> {
+fn hazard_unsized<T: Terminate>(
+    reader: r#unsized::boxed_slice::Reader<'_, T>,
+) -> ribbit::Packed<Le> {
     let prefix = if reader.slice.len() >= 16 {
         unsafe { reader.slice.as_ptr().cast::<u128>().read_unaligned() }
     } else {

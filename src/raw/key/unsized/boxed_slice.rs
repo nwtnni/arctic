@@ -17,7 +17,7 @@ use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 use crate::raw::key::r#unsized;
 use crate::raw::key::r#unsized::Terminate;
-use crate::raw::key::r#unsized::borrowed::Slice;
+use crate::raw::key::r#unsized::slice::Slice;
 
 #[repr(transparent)]
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -42,7 +42,7 @@ where
 impl<I, R> BoxedSlice<I, R>
 where
     I: r#unsized::Invariant,
-    R: ?Sized + r#unsized::borrowed::Raw,
+    R: ?Sized + r#unsized::slice::Raw,
 {
     #[inline]
     pub fn new(raw: impl Into<Box<R>>) -> Result<Self, (Box<R>, I::Error)> {
@@ -95,7 +95,7 @@ impl<I, R: ?Sized> AsRef<Slice<I, R>> for BoxedSlice<I, R> {
 impl<I, R> Key for BoxedSlice<I, R>
 where
     I: r#unsized::Invariant,
-    R: ?Sized + r#unsized::borrowed::Raw,
+    R: ?Sized + r#unsized::slice::Raw,
 {
     type Read<'k> = Reader<'k, I::Terminate>;
     type Write = Writer;
@@ -142,7 +142,7 @@ where
 impl<'k, I, R> From<&'k Slice<I, R>> for Reader<'k, I::Terminate>
 where
     I: r#unsized::Invariant,
-    R: ?Sized + r#unsized::borrowed::Raw,
+    R: ?Sized + r#unsized::slice::Raw,
 {
     #[inline]
     fn from(slice: &'k Slice<I, R>) -> Self {
