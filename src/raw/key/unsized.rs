@@ -15,6 +15,8 @@ pub unsafe trait Invariant:
     Debug + Default + Hash + Eq + Ord + Send + Sync + 'static
 {
     type Error: core::error::Error;
+    #[doc(hidden)]
+    #[expect(private_bounds)]
     type Terminate: Terminate;
 
     fn validate(key: &[u8]) -> Result<(), Self::Error>;
@@ -112,7 +114,7 @@ mod seal {
     pub trait Seal {}
 }
 
-pub trait Terminate:
+pub(crate) trait Terminate:
     Debug + Default + Eq + ribbit::Pack<Packed = Self> + Send + Sync + 'static + seal::Seal
 {
     const FALSE: Self;

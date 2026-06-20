@@ -167,6 +167,7 @@ impl<'k, T: Default> Reader<'k, T> {
     }
 }
 
+#[expect(private_bounds)]
 impl<'k, T: Terminate> Reader<'k, T> {
     #[inline]
     pub(crate) fn get_byte(&self, index: usize) -> Option<u8> {
