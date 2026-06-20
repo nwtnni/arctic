@@ -123,7 +123,6 @@ pub trait Terminate:
 
     fn try_compress(byte: u8) -> usize;
 
-    fn split(slice: &[u8]) -> Option<(&[u8], u8)>;
     fn trim(slice: &[u8]) -> &[u8];
 }
 
@@ -143,12 +142,6 @@ impl Terminate for () {
     #[inline]
     fn try_compress(_: u8) -> usize {
         1
-    }
-
-    #[inline]
-    fn split(slice: &[u8]) -> Option<(&[u8], u8)> {
-        let (last, slice) = slice.split_last()?;
-        Some((slice, *last))
     }
 
     #[inline]
@@ -175,13 +168,6 @@ impl Terminate for bool {
     #[inline]
     fn try_compress(byte: u8) -> usize {
         (byte > 0) as usize
-    }
-
-    #[inline]
-    fn split(slice: &[u8]) -> Option<(&[u8], u8)> {
-        let (slice, last) = slice.split_last_chunk::<2>()?;
-        validate_eq!(last[1], 0);
-        Some((slice, last[0]))
     }
 
     #[inline]

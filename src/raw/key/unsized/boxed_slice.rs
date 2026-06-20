@@ -103,7 +103,6 @@ where
     type Insert<'k> = &'k Slice<I, R>;
     type Edge = edge::Le;
     type Len = Byte;
-    // type Split = BoxedSlice<I::Split>;
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -133,10 +132,6 @@ where
     {
         unsafe { writer.as_slice_unchecked() }
     }
-
-    // fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as Key>::Read<'k>, u8) {
-    //     Reader::from(key).split().expect("Non-empty")
-    // }
 }
 
 impl<'k, I, R> From<&'k Slice<I, R>> for Reader<'k, I::Terminate>
@@ -173,18 +168,6 @@ impl<'k, T: Default> Reader<'k, T> {
 }
 
 impl<'k, T: Terminate> Reader<'k, T> {
-    // pub(super) fn split(&self) -> Option<(Reader<'k, bool>, u8)> {
-    //     T::split(self.slice).map(|(slice, last)| {
-    //         (
-    //             Reader {
-    //                 slice,
-    //                 terminate: true,
-    //             },
-    //             last,
-    //         )
-    //     })
-    // }
-
     #[inline]
     pub(crate) fn get_byte(&self, index: usize) -> Option<u8> {
         if let Some(byte) = self.slice.get(index) {

@@ -114,7 +114,6 @@ where
     type Write = Writer<I>;
     type Edge = edge::Slice<I::Terminate>;
     type Len = Byte;
-    // type Split = &'a Slice<I::Split>;
 
     fn as_insert(&self) -> Self::Insert<'_> {
         self
@@ -140,13 +139,6 @@ where
     {
         unsafe { writer.as_slice_unchecked() }
     }
-
-    // fn split_last<'k>(key: &'k Self::Borrowed) -> (<Self::Split as crate::Key>::Read<'k>, u8) {
-    //     r#unsized::owned::Reader::from(key)
-    //         .split()
-    //         .map(|(reader, last)| (Reader(reader), last))
-    //         .expect("Non-empty")
-    // }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]

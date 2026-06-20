@@ -17,8 +17,6 @@ impl<const N: usize> Key for [u8; N] {
     type Insert<'k> = &'k Self;
     type Edge = edge::Le;
     type Len = Byte;
-    // // NOTE: should be [u8; N - 1] ideally, but not supported yet.
-    // type Split = [u8; N];
 
     #[inline]
     fn as_insert(&self) -> Self::Insert<'_> {
@@ -48,15 +46,22 @@ impl<const N: usize> Key for [u8; N] {
     {
         &writer.0
     }
+}
 
-    // fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
-    //     const {
-    //         assert!(N > 0);
-    //     }
-    //
-    //     let (last, slice) = key.split_last().expect("Non-empty");
-    //     (Reader(r#unsized::owned::Reader::new_prefix(slice)), *last)
-    // }
+impl<const N: usize> key::Split for [u8; N] {
+    // NOTE: should split into ([u8; N - 1], u8) ideally, but can't
+    // use const generic expressions yet
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
+        const {
+            assert!(N > 0);
+        }
+
+        let (last, slice) = key.split_last().expect("Non-empty");
+        (
+            Reader(r#unsized::boxed_slice::Reader::new_prefix(slice)),
+            *last,
+        )
+    }
 }
 
 impl<'k, const N: usize> From<&'k [u8; N]> for Reader<'k, N> {
