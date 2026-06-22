@@ -1,4 +1,4 @@
-//! Auxiliary types for use with [`crate::sequential::Map`].
+//! Auxiliary types for use with [`sequential::Map`][crate::sequential::Map].
 
 use core::marker::PhantomData;
 use core::ops::RangeFull;

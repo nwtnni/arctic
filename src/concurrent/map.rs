@@ -1,4 +1,4 @@
-//! Auxiliary types for use with [`crate::concurrent::Map`].
+//! Auxiliary types for use with [`concurrent::Map`][crate::concurrent::Map].
 
 use core::ops::ControlFlow;
 use core::ops::RangeFull;
@@ -42,15 +42,15 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 ///
 /// # Usage
 ///
-/// Refer to [`crate::sequential::Map`] for an introduction.
+/// Refer to [`sequential::Map`] for an introduction.
 /// The [`Map`] API differs in three ways: concurrent operations,
 /// safe memory reclamation, and advanced point operations.
 ///
 /// ## Concurrent operations
 ///
-/// Unlike [`crate::sequential::Map`], an instance of [`Map`] can be shared
+/// Unlike [`sequential::Map`], an instance of [`Map`] can be shared
 /// and modified concurrently across threads. Methods that usually require a mutable reference
-/// (e.g., [`crate::sequential::Map::upsert`]) instead use atomics to synchronize internally,
+/// (e.g., [`sequential::Map::upsert`]) instead use atomics to synchronize internally,
 /// allowing them to take an immutable reference (e.g., [`Map::upsert`]).
 ///
 /// Note that scan operations are not linearizable. They do, however,
@@ -65,7 +65,7 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 /// allocations are safe to free. This results in the following API changes:
 ///
 /// 1. Values are always returned behind guards. For example,
-///    while a successful [`crate::sequential::Map::update`] returns ownership of
+///    while a successful [`sequential::Map::update`] returns ownership of
 ///    the old value, a successful [`Map::update`] instead returns an [`Updated`]
 ///    guard that allows references to the old and new value.
 ///

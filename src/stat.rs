@@ -6,6 +6,7 @@ use core::sync::atomic::Ordering;
 use ribbit::Unpack as _;
 
 use crate::Key;
+use crate::concurrent;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::raw::Edge;
@@ -24,9 +25,7 @@ thread_local! {
 }
 
 /// Dump process-level statistics for a concurrent map instance.
-pub fn process<K: Key, V: Value, S: Smr<K, V>>(
-    map: &mut crate::concurrent::Map<K, V, S>,
-) -> Process {
+pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S>) -> Process {
     let mut compression = Histogram::default();
     let mut node_3 = Histogram::default();
     let mut node_15 = Histogram::default();
@@ -112,7 +111,7 @@ pub fn reset() {
     THREAD.with_borrow_mut(|thread| *thread = Thread::default());
 }
 
-/// Process-level statistics for a [`crate::concurrent::Map`].
+/// Process-level statistics for a [`concurrent::Map`].
 ///
 /// Can be serialized and fed into external tools.
 #[derive(Default)]
@@ -161,7 +160,7 @@ pub(crate) enum Record {
     ReclaimAge3,
 }
 
-/// Thread-level statistics for a [`crate::concurrent::Map`].
+/// Thread-level statistics for a [`concurrent::Map`].
 ///
 /// Can be serialized and fed into external tools.
 #[cfg(feature = "stat")]
@@ -197,7 +196,7 @@ pub struct Thread {
     reclaim_age_3: Histogram,
 }
 
-/// Thread-level statistics for a [`crate::concurrent::Map`].
+/// Thread-level statistics for a [`concurrent::Map`].
 ///
 /// Can be serialized and fed into external tools.
 #[cfg(not(feature = "stat"))]

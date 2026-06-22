@@ -1,4 +1,4 @@
-//! Auxiliary types for use with [`crate::sequential::Set`].
+//! Auxiliary types for use with [`sequential::Set`][crate::sequential::Set].
 
 use core::borrow::Borrow as _;
 

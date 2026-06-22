@@ -1,5 +1,5 @@
-//! Guard types that retire removed or updated values
-//! via [`crate::concurrent::smr::Guard`] on drop.
+//! Values that can safely be stored in a [`concurrent::Map`][crate::concurrent::Map],
+//! and referenced behind an [`smr::Guard`].
 
 use core::borrow::Borrow;
 use core::fmt::Debug;
@@ -11,7 +11,7 @@ use crate::concurrent::smr::Guard as _;
 use crate::sequential;
 pub use crate::sequential::value::Arc;
 
-/// Values that can safely be stored in a [`crate::concurrent::Map`].
+/// Values that can safely be stored in a [`concurrent::Map`][crate::concurrent::Map].
 ///
 /// Values may be either inline or indirect. An inline
 /// value (e.g., [`u64`]) is stored directly in an edge and can be freely
@@ -22,7 +22,7 @@ pub use crate::sequential::value::Arc;
 /// It's fine to create a concurrent map with non-Sync
 /// values; the map instance just won't implement Sync.
 pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
-    /// We need this extra layer of indirection relative to [`crate::sequential::Map`]
+    /// We need this extra layer of indirection relative to [`sequential::Map`]
     /// because edges can be concurrently modified.
     ///
     /// For an inline value, the sequential map can return a reference
@@ -36,7 +36,7 @@ pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
     type Borrowed;
 
     /// This is a type-level function that allows inline values to
-    /// discard a [`crate::concurrent::smr::Guard`].
+    /// discard a [`smr::Guard`].
     type Guard<G>: smr::Guard<Self> + From<G>
     where
         G: smr::Guard<Self>;
@@ -44,8 +44,8 @@ pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
     /// # Safety
     ///
     /// Caller must guarantee the following:
-    /// - `raw` was created from [`crate::sequential::Value::into_raw`]
-    /// - There are no calls to [`crate::sequential::Value::from_raw_unchecked`] while `raw` is live
+    /// - `raw` was created from [sequential::Value::into_raw`]
+    /// - There are no calls to [`sequential::Value::from_raw_unchecked`] while `raw` is live
     /// - This value is not mutated while `raw` is live
     unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed;
 }
