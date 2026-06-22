@@ -21,6 +21,7 @@ use crate::raw::key::r#unsized;
 use crate::raw::key::r#unsized::Terminate;
 use crate::raw::key::r#unsized::slice::Slice;
 
+/// An owned, dynamically sized key that satisfies an [`Invariant`][crate::key::unsized::Invariant].
 #[repr(transparent)]
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BoxedSlice<I, R: ?Sized = [u8]> {
@@ -46,26 +47,35 @@ where
     I: r#unsized::Invariant,
     R: ?Sized + r#unsized::slice::Raw,
 {
+    /// Construct a boxed slice after validating.
+    ///
+    /// Returns `Ok` if the input boxed slice satisfies the invariant.
     #[inline]
-    pub fn new(raw: impl Into<Box<R>>) -> Result<Self, (Box<R>, I::Error)> {
-        let raw = raw.into();
-        match Slice::<I, R>::new(&raw) {
-            Ok(_) => Ok(unsafe { Self::new_unchecked(raw) }),
-            Err(error) => Err((raw, error)),
+    pub fn new(key: impl Into<Box<R>>) -> Result<Self, (Box<R>, I::Error)> {
+        let key = key.into();
+        match Slice::<I, R>::new(&key) {
+            Ok(_) => Ok(unsafe { Self::new_unchecked(key) }),
+            Err(error) => Err((key, error)),
         }
     }
 }
 
 impl<I, R: ?Sized> BoxedSlice<I, R> {
+    /// Construct a boxed slice without validating.
+    ///
+    /// # SAFETY
+    ///
+    /// Caller must guarantee that `raw` satisfies the invariant, i.e.,
+    /// `I::validate(key)` would return `Ok(())`.
     #[inline]
-    pub const unsafe fn new_unchecked(raw: Box<R>) -> Self {
+    pub const unsafe fn new_unchecked(key: Box<R>) -> Self {
         Self {
             invariant: PhantomData,
-            raw,
+            raw: key,
         }
     }
 
-    /// Get a reference to the underlying slice.
+    /// Get a borrowed [`Slice`] that preserves the invariant.
     #[inline]
     pub const fn as_slice(&self) -> &Slice<I, R> {
         unsafe { Slice::new_unchecked(&self.raw) }

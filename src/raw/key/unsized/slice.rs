@@ -3,7 +3,6 @@
 use core::ffi::CStr;
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use core::num::NonZeroUsize;
 
 use ribbit::u13;
 
@@ -40,6 +39,7 @@ unsafe impl Raw for str {
     }
 }
 
+/// A borrowed, dynamically sized key that satisfies an [`Invariant`][crate::key::unsized::Invariant].
 #[repr(transparent)]
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Slice<I, R: ?Sized = [u8]> {
@@ -52,18 +52,13 @@ where
     I: r#unsized::Invariant,
     R: ?Sized + Raw,
 {
+    /// Construct a slice after validating.
+    ///
+    /// Returns `Ok` if the input `key` satisfies the invariant.
     pub fn new(key: &R) -> Result<&Self, I::Error> {
         I::validate(key.as_ref())?;
         // Invariants checked above
         Ok(unsafe { Self::new_unchecked(key) })
-    }
-
-    #[inline]
-    pub fn len(&self) -> NonZeroUsize {
-        let len = self.raw.as_ref().len();
-        if_validate!(NonZeroUsize::new(len).unwrap(), unsafe {
-            NonZeroUsize::new_unchecked(len)
-        })
     }
 }
 
@@ -77,6 +72,7 @@ impl<I, R: ?Sized> Slice<I, R> {
     }
 
     /// Get a reference to the underlying buffer.
+    #[doc(hidden)]
     #[inline]
     pub const fn as_raw(&self) -> &R {
         &self.raw

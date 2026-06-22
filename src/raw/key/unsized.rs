@@ -1,3 +1,5 @@
+//! Support for dynamically sized keys.
+
 use core::fmt;
 use core::fmt::Debug;
 use core::fmt::Display;

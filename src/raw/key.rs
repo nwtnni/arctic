@@ -1,4 +1,4 @@
-//! Implementations of [`Key`].
+//! Types that implement the [`Key`] trait.
 
 mod discard;
 mod len;
@@ -14,7 +14,9 @@ pub use r#unsized::BoxedSlice;
 pub use r#unsized::NonNull;
 pub use r#unsized::Slice;
 pub use r#unsized::Terminated;
+/// Convenience type alias for a [`Slice`] that is backed by a [`str`].
 pub type Str<I> = Slice<I, str>;
+/// Convenience type alias for a [`BoxedSlice`] that is backed by a [`str`].
 pub type BoxedStr<I> = BoxedSlice<I, str>;
 
 use core::borrow::Borrow;
