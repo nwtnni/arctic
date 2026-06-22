@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 stat = ["dep:serde", "dep:base64", "dep:hdrhistogram"]
-stat-garbage = ["crossbeam-epoch/stat-garbage", "seize/stat-garbage"]
+stat-garbage = []
 opt-no-node3-get = []
 opt-no-node3-keys = []
 opt-no-node3-iter = []
@@ -24,9 +24,8 @@ opt-no-dispatch = []
 smr-disable = []
 # FIXME: make these dependencies optional
 # smr-epoch = ["dep:crossbeam-epoch"]
-# smr-seize = ["dep:seize"]
 smr-epoch = []
-smr-seize = []
+smr-seize = ["dep:seize"]
 
 validate = []
 
@@ -39,6 +38,7 @@ hdrhistogram = { version = "7.5.4", optional = true, default-features = false, f
 libc = { version = "0.2.176", optional = true }
 proptest = { version = "1.9.0", optional = true }
 ribbit = { version = "0.2.1", features = ["atomic-u128"] }
+seize = { version = "0.5.1", optional = true }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 
 # https://github.com/kaist-cp/smr-benchmark/blob/00b4e4d06d9b91f289b4644163f0cac0660d4af7/Cargo.toml#L42-L45
@@ -47,12 +47,6 @@ git = "https://github.com/nwtnni/crossbeam.git"
 branch = "smr-benchmark"
 # version = "0.9.18"
 # optional = true
-
-[dependencies.seize]
-git = "https://github.com/migopp/seize.git"
-default-features = false
-features = ["libc"]
-# version = "0.5.1"
 
 [dev-dependencies]
 criterion = { version = "0.8.2", default-features = false }

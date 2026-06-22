@@ -3,7 +3,8 @@
 pub mod epoch;
 pub mod hazard;
 pub mod no_op;
-pub mod seize;
+#[cfg(feature = "smr-seize")]
+mod seize;
 mod thread;
 
 use core::num::NonZeroU64;
@@ -11,6 +12,7 @@ use core::num::NonZeroU64;
 pub use epoch::Epoch;
 pub use hazard::Hazard;
 pub use no_op::NoOp;
+#[cfg(feature = "smr-seize")]
 pub use seize::Seize;
 
 use crate::Key;

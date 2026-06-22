@@ -8,12 +8,30 @@ use crate::stat;
 
 use seize::Guard as _;
 
+/// [`seize::Collector`] backend for safe memory reclamation.
+///
+/// # Examples
+///
+/// ```rust
+/// use arctic::concurrent;
+/// use arctic::concurrent::smr::Seize;
+///
+/// let map = concurrent::Map::<u64, Box<u64>, Seize>::with_smr(Seize::from(
+///     seize::Collector::new().batch_size(256)
+/// ));
+/// ```
 #[derive(Default)]
 pub struct Seize(seize::Collector);
 
-impl Seize {
-    pub fn with_batch_size(batch_size: usize) -> Self {
-        Self(seize::Collector::new().batch_size(batch_size))
+impl From<seize::Collector> for Seize {
+    fn from(collector: seize::Collector) -> Self {
+        Self(collector)
+    }
+}
+
+impl From<Seize> for seize::Collector {
+    fn from(Seize(collector): Seize) -> Self {
+        collector
     }
 }
 
@@ -24,15 +42,18 @@ impl<K: Key, V: Value> Smr<K, V> for Seize {
         V: 'g,
         Self: 'g;
 
+    // NOTE: seize documentation says to call `seize::Guard::protect`
+    // on every pointer load, which loads with `SeqCst` ordering
+    // under the hood, but it's not clear to me why this is necessary?
+    //
+    // At least in arctic, pointers are always installed via a CAS
+    // with `AcqRel` ordering, so we should always see the correct
+    // contents of the allocation with `Acquire` loads.
     fn guard<'g>(&'g self, _: K::Read<'_>) -> Self::Guard<'g>
     where
         V: 'g,
     {
         self.0.enter()
-    }
-
-    fn garbage(&self) -> u32 {
-        self.0.garbage()
     }
 }
 
