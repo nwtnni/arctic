@@ -224,7 +224,7 @@ where
         match self.entry(key) {
             Entry::Vacant(entry) => Err(entry.insert(value)),
             Entry::Occupied(mut entry) => {
-                let old = entry.insert(value);
+                let old = entry.update(value);
                 Ok((old, entry.into_mut()))
             }
         }
@@ -264,7 +264,7 @@ where
         match self.entry_impl(K::Read::from(key)) {
             Entry::Vacant(_) => Err(value),
             Entry::Occupied(mut entry) => {
-                let old = entry.insert(value);
+                let old = entry.update(value);
                 Ok((old, entry.into_mut()))
             }
         }
@@ -455,16 +455,25 @@ where
     }
 }
 
+/// A logical entry in a [`sequential::Map`][Map] that may be vacant or occupied.
+///
+/// See: [`btree_map::Entry`][std::collections::btree_map::Entry].
 pub enum Entry<'g, 'k, K, V>
 where
     K: Key,
     V: Value + 'g,
 {
+    /// A vacant entry.
     Vacant(Vacant<'g, 'k, K, V>),
+    /// An occupied entry.
     Occupied(Occupied<'g, V>),
 }
 
 impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
+    /// Insert `default` if there is no value associated with this
+    /// entry, then return a mutable reference to the current value.
+    ///
+    /// See: [`btree_map::Entry::or_insert`][std::collections::btree_map::Entry::or_insert].
     #[inline]
     pub fn or_insert(self, default: V) -> &'g mut V {
         match self {
@@ -473,6 +482,10 @@ impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
         }
     }
 
+    /// Like [`or_insert`][Self::or_insert], but lazily evaluates
+    /// `default`.
+    ///
+    /// See: [`btree_map::Entry::or_insert_with`][std::collections::btree_map::Entry::or_insert_with].
     #[inline]
     pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'g mut V {
         match self {
@@ -481,6 +494,9 @@ impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
         }
     }
 
+    /// If there is a value associated with this entry, then apply `modify` to it.
+    ///
+    /// See: [`btree_map::Entry::and_modify`][std::collections::btree_map::Entry::and_modify].
     #[inline]
     pub fn and_modify<F>(self, modify: F) -> Self
     where
@@ -497,29 +513,34 @@ impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
 }
 
 impl<'g, 'k, K: Key, V: Value + Default + 'g> Entry<'g, 'k, K, V> {
+    /// Call [`or_insert_with`][Self::or_insert_with] with [`Default::default`].
+    ///
+    /// See: [`btree_map::Entry::or_default`][std::collections::btree_map::Entry::or_default].
     #[inline]
     pub fn or_default(self) -> &'g mut V {
         self.or_insert_with(V::default)
     }
 }
 
+/// A vacant entry in a [`sequential::Map`][Map].
 pub struct Vacant<'g, 'k, K: Key, V: Value + 'g> {
     pub(super) cursor: Cursor<'g, K::Read<'k>, path::Discard>,
     pub(super) replace: bool,
     pub(super) _value: PhantomData<&'g mut V>,
 }
 
-pub struct Occupied<'g, V: Value + 'g> {
-    pub(super) value: NonNull<V>,
-    pub(super) _value: PhantomData<&'g mut V>,
-}
-
 impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
+    /// Insert `value` into this entry and return a mutable reference to it.
+    ///
+    /// See: [`btree_map::VacantEntry::insert`][std::collections::btree_map::VacantEntry::insert].
     #[inline]
     pub fn insert(self, value: V) -> &'g mut V {
         self.insert_entry(value).into_mut()
     }
 
+    /// Insert `value` into this entry and return an occupied entry.
+    ///
+    /// See: [`btree_map::VacantEntry::insert_entry`][std::collections::btree_map::VacantEntry::insert_entry].
     pub fn insert_entry(mut self, value: V) -> Occupied<'g, V> {
         let new_value = V::into_raw(value);
 
@@ -563,29 +584,43 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
     }
 }
 
+/// An occupied entry in a [`sequential::Map`][Map].
+pub struct Occupied<'g, V: Value + 'g> {
+    pub(super) value: NonNull<V>,
+    pub(super) _value: PhantomData<&'g mut V>,
+}
+
 impl<'g, V: Value> Occupied<'g, V> {
+    /// Get an immutable reference to the value in this entry.
+    ///
+    /// See: [`btree_map::OccupiedEntry::get`][std::collections::btree_map::OccupiedEntry::get].
     #[inline]
     pub fn get(&self) -> &V {
         unsafe { self.value.as_ref() }
     }
 
+    /// Get a mutable reference to the value in this entry.
+    ///
+    /// See: [`btree_map::OccupiedEntry::get_mut`][std::collections::btree_map::OccupiedEntry::get_mut].
     #[inline]
     pub fn get_mut(&mut self) -> &mut V {
         unsafe { self.value.as_mut() }
     }
 
+    /// Update the value in this entry to `value`.
+    ///
+    /// See: [`btree_map::OccupiedEntry::insert`][std::collections::btree_map::OccupiedEntry::insert].
     #[inline]
-    pub fn insert(&mut self, value: V) -> V {
+    pub fn update(&mut self, value: V) -> V {
         unsafe { core::mem::replace(self.value.as_mut(), value) }
     }
 
+    /// Convert this entry into a mutable reference,
+    /// preserving the lifetime.
+    ///
+    /// See: [`btree_map::OccupiedEntry::into_mut`][std::collections::btree_map::OccupiedEntry::into_mut].
     #[inline]
     pub fn into_mut(mut self) -> &'g mut V {
         unsafe { self.value.as_mut() }
-    }
-
-    #[inline]
-    pub fn and_modify<F: FnOnce(&mut V)>(mut self, modify: F) {
-        modify(unsafe { self.value.as_mut() })
     }
 }
