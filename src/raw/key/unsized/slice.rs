@@ -81,6 +81,22 @@ impl<I, R: ?Sized> Slice<I, R> {
     }
 }
 
+impl<I> Slice<I, str> {
+    /// Get a reference to the underlying `str`.
+    #[inline]
+    pub const fn as_str(&self) -> &str {
+        self.as_raw()
+    }
+}
+
+impl<I> Slice<I, [u8]> {
+    /// Get a reference to the underlying `[u8]`.
+    #[inline]
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.as_raw()
+    }
+}
+
 impl<I, R: ?Sized> AsRef<R> for Slice<I, R> {
     #[inline]
     fn as_ref(&self) -> &R {

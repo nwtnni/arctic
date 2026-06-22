@@ -447,12 +447,57 @@ where
     S: Smr<K, V>,
 {
     /// Get an immutable reference to the entire tree.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::concurrent;
+    ///
+    /// let map = concurrent::Map::<u64, u64>::default();
+    /// map.insert(1, 2).expect("Key not present");
+    /// map.insert(3, 4).expect("Key not present");
+    ///
+    /// assert_eq!(map.all().entries::<arctic::Ascend>().count(), 2);
+    /// ```
     pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
         let guard = self.smr.guard(K::Read::default());
         unsafe { Shard::new(guard, self.seq.raw.all()) }
     }
 
     /// Get an immutable reference to the subtree of keys beginning with `prefix`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::concurrent;
+    /// use arctic::key::BoxedStr;
+    /// use arctic::key::NonNull;
+    /// use arctic::key::Str;
+    /// use arctic::key::r#unsized::boxed_slice::Reader;
+    ///
+    /// let map = concurrent::Map::<BoxedStr<NonNull>, Box<u64>>::default();
+    ///
+    /// for (key, value) in [("prefix-one", 3), ("prefix-two", 2), ("three", 1)] {
+    ///     map.insert(
+    ///         Str::new(key).expect("No null byte"),
+    ///         Box::new(value),
+    ///     ).expect("Key not present");
+    /// }
+    ///
+    /// // Get all key value pairs where key starts with prefix
+    /// let prefix = map.prefix(Reader::new_prefix(b"prefix"));
+    ///
+    /// let entries: concurrent::EntryIter<_, _, _, _, _> = prefix.entries::<arctic::Ascend>();
+    ///
+    /// // WARNING: using `entries` as `Iterator` requires cloning keys
+    /// assert_eq!(entries.count(), 2);
+    ///
+    /// // Can use lending iterator API to avoid cloning
+    /// let mut entries: concurrent::EntryIter<_, _, _, _, _> = prefix.entries::<arctic::Ascend>();
+    /// while let Some((key, _)) = entries.lend() {
+    ///     assert!(key.as_str().starts_with("prefix"));
+    /// }
+    /// ```
     pub fn prefix<'g, 'k>(
         &'g self,
         prefix: impl Into<K::Read<'k>>,
@@ -463,6 +508,23 @@ where
     }
 
     /// Get an immutable reference to the subtree of keys within `range`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::concurrent;
+    ///
+    /// let map = concurrent::Map::<u64, u64>::default();
+    /// map.insert(1, 2).expect("Key not present");
+    /// map.insert(3, 4).expect("Key not present");
+    /// map.insert(5, 6).expect("Key not present");
+    ///
+    /// let range = map.range(3..=7);
+    ///
+    /// for (key, value) in range.entries::<arctic::Descend>() {
+    ///     assert!((3..=7).contains(&key));
+    /// }
+    /// ```
     pub fn range<'g, 'k, R>(&'g self, range: R) -> iter::Shard<'g, 'k, K, V, R, Guard<'g, K, V, S>>
     where
         R: crate::raw::iter::Range<K::Read<'k>>,
