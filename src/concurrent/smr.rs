@@ -10,6 +10,7 @@
 
 #[cfg(feature = "smr-epoch")]
 mod epoch;
+/// Auxiliary types for use with hazard keys.
 pub mod hazard;
 pub(crate) mod no_op;
 #[cfg(feature = "smr-seize")]
@@ -20,6 +21,7 @@ use core::num::NonZeroU64;
 
 #[cfg(feature = "smr-epoch")]
 pub use epoch::Epoch;
+#[doc(inline)]
 pub use hazard::Hazard;
 pub use no_op::NoOp;
 #[cfg(feature = "smr-seize")]

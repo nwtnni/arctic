@@ -93,7 +93,7 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 /// This can be used to efficiently implement lazy value initialization,
 /// or synchronization logic where the next value is computed from the
 /// current value, and then atomically inserted or updated.
-pub struct Map<K: Key, V: Value, S = Box<smr::Hazard<K, V>>> {
+pub struct Map<K: Key, V: Value, S = smr::Hazard<K, V>> {
     smr: S,
     seq: sequential::Map<K, V>,
 }

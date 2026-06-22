@@ -1,63 +1,3 @@
-//! Unlike traditional hazard pointers, we use hazard *prefixes*,
-//! which over-approxmiate a set of hazard pointers using a key prefix.
-//!
-//! First, note that every node and value in a trie can be associated
-//! with a key prefix. For example, given the following trie:
-//!
-//! ```text
-//!     N0 [ a | b ]
-//!        /    |
-//!       /     | c
-//!      /      |
-//!  N1 [f]  N2 [ d | e ]
-//!     /        /   |
-//!    /        /    | g
-//!   /        /     |
-//! (V0)     (V1)   (V2)
-//! ```
-//!
-//! We have the following key prefixes:
-//!
-//! | Id | Type  | Prefix |
-//! +----+-------|-------+
-//! | N0 | Node  |       |
-//! | N1 | Node  | a     |
-//! | N2 | Node  | bc    |
-//! | V0 | Value | af    |
-//! | V1 | Value | bcd   |
-//! | V2 | Value | bceg  |
-//!
-//! Second, note that each trie operation is also associated with
-//! a key prefix. This can be a full key for point operations like
-//! [`crate::concurrent::Map::get`], or a key prefix for prefix
-//! operations like [`crate::concurrent::Map::prefix`].
-//!
-//! Then the core insight is that a trie operation will never access
-//! nodes or values whose key prefixes do not overlap with its own.
-//! We use guards to ensure that a hazard prefix is installed
-//! for the lifetime of an operation.
-//! Guards protect all nodes and values with overlapping key prefixes from
-//! reclamation.
-//!
-//! In our example trie...
-//!
-//! ```text
-//!     N0 [ a | b ]
-//!        /    |
-//!       /     | c
-//!      /      |
-//!  N1 [f]  N2 [ d | e ]
-//!     /        /   |
-//!    /        /    | g
-//!   /        /     |
-//! (V0)     (V1)   (V2)
-//! ```
-//!
-//! A guard with key prefix `bceg` would protect
-//! nodes N0 + N2 and value V2 from reclamation.
-//! A guard with key prefix `b` would protect nodes N0 + N2
-//! and values V1 + V2 from reclamation.
-
 mod membarrier;
 pub mod prefix;
 pub(crate) use prefix::Prefix;
@@ -81,7 +21,76 @@ use crate::sync::Atomic;
 #[derive(Default)]
 struct Cache<T>(T);
 
-pub struct Hazard<K: Key, V: Value> {
+/// Hazard key backend for safe memory reclamation.
+///
+/// Hazard keys are a new SMR scheme that use an operation's key to
+/// approximate a set of [hazard pointers](https://en.wikipedia.org/wiki/Hazard_pointer).
+///
+/// To briefly illustrate the idea: every node and value in a tree can be associated
+/// with a key prefix. For example, given the following tree:
+///
+/// ```text
+///     N0 [ a | b ]
+///        /    |
+///       /     | c
+///      /      |
+///  N1 [f]  N2 [ d | e ]
+///     /        /   |
+///    /        /    | g
+///   /        /     |
+/// (V0)     (V1)   (V2)
+/// ```
+///
+/// We have the following key prefixes:
+///
+/// | Id | Type  | Prefix |
+/// |----|-------|-------|
+/// | N0 | Node  |       |
+/// | N1 | Node  | a     |
+/// | N2 | Node  | bc    |
+/// | V0 | Value | af    |
+/// | V1 | Value | bcd   |
+/// | V2 | Value | bceg  |
+///
+/// Second, note that each operation is also associated with
+/// a key prefix. This can be a full key for point operations like
+/// [`concurrent::Map::get`][crate::concurrent::Map::get], or a key prefix for prefix
+/// operations like [`concurrent::Map::prefix`][crate::concurrent::Map::prefix].
+///
+/// Then the core insight is that a trie operation will never access
+/// nodes or values whose key prefixes do not overlap with its own.
+/// We use guards to ensure that a hazard key is installed
+/// for the lifetime of an operation.
+/// Guards protect all nodes and values with overlapping key prefixes from
+/// reclamation.
+///
+/// In our example tree...
+///
+/// ```text
+///     N0 [ a | b ]
+///        /    |
+///       /     | c
+///      /      |
+///  N1 [f]  N2 [ d | e ]
+///     /        /   |
+///    /        /    | g
+///   /        /     |
+/// (V0)     (V1)   (V2)
+/// ```
+///
+/// A guard with key prefix `bceg` would protect
+/// nodes N0 + N2 and value V2 from reclamation.
+/// A guard with key prefix `b` would protect nodes N0 + N2
+/// and values V1 + V2 from reclamation.
+pub struct Hazard<K: Key, V: Value>(Box<Global<K, V>>);
+
+impl<K: Key, V: Value> Default for Hazard<K, V> {
+    fn default() -> Self {
+        Self(Box::default())
+    }
+}
+
+struct Global<K: Key, V: Value> {
     garbage: AtomicU64,
 
     // FIXME: jagged/triangular array
@@ -92,10 +101,10 @@ pub struct Hazard<K: Key, V: Value> {
     value: PhantomData<V>,
 }
 
-unsafe impl<K: Key, V: Value> Send for Hazard<K, V> {}
-unsafe impl<K: Key, V: Value> Sync for Hazard<K, V> {}
+unsafe impl<K: Key, V: Value> Send for Global<K, V> {}
+unsafe impl<K: Key, V: Value> Sync for Global<K, V> {}
 
-impl<K: Key, V: Value> Default for Hazard<K, V> {
+impl<K: Key, V: Value> Default for Global<K, V> {
     fn default() -> Self {
         Self {
             garbage: AtomicU64::new(0),
@@ -121,20 +130,35 @@ impl<K: Key, V: Value> Default for Hazard<K, V> {
 }
 
 impl<K: Key, V: Value> Hazard<K, V> {
+    /// Configure the number of retired allocations that can accumulate per-thread
+    /// before the thread loads all hazard pointers and attempts to reclaim them.
     #[inline]
     #[must_use]
     pub fn with_reclaim_threshold(mut self, reclaim_threshold: usize) -> Self {
-        self.reclaim_threshold = reclaim_threshold;
+        self.0.reclaim_threshold = reclaim_threshold;
         self
     }
 
+    /// Enable or disable [`membarrier`](https://man7.org/linux/man-pages/man2/membarrier.2.html) optimization.
     #[inline]
     pub fn set_membarrier(&mut self, enable: bool) {
-        *self.membarrier.get_mut() = enable
+        *self.0.membarrier.get_mut() = enable
     }
 
-    /// Eagerly reclaim all retired allocations
+    /// Enable [`membarrier`](https://man7.org/linux/man-pages/man2/membarrier.2.html) optimization.
+    #[inline]
+    pub fn enable_membarrier(&self) {
+        self.0.membarrier.store(true, Ordering::Relaxed)
+    }
+
+    /// Eagerly reclaim all retired allocations.
     pub fn reclaim(&mut self) {
+        self.0.reclaim()
+    }
+}
+
+impl<K: Key, V: Value> Global<K, V> {
+    fn reclaim(&mut self) {
         self.locals
             .iter_mut()
             .take(smr::thread::count())
@@ -147,13 +171,13 @@ impl<K: Key, V: Value> Hazard<K, V> {
     }
 }
 
-impl<K: Key, V: Value> Drop for Hazard<K, V> {
+impl<K: Key, V: Value> Drop for Global<K, V> {
     fn drop(&mut self) {
         self.reclaim();
     }
 }
 
-impl<K: Key, V: Value> Smr<K, V> for Box<Hazard<K, V>> {
+impl<K: Key, V: Value> Smr<K, V> for Hazard<K, V> {
     type Guard<'g>
         = Guard<'g, K, V>
     where
@@ -166,9 +190,9 @@ impl<K: Key, V: Value> Smr<K, V> for Box<Hazard<K, V>> {
         V: 'g,
     {
         let id = usize::from(smr::thread::Id::current());
-        let membarrier = self.membarrier.load(Ordering::Relaxed);
-        let hazard = &self.hazards[id].0;
-        let local = &self.locals[id];
+        let membarrier = self.0.membarrier.load(Ordering::Relaxed);
+        let hazard = &self.0.hazards[id].0;
+        let local = &self.0.locals[id];
 
         assert!(!hazard.load_packed(Ordering::Relaxed).is_active());
         hazard.store_packed(K::hazard(key), membarrier::fast_store_ordering(membarrier));
@@ -177,12 +201,12 @@ impl<K: Key, V: Value> Smr<K, V> for Box<Hazard<K, V>> {
         Guard {
             hazard,
             local,
-            global: self,
+            global: &self.0,
         }
     }
 
     fn garbage(&self) -> u32 {
-        self.garbage.load(Ordering::Relaxed) as u32
+        self.0.garbage.load(Ordering::Relaxed) as u32
     }
 }
 
@@ -195,14 +219,9 @@ struct Local<P: ribbit::Pack<Packed: Prefix>, V> {
     _value: PhantomData<V>,
 }
 
-impl<K: Key, V: Value> Hazard<K, V> {
-    #[inline]
-    pub fn enable_membarrier(&self) {
-        self.membarrier.store(true, Ordering::Relaxed)
-    }
-
+impl<K: Key, V: Value> Global<K, V> {
     #[cold]
-    fn flush(global: &Hazard<K, V>, local: &mut Local<K::Prefix, V>) {
+    fn flush(global: &Global<K, V>, local: &mut Local<K::Prefix, V>) {
         stat::max(stat::Max::RetireCache, local.retired.len() as u64);
 
         membarrier::slow(global.membarrier.load(Ordering::Relaxed));
@@ -276,7 +295,7 @@ impl<K: Key, V: Value> Hazard<K, V> {
 pub struct Guard<'g, K: Key, V: Value> {
     hazard: &'g Atomic<K::Prefix>,
     local: &'g UnsafeCell<Local<K::Prefix, V>>,
-    global: &'g Hazard<K, V>,
+    global: &'g Global<K, V>,
 }
 
 impl<'g, K: Key, V: Value> smr::Guard<V> for Guard<'g, K, V> {
@@ -357,7 +376,7 @@ impl<'g, K: Key, V: Value> Drop for Guard<'g, K, V> {
         }
 
         if local.cycle == 0 {
-            Hazard::flush(self.global, local)
+            Global::flush(self.global, local)
         }
 
         // FIXME: introduce separate configuration
