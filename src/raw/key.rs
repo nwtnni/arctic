@@ -26,11 +26,12 @@ use core::fmt::Debug;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 
-/// Lexicographically ordered byte sequence that can be stored in an adaptive radix tree.
+/// Byte sequence that can be stored in an adaptive radix tree.
 ///
-/// Must satisfy two preconditions:
-/// (1) keys are non-empty (for efficient set implementation),
-/// and (2) no key is a prefix of any other key (for internal invariants).
+/// Must satisfy the prefix property: no key is a prefix of any
+/// other key. Fixed-size keys (in [`sized`] module) trivially
+/// satisfy this property, but dynamically sized keys (in [`unsized`] module)
+/// require some additional [`Invariant`][unsized::Invariant]s.
 ///
 /// The following table depicts the most relevant key properties
 /// for users of this crate. Methods that can insert into the tree
@@ -49,8 +50,8 @@ pub trait Key: Borrow<Self::Borrowed> {
     /// A non-allocated byte sequence that a key can be cheaply borrowed as.
     type Borrowed: 'static + ?Sized + Debug;
 
-    /// Keys can either have edges that store bytes inline (e.g., [`BoxedSlice`]),
-    /// or as references (e.g., [`Slice`]).
+    /// Keys can either have edges that store inline bytes (e.g., u64, [`BoxedSlice`]),
+    /// or pointers (i.e., [`Slice`]).
     ///
     /// The former can take borrowed bytes with any lifetime when inserting,
     /// but the latter can only take borrowed bytes that outlive the key type.
@@ -97,6 +98,8 @@ pub trait Key: Borrow<Self::Borrowed> {
         Self: 'k;
 }
 
+/// Key types that can split off their last byte,
+/// which enables an efficient set implementation.
 pub trait Split: Key {
     /// Split a key into a reader and the last byte.
     fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8);
