@@ -178,7 +178,7 @@ impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
         true
     }
 
-    #[cfg_attr(not(feature = "proptest"), expect(unused))]
+    #[cfg_attr(not(test), expect(unused))]
     pub(super) fn remove_mut(&mut self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
         let row = self.0[i].get_mut_packed();
