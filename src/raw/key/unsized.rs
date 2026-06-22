@@ -9,20 +9,37 @@ pub mod slice;
 pub use boxed_slice::BoxedSlice;
 pub use slice::Slice;
 
+/// An invariant of `[u8]` that is sufficient to guarantee the
+/// prefix property (no key is a prefix of another key).
+///
+/// # Safety
+///
+/// Caller must ensure that if `validate` returns `Ok(())`,
+/// then `key` satisfies the prefix property.
 pub unsafe trait Invariant:
     Debug + Default + Hash + Eq + Ord + Send + Sync + 'static
 {
+    /// Validation error.
     type Error: core::error::Error;
-    #[doc(hidden)]
+
+    /// Implementation detail: some invariants append
+    /// a logical terminator byte to the end of each key.
     #[expect(private_bounds)]
     type Terminate: Terminate;
 
+    /// Returns `Ok(())` if and only if `key` satisfies this invariant.
     fn validate(key: &[u8]) -> Result<(), Self::Error>;
 }
 
+/// [`Invariant`] that this key does not contain any null bytes.
+///
+/// Allows a null byte to be internally appended to each key,
+/// which guarantees the prefix property and does not change
+/// the lexicographic ordering of the key.
 #[derive(Copy, Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NonNull;
 
+/// Index at which a null byte was found within a key.
 #[derive(Clone, Debug)]
 pub struct NonNullError(usize);
 
@@ -35,6 +52,8 @@ impl Display for NonNullError {
     }
 }
 
+// SAFETY: a non-null key that appends a null byte terminator
+// satisfies the precondition property.
 unsafe impl Invariant for NonNull {
     type Error = NonNullError;
     type Terminate = bool;
@@ -48,12 +67,19 @@ unsafe impl Invariant for NonNull {
     }
 }
 
+/// [`Invariant`] that this key contains exactly one
+/// `TERMINATOR` byte at the end of the key.
+///
+/// Implies the prefix property.
 #[derive(Copy, Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Terminated<const TERMINATOR: u8>;
 
+/// Information about why a key does not satisfy the [`Terminated`] invariant.
 #[derive(Clone, Debug)]
 pub enum TerminatedError {
+    /// Terminator byte is missing from key.
     Missing,
+    /// Terminator byte was found before end of key.
     Internal(usize),
 }
 
@@ -70,6 +96,7 @@ impl Display for TerminatedError {
     }
 }
 
+// SAFETY: a key that ends in a terminator satisfies the precondition property.
 unsafe impl<const TERMINATOR: u8> Invariant for Terminated<TERMINATOR> {
     type Error = TerminatedError;
     type Terminate = ();
