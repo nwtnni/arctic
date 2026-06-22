@@ -30,7 +30,7 @@ smr-seize = []
 
 validate = []
 
-shuttle = ["dep:shuttle", "dep:shuttle-core"]
+shuttle = []
 proptest = ["dep:proptest"]
 
 [dependencies]
@@ -40,8 +40,6 @@ libc = { version = "0.2.176", optional = true }
 proptest = { version = "1.9.0", optional = true }
 ribbit = { version = "0.2.1", features = ["atomic-u128"] }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
-shuttle = { git = "https://github.com/nwtnni/shuttle.git", optional = true }
-shuttle-core = { git = "https://github.com/nwtnni/shuttle.git", optional = true }
 
 # https://github.com/kaist-cp/smr-benchmark/blob/00b4e4d06d9b91f289b4644163f0cac0660d4af7/Cargo.toml#L42-L45
 [dependencies.crossbeam-epoch]
@@ -61,6 +59,8 @@ criterion = { version = "0.8.2", default-features = false }
 mimalloc = "0.1.50"
 proptest-state-machine = "0.6.0"
 rand = "0.10.1"
+shuttle = { git = "https://github.com/nwtnni/shuttle.git" }
+shuttle-core = { git = "https://github.com/nwtnni/shuttle.git" }
 
 [[bench]]
 name = "sequential"
