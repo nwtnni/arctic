@@ -1,11 +1,13 @@
 //! Support for borrowed dynamically sized `&[u8]` keys.
 
+use core::ffi::CStr;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 
 use ribbit::u13;
 
+use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
@@ -111,6 +113,13 @@ where
     type Owned = BoxedSlice<I, R>;
     fn to_owned(&self) -> Self::Owned {
         unsafe { BoxedSlice::new_unchecked(self.as_raw().into_boxed()) }
+    }
+}
+
+impl<'a> From<&'a CStr> for &'a Slice<Terminated<0>, [u8]> {
+    fn from(str: &'a CStr) -> Self {
+        // SAFETY: `CStr` is null terminated
+        unsafe { Slice::new_unchecked(str.to_bytes_with_nul()) }
     }
 }
 

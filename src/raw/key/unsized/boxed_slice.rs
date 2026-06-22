@@ -4,10 +4,12 @@ use core::borrow::Borrow;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::Deref;
+use std::ffi::CString;
 
 use ribbit::u6;
 
 use crate::Key;
+use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
@@ -89,6 +91,13 @@ impl<I, R: ?Sized> AsRef<Slice<I, R>> for BoxedSlice<I, R> {
     #[inline]
     fn as_ref(&self) -> &Slice<I, R> {
         self.as_slice()
+    }
+}
+
+impl From<CString> for BoxedSlice<Terminated<0>, [u8]> {
+    fn from(string: CString) -> Self {
+        // SAFETY: `CString` is null terminated
+        unsafe { Self::new_unchecked(string.into_bytes_with_nul().into_boxed_slice()) }
     }
 }
 
