@@ -18,6 +18,9 @@ static GARBAGE_GLOBAL: AtomicU32 = AtomicU32::new(0);
 // FIXME: configurable?
 const GARBAGE_THRESHOLD: u32 = 256;
 
+/// Dummy backend for safe memory reclamation that leaks all retired allocations.
+///
+/// Should only be used for benchmarking purposes.
 #[derive(Default)]
 pub struct NoOp;
 

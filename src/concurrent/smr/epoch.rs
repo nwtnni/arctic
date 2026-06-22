@@ -1,8 +1,4 @@
-use core::cell::UnsafeCell;
 use core::num::NonZeroU64;
-use core::sync::atomic::Ordering;
-
-use crossbeam_epoch::LocalHandle;
 
 use crate::Key;
 use crate::concurrent::Smr;
@@ -10,45 +6,28 @@ use crate::concurrent::Value;
 use crate::concurrent::smr;
 use crate::stat;
 
-pub struct Epoch {
-    collector: crossbeam_epoch::Collector,
-    locals: [UnsafeCell<Option<LocalHandle>>; smr::thread::MAX],
-}
-
-unsafe impl Send for Epoch {}
-unsafe impl Sync for Epoch {}
-
-impl Default for Epoch {
-    fn default() -> Self {
-        Self {
-            collector: crossbeam_epoch::Collector::default(),
-            locals: core::array::from_fn(|_| UnsafeCell::new(None)),
-        }
-    }
-}
-
-impl Epoch {
-    pub fn with_bag_capacity(max_objects: usize) -> Self {
-        crossbeam_epoch::set_bag_capacity(max_objects);
-        Self::default()
-    }
-
-    fn local(&self) -> &LocalHandle {
-        let id = smr::thread::Id::current();
-        let local = &self.locals[usize::from(id)];
-        match unsafe { local.get().as_ref().unwrap() } {
-            Some(local) => local,
-            None => self.local_cold(),
-        }
-    }
-
-    #[cold]
-    fn local_cold(&self) -> &LocalHandle {
-        let id = smr::thread::Id::current();
-        let local = &self.locals[usize::from(id)];
-        unsafe { local.get().as_mut().unwrap() }.insert(self.collector.register())
-    }
-}
+/// [`crossbeam_epoch::Collector`] backend for safe memory reclamation.
+///
+/// Uses the default global collector.
+///
+/// <div class="warning">
+///
+/// In our [benchmarks](https://github.com/nwtnni/index-bench), we found the
+/// [`MAX_OBJECTS`](https://github.com/crossbeam-rs/crossbeam/blob/05f9478b333ead58c0bf8e5a37d9ef9bd3b5bf17/crossbeam-epoch/src/internal.rs#L66)
+/// constant causes a throughput bottleneck, but your mileage may vary.
+///
+/// </div>
+///
+/// # Examples
+///
+/// ```rust
+/// use arctic::concurrent;
+/// use arctic::concurrent::smr::Epoch;
+///
+/// let map = concurrent::Map::<u64, Box<u64>, Epoch>::new();
+/// ```
+#[derive(Default)]
+pub struct Epoch;
 
 impl<K: Key, V: Value> Smr<K, V> for Box<Epoch> {
     type Guard<'g>
@@ -61,12 +40,7 @@ impl<K: Key, V: Value> Smr<K, V> for Box<Epoch> {
     where
         V: 'g,
     {
-        self.local().pin()
-    }
-
-    fn garbage(&self) -> u32 {
-        let garbage = crossbeam_epoch::GLOBAL_GARBAGE_COUNT.load(Ordering::Relaxed);
-        garbage as u32
+        crossbeam_epoch::pin()
     }
 }
 

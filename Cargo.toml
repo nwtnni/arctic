@@ -22,9 +22,7 @@ opt-no-path = []
 opt-no-dispatch = []
 
 smr-disable = []
-# FIXME: make these dependencies optional
-# smr-epoch = ["dep:crossbeam-epoch"]
-smr-epoch = []
+smr-epoch = ["dep:crossbeam-epoch"]
 smr-seize = ["dep:seize"]
 
 validate = []
@@ -34,19 +32,13 @@ proptest = ["dep:proptest"]
 
 [dependencies]
 base64 = { version = "0.22.1", optional = true }
+crossbeam-epoch = { version = "0.9.18", optional = true }
 hdrhistogram = { version = "7.5.4", optional = true, default-features = false, features = ["serialization"] }
 libc = { version = "0.2.176", optional = true }
 proptest = { version = "1.9.0", optional = true }
 ribbit = { version = "0.2.1", features = ["atomic-u128"] }
 seize = { version = "0.5.1", optional = true }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
-
-# https://github.com/kaist-cp/smr-benchmark/blob/00b4e4d06d9b91f289b4644163f0cac0660d4af7/Cargo.toml#L42-L45
-[dependencies.crossbeam-epoch]
-git = "https://github.com/nwtnni/crossbeam.git"
-branch = "smr-benchmark"
-# version = "0.9.18"
-# optional = true
 
 [dev-dependencies]
 criterion = { version = "0.8.2", default-features = false }
