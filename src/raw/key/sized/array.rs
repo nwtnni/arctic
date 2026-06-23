@@ -8,7 +8,7 @@ use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
-use crate::raw::key::r#unsized;
+use crate::raw::key::boxed_slice;
 
 impl<const N: usize> Key for [u8; N] {
     type Read<'k> = Reader<'k, N>;
@@ -57,29 +57,34 @@ impl<const N: usize> key::Split for [u8; N] {
         }
 
         let (last, slice) = key.split_last().expect("Non-empty");
-        (
-            Reader(r#unsized::boxed_slice::Reader::new_prefix(slice)),
-            *last,
-        )
+        (Reader(boxed_slice::Reader::new_prefix(slice)), *last)
     }
 }
 
-impl<'k, const N: usize> From<&'k [u8; N]> for Reader<'k, N> {
+impl<'k, const N: usize> From<&'k [u8]> for Reader<'k, N> {
     #[inline]
-    fn from(array: &'k [u8; N]) -> Self {
-        Self(r#unsized::boxed_slice::Reader::new_prefix(array))
+    fn from(prefix: &'k [u8]) -> Self {
+        Reader(boxed_slice::Reader::from(prefix))
     }
 }
 
+impl<'k, const N: usize> From<&'k str> for Reader<'k, N> {
+    #[inline]
+    fn from(prefix: &'k str) -> Self {
+        Self::from(prefix.as_bytes())
+    }
+}
+
+impl<'k, const N: usize, const M: usize> From<&'k [u8; N]> for Reader<'k, M> {
+    #[inline]
+    fn from(prefix: &'k [u8; N]) -> Self {
+        Self::from(prefix.as_slice())
+    }
+}
+
+#[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Reader<'k, const N: usize>(pub(crate) r#unsized::boxed_slice::Reader<'k, ()>);
-
-impl<'k, const N: usize> Reader<'k, N> {
-    #[inline]
-    pub fn new_prefix(prefix: &'k [u8]) -> Self {
-        Self(r#unsized::boxed_slice::Reader::new_prefix(prefix))
-    }
-}
+pub struct Reader<'k, const N: usize>(pub(crate) boxed_slice::Reader<'k, ()>);
 
 impl<'k, const N: usize> key::Read for Reader<'k, N> {
     const LEN: Option<Self::Len> = Some(Byte(N));

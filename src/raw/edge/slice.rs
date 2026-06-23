@@ -6,7 +6,7 @@ use ribbit::u48;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
-use crate::raw::key::r#unsized::Terminate;
+use crate::raw::key::Terminate;
 
 #[derive(Copy, Clone, Debug, ribbit::Pack)]
 #[ribbit(size = 64, derive(Debug))]

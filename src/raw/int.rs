@@ -19,6 +19,8 @@ pub trait Int:
     const MAX: Self;
     const BITS: u8;
 
+    fn from_be_bytes(bytes: &[u8]) -> Self;
+
     fn with_be_bytes<F: FnOnce(&[u8]) -> T, T>(self, apply: F) -> T;
 
     fn most_significant_u64(self) -> u64;
@@ -46,6 +48,11 @@ macro_rules! impl_int {
             impl Int for $ty {
                 const MAX: Self = <$ty>::MAX;
                 const BITS: u8 = <$ty>::BITS as u8;
+
+                #[inline]
+                fn from_be_bytes(bytes: &[u8]) -> Self {
+                    Self::from_be_bytes(core::array::from_fn(|i| bytes.get(i).copied().unwrap_or(0)))
+                }
 
                 #[inline]
                 fn with_be_bytes<F: FnOnce(&[u8]) -> T, T>(self, apply: F) -> T {

@@ -5,11 +5,8 @@ use core::fmt::Debug;
 use core::fmt::Display;
 use core::hash::Hash;
 
-pub mod boxed_slice;
-pub mod slice;
-
-pub use boxed_slice::BoxedSlice;
-pub use slice::Slice;
+pub(crate) mod boxed_slice;
+pub(crate) mod slice;
 
 /// An invariant of `[u8]` that is sufficient to guarantee the
 /// prefix property (no key is a prefix of another key).

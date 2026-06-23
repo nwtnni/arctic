@@ -79,6 +79,30 @@ macro_rules! impl_key {
                     Self::from(*value)
                 }
             }
+
+            impl<'k> From<&'k [u8]> for Reader<$ty> {
+                #[inline]
+                fn from(prefix: &'k [u8]) -> Self {
+                    Self {
+                        buffer: Int::from_be_bytes(prefix),
+                        len: Bit(((prefix.len() << 3) as u8).min(<$ty as Int>::BITS)),
+                    }
+                }
+            }
+
+            impl<'k> From<&'k str> for Reader<$ty> {
+                #[inline]
+                fn from(prefix: &'k str) -> Self {
+                    Self::from(prefix.as_bytes())
+                }
+            }
+
+            impl<'k, const N: usize> From<&'k [u8; N]> for Reader<$ty> {
+                #[inline]
+                fn from(prefix: &'k [u8; N]) -> Self {
+                    Self::from(prefix.as_slice())
+                }
+            }
         )*
     };
 }
@@ -88,37 +112,15 @@ impl_key!(u16, u32, u128);
 #[cfg(not(feature = "opt-no-int"))]
 impl_key!(u64);
 
-/// Key reader that can represent byte prefixes of integers.
-// NOTE: `buffer` is allowed to contain arbitrary bytes beyond
-// the most significant `len` bytes, but must clear them to
-// zero when (a) creating an edge to insert into the tree,
-// or (b) when creating a writer.
+#[doc(hidden)]
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Reader<I> {
+    // NOTE: `buffer` is allowed to contain arbitrary bytes beyond
+    // the most significant `len` bytes, but must clear them to
+    // zero when (a) creating an edge to insert into the tree,
+    // or (b) when creating a writer.
     pub(crate) buffer: I,
     len: Bit,
-}
-
-impl<I: Int> Reader<I> {
-    /// Construct a `Reader` representing the `bytes` most significant bytes
-    /// of `buffer`, for use in scan operations.
-    ///
-    /// Clamps `bytes` to the size of `I`, and then ignores bytes after the
-    /// `bytes` most significant.
-    #[inline]
-    pub const fn new_prefix(buffer: I, bytes: u8) -> Self {
-        // `Ord` is not `const`, so can't use `min`
-        let bytes = if bytes < I::BITS >> 3 {
-            bytes
-        } else {
-            I::BITS >> 3
-        };
-
-        Self {
-            buffer,
-            len: Bit(bytes << 3),
-        }
-    }
 }
 
 impl<I: Int> key::Read for Reader<I> {

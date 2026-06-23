@@ -1,5 +1,5 @@
 //! Support for fixed size keys.
 
-pub mod array;
-pub mod int;
-pub mod slow;
+pub(crate) mod array;
+pub(crate) mod int;
+mod slow;

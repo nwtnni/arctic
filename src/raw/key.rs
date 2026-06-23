@@ -1,19 +1,44 @@
-//! Types that implement the [`Key`] trait.
+//! Abstraction over various key types.
+//!
+//! Unlike comparison-based maps like [`BTreeMap`][std::collections::BTreeMap],
+//! which accept keys implementing [`PartialOrd`], or hash-based maps
+//! like [`HashMap`][std::collections::HashMap], which accept keys implementing
+//! [`Hash`][core::hash::Hash] and [`Eq`], the maps and sets in this crate are
+//! backed by a radix tree, which accepts keys represented by a sequence of bytes.
+//!
+//! We abstract over such keys with the [`Key`] trait. Our implementation additionally
+//! requires keys to satisfy the **prefix property**: no key is a prefix of another
+//! key[^1]. Fixed-size key types like integers (`u8`-`u128`) and arrays (`[u8; N]`)
+//! naturally satisfy the prefix property, but dynamically-sized key types require
+//! additional infrastructure.
+//!
+//! We establish type safety by providing wrappers for `Box<[u8]>` ([`BoxedSlice`])
+//! and `[u8]` ([`Slice`]) that are parameterized by an [`Invariant`]: currently,
+//! this can be either [`NonNull`] or [`Terminated`], which is sufficient to
+//! guarantee the prefix property.
+//!
+//! [^1]: Internally, this prevents one key prefix from mapping to both a node and a value.
 
 mod discard;
 mod len;
-pub mod sized;
-pub mod r#unsized;
+mod sized;
+mod r#unsized;
 
 pub(crate) use discard::Discard;
 pub(crate) use len::Bit;
 pub(crate) use len::Byte;
 pub(crate) use len::Len;
+pub(crate) use sized::int;
+pub(crate) use r#unsized::Terminate;
+pub(crate) use r#unsized::boxed_slice;
+pub(crate) use r#unsized::slice;
 
-pub use r#unsized::BoxedSlice;
+pub use r#unsized::Invariant;
 pub use r#unsized::NonNull;
-pub use r#unsized::Slice;
 pub use r#unsized::Terminated;
+pub use r#unsized::boxed_slice::BoxedSlice;
+pub use r#unsized::slice::Slice;
+
 /// Convenience type alias for a [`Slice`] that is backed by a [`str`].
 pub type Str<I> = Slice<I, str>;
 /// Convenience type alias for a [`BoxedSlice`] that is backed by a [`str`].
@@ -29,8 +54,8 @@ use crate::raw::edge::Meta as _;
 /// Byte sequence that can be stored in an adaptive radix tree.
 ///
 /// Must satisfy the prefix property: no key is a prefix of any
-/// other key. Fixed-size keys (in [`sized`] module) trivially
-/// satisfy this property, but dynamically sized keys (in [`unsized`] module)
+/// other key. Fixed-size keys (e.g., [`u64`], `[u8; N]`) trivially
+/// satisfy this property, but dynamically sized keys (slices, boxed slices)
 /// require some additional [`Invariant`][unsized::Invariant]s.
 ///
 /// The following table depicts the most relevant key properties

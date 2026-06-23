@@ -162,6 +162,7 @@ where
     }
 }
 
+/// Byte prefix of [`Slice`].
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reader<'k, T>(pub(crate) r#unsized::boxed_slice::Reader<'k, T>);
 
@@ -176,7 +177,34 @@ where
     }
 }
 
+impl<'k, T: Terminate> From<&'k [u8]> for Reader<'k, T> {
+    #[inline]
+    fn from(prefix: &'k [u8]) -> Self {
+        Self(r#unsized::boxed_slice::Reader::from(prefix))
+    }
+}
+
+impl<'k, T: Terminate> From<&'k str> for Reader<'k, T> {
+    #[inline]
+    fn from(prefix: &'k str) -> Self {
+        Self::from(prefix.as_bytes())
+    }
+}
+
+impl<'k, const N: usize, T: Terminate> From<&'k [u8; N]> for Reader<'k, T> {
+    #[inline]
+    fn from(prefix: &'k [u8; N]) -> Self {
+        Self::from(prefix.as_slice())
+    }
+}
+
 impl<'k, T: Default> Reader<'k, T> {
+    /// Construct a new byte prefix, for use in prefix operations
+    /// (e.g., [`concurrent::Map::prefix`][crate::concurrent::Map::prefix]).
+    ///
+    /// Note that `prefix` can contain arbitrary bytes: it does not
+    /// need to satisfy the invariants of [`Slice`], nor does
+    /// it need to contain valid UTF-8 for [`Str`][crate::raw::key::Str].
     #[inline]
     pub fn new_prefix(prefix: &'k [u8]) -> Self {
         Self(r#unsized::boxed_slice::Reader::new_prefix(prefix))

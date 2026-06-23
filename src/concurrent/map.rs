@@ -473,7 +473,6 @@ where
     /// use arctic::key::BoxedStr;
     /// use arctic::key::NonNull;
     /// use arctic::key::Str;
-    /// use arctic::key::r#unsized::boxed_slice::Reader;
     ///
     /// let map = concurrent::Map::<BoxedStr<NonNull>, Box<u64>>::default();
     ///
@@ -485,11 +484,18 @@ where
     /// }
     ///
     /// // Get all key value pairs where key starts with prefix
-    /// let prefix = map.prefix(Reader::new_prefix(b"prefix"));
+    /// //
+    /// // Need a temporary binding here since lifetimes of references
+    /// // returned from iterators is tied to this shard
+    /// //
+    /// // Note: prefix does not need to satisfy any particular invariants;
+    /// // can be invalid UTF-8 or contain null or terminator bytes
+    /// let prefix = map.prefix("prefix");
     ///
     /// let entries: concurrent::EntryIter<_, _, _, _, _> = prefix.entries::<arctic::Ascend>();
     ///
-    /// // WARNING: using `entries` as `Iterator` requires cloning keys
+    /// // WARNING: using `entries` as `Iterator` requires cloning keys,
+    /// // which is expensive here due to BoxedStr keys
     /// assert_eq!(entries.count(), 2);
     ///
     /// // Can use lending iterator API to avoid cloning

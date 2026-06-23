@@ -167,6 +167,27 @@ where
     }
 }
 
+impl<'k, T: Terminate> From<&'k [u8]> for Reader<'k, T> {
+    #[inline]
+    fn from(prefix: &'k [u8]) -> Self {
+        Reader::new_prefix(prefix)
+    }
+}
+
+impl<'k, T: Terminate> From<&'k str> for Reader<'k, T> {
+    #[inline]
+    fn from(prefix: &'k str) -> Self {
+        Self::from(prefix.as_bytes())
+    }
+}
+
+impl<'k, const N: usize, T: Terminate> From<&'k [u8; N]> for Reader<'k, T> {
+    #[inline]
+    fn from(prefix: &'k [u8; N]) -> Self {
+        Self::from(prefix.as_slice())
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k, T> {
     pub(crate) slice: &'k [u8],
@@ -174,11 +195,8 @@ pub struct Reader<'k, T> {
 }
 
 impl<'k, T: Default> Reader<'k, T> {
-    /// Construct a [`Reader`] representing `prefix`, for use in scan operations.
-    ///
-    /// Note that `prefix` does not need to satisfy any particular properties.
     #[inline]
-    pub fn new_prefix(prefix: &'k [u8]) -> Self {
+    pub(crate) fn new_prefix(prefix: &'k [u8]) -> Self {
         Self {
             slice: prefix,
             terminate: T::default(),
