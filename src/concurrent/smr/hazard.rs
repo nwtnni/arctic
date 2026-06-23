@@ -23,6 +23,15 @@ struct Cache<T>(T);
 
 /// Hazard key backend for safe memory reclamation.
 ///
+/// <div class="warning">
+///
+/// **This backend currently has the following limitations**:
+/// - Only one hazard can be installed at a time per thread, so calling `get`
+///   while holding a reference from a previous `get`, for example, will panic.
+/// - Only supports up to 256 threads.
+///
+/// </div>
+///
 /// Hazard keys are a new SMR scheme that use an operation's key to
 /// approximate a set of [hazard pointers](https://en.wikipedia.org/wiki/Hazard_pointer).
 ///
