@@ -120,7 +120,7 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
             })
             .with_value(child.value())
             .with_frozen(child.frozen())
-            .with_terminate(child.terminate()),
+            .with_terminate(T::new(len_byte == 0 || child.terminate().get())),
         )
     }
 

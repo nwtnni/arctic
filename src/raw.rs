@@ -33,9 +33,6 @@ pub(crate) use map::Map;
 pub(crate) use set::Set;
 pub(crate) use shard::Shard;
 
-#[derive(Debug)]
-pub(crate) struct Frozen;
-
 /// Structural modification operation.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Smo {

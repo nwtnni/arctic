@@ -286,11 +286,14 @@ impl Ptr {
         let len = keys.len();
         let len = if grow { len + 1 } else { len };
 
-        if len < 4 {
+        // NOTE: leave room for at least one insert, in the
+        // case where a full node header with some null children
+        // is replaced and subsequently appended to.
+        if len < 3 {
             Self::new(unsafe { Node3::new_unchecked(keys, edges) })
-        } else if len < 16 {
+        } else if len < 14 {
             Self::new(unsafe { Node15::new_unchecked(keys, edges) })
-        } else if len < 48 {
+        } else if len < 47 {
             Self::new(unsafe { Node47::new_unchecked(keys, edges) })
         } else {
             Self::new(unsafe { Node256::new_unchecked(keys, edges) })

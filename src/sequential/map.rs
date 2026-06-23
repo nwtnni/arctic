@@ -9,7 +9,6 @@ use crate::Ascend;
 use crate::raw;
 use crate::raw::Cursor;
 use crate::raw::Edge;
-use crate::raw::Frozen;
 use crate::raw::Key;
 use crate::raw::cursor;
 use crate::raw::cursor::path;
@@ -436,7 +435,7 @@ where
         }
 
         while let Ok(Some(target)) = cursor.pop() {
-            if unsafe { target.len::<K::Edge>() } > 0 {
+            if unsafe { target.len::<K::Edge>() } > 1 {
                 break;
             }
 
@@ -633,9 +632,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
         if self.replace {
             let old = unsafe { *self.cursor.edge_mut().get_mut_packed() };
             let old_node = old.as_node().expect("Replace implies node");
-            let (smo, new) = unsafe { old_node.replace(old.meta()) };
-            // No concurrent operations, so must be node replacement with larger node
-            validate_eq!(smo, crate::raw::Smo::ReplaceNode);
+            let (_smo, new) = unsafe { old_node.replace(old.meta()) };
             *unsafe { self.cursor.edge_mut() }.get_mut_packed() = new;
             stat::increment(stat::Counter::FreeRetire);
             unsafe { old_node.deallocate() };
@@ -650,22 +647,20 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
             crate::raw::cursor::Insert::Value {
                 value: None,
                 edge: old,
-            } => match self.cursor.create_path(old, new_value) {
-                Err(Frozen) => unreachable!(),
-                Ok((head, tail)) => unsafe {
-                    *self.cursor.edge_mut().get_mut_packed() = head;
+            } => {
+                let (head, tail) = self.cursor.create_path(old, new_value);
+                *unsafe { self.cursor.edge_mut() }.get_mut_packed() = head;
 
-                    let value = match tail {
-                        None => self.cursor.as_value_unchecked(),
-                        Some(tail) => Edge::as_value_unchecked(tail),
-                    };
+                let value = match tail {
+                    None => unsafe { self.cursor.as_value_unchecked() },
+                    Some(tail) => unsafe { Edge::as_value_unchecked(tail) },
+                };
 
-                    Occupied {
-                        value: value.cast::<V>(),
-                        _value: PhantomData,
-                    }
-                },
-            },
+                Occupied {
+                    value: value.cast::<V>(),
+                    _value: PhantomData,
+                }
+            }
         }
     }
 }

@@ -6,7 +6,6 @@ use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use crate::raw::Edge;
-use crate::raw::Frozen;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
@@ -240,40 +239,33 @@ where
         &self,
         old: ribbit::Packed<Edge<R::Edge>>,
         value: u64,
-    ) -> Result<
-        (
-            ribbit::Packed<Edge<R::Edge>>,
-            Option<NonNull<Atomic<Edge<R::Edge>>>>,
-        ),
-        Frozen,
-    > {
+    ) -> (
+        ribbit::Packed<Edge<R::Edge>>,
+        Option<NonNull<Atomic<Edge<R::Edge>>>>,
+    ) {
         let meta = old.meta();
-        if meta.is_frozen() {
-            return Err(Frozen);
-        }
-
         let len = self.reader.match_prefix(meta).into();
 
-        let new = match meta.try_expand(len) {
+        match meta.try_expand(len) {
             None => Edge::new_path(self.reader, value),
             Some((parent, old_byte, old_child)) => {
                 let new_byte = unsafe { self.reader.get_byte_unchecked(len) };
-                let (new_child, _) =
+                let (new_child, tail_path) =
                     Edge::new_path(self.reader.suffix(R::Len::BYTE + len.into()), value);
 
                 // NOTE: must put new allocation first because
                 // `deallocate_recursive` recurses on first edge
-                let (head, tail) = Node3::new_expand(
+                let (head, tail_expand) = Node3::new_expand(
                     parent,
                     [new_byte, old_byte],
                     [new_child, old.with_meta(old_child)],
                 );
 
-                (head, Some(tail))
+                // If `tail_path` has stable address, use it, otherwise
+                // use address of first `Node3` edge
+                (head, Some(tail_path.unwrap_or(tail_expand)))
             }
-        };
-
-        Ok(new)
+        }
     }
 
     /// Freeze and replace the node containing `self.edge`.

@@ -13,7 +13,6 @@ use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
 use crate::concurrent::value;
 use crate::raw::Edge;
-use crate::raw::Frozen;
 use crate::raw::cursor;
 use crate::raw::cursor::Path;
 use crate::raw::cursor::path;
@@ -1033,11 +1032,12 @@ where
                         }
                     };
 
-                    match cursor.create_path(old, new_value) {
+                    if old.meta().is_frozen() {
                         // Restore value and fall through to freeze
-                        Err(Frozen) => initial = Some(unsafe { V::from_raw_unchecked(new_value) }),
-
-                        Ok((new, _)) => match cursor.edge().compare_exchange_packed(
+                        initial = Some(unsafe { V::from_raw_unchecked(new_value) });
+                    } else {
+                        let (new, _) = cursor.create_path(old, new_value);
+                        match cursor.edge().compare_exchange_packed(
                             old,
                             new,
                             Ordering::AcqRel,
@@ -1059,7 +1059,7 @@ where
                                 initial = Some(unsafe { V::from_raw_unchecked(new_value) });
                                 continue;
                             }
-                        },
+                        }
                     }
                 }
                 cursor::Insert::Replace {
@@ -1278,7 +1278,7 @@ where
                 .pop()
                 .unwrap_or_else(|_| panic!("Recursive remove requires path"))
             {
-                if unsafe { target.len::<K::Edge>() } > 0 {
+                if unsafe { target.len::<K::Edge>() } > 1 {
                     break 'outer;
                 }
 
