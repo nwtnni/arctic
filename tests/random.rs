@@ -241,6 +241,7 @@ mod boxed_str_terminated {
 mod slice_non_null {
     use arctic::Key;
     use arctic::key;
+    use arctic::key::BoxedSlice;
     use arctic::key::NonNull;
     use rand::SeedableRng as _;
     use rand::distr::Distribution as _;
@@ -249,7 +250,7 @@ mod slice_non_null {
     use super::Workload;
     use super::test_map;
 
-    struct Slice(Vec<Vec<u8>>);
+    struct Slice(Vec<BoxedSlice<NonNull>>);
 
     #[test]
     fn many() {
@@ -276,7 +277,7 @@ mod slice_non_null {
             for _ in 0..key_count {
                 let len = dist_len.sample(&mut rng);
                 let inner = dist_char.sample_string(&mut rng, len);
-                outer.push(inner.into_bytes());
+                outer.push(key::BoxedSlice::new(inner.into_bytes()).unwrap());
             }
             Self(outer)
         }
@@ -287,7 +288,7 @@ mod slice_non_null {
         type Value = u64;
 
         fn key(&self, index: usize) -> Self::Key<'_> {
-            key::Slice::new(self.0[index].as_slice()).unwrap()
+            self.0[index].as_slice()
         }
 
         fn value(&self, index: usize) -> Self::Value {
