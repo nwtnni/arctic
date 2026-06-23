@@ -47,6 +47,21 @@ impl crate::raw::Key for u64 {
     }
 }
 
+#[cfg(feature = "opt-no-int")]
+impl crate::key::Split for u64 {
+    #[inline]
+    fn split_last<'k>(key: &'k Self::Borrowed) -> (Self::Read<'k>, u8) {
+        let reader = Reader::from(key);
+        (
+            Reader {
+                buffer: reader.buffer,
+                len: Byte(7),
+            },
+            reader.buffer[7],
+        )
+    }
+}
+
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reader {
     pub(crate) buffer: [u8; 8],
