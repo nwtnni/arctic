@@ -165,9 +165,8 @@ where
     /// Traverse to the edge associated with the key.
     ///
     /// Returns `None` if there is no such edge,
-    /// `Some(Err(Frozen))` if this edge is frozen,
-    /// or `Some(Ok(updated))` otherwise.
-    pub(crate) fn traverse_update(&mut self) -> Option<Result<Update<R::Edge>, Frozen>> {
+    /// or `Some(update)` otherwise.
+    pub(crate) fn traverse_update(&mut self) -> Option<Update<R::Edge>> {
         loop {
             let edge = self.edge().load_packed(Ordering::Acquire);
             let len = self.reader.match_exact(edge.meta())?;
@@ -185,13 +184,7 @@ where
                     // Prefix precondition implies search key must match
                     validate!(self.reader.len() == len.into());
 
-                    return Some({
-                        if edge.meta().is_frozen() {
-                            Err(Frozen)
-                        } else {
-                            Ok(Update { value, edge })
-                        }
-                    });
+                    return Some(Update { value, edge });
                 }
             }
         }

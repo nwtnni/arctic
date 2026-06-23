@@ -3,6 +3,7 @@
 use core::marker::PhantomData;
 use core::ops::RangeFull;
 use core::ptr::NonNull;
+use core::sync::atomic::Ordering;
 
 use crate::Ascend;
 use crate::raw;
@@ -10,6 +11,7 @@ use crate::raw::Cursor;
 use crate::raw::Edge;
 use crate::raw::Frozen;
 use crate::raw::Key;
+use crate::raw::cursor;
 use crate::raw::cursor::path;
 use crate::raw::edge;
 use crate::sequential::EntryIter;
@@ -270,6 +272,60 @@ where
         }
     }
 
+    /// If there is a value associated with `key`, remove it from the map,
+    /// recursively removing empty tree nodes.
+    ///
+    /// This method is slow because it must keep a traversal stack, and scan and
+    /// delete empty nodes. See [`Map::remove_non_recursive`] for a faster,
+    /// but potentially memory-intensive alternative.
+    ///
+    /// Returns `Some(old_value)` if the remove succeeded, or else `None` if
+    /// there was no old value associated with `key`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::sequential::Map;
+    ///
+    /// let mut map = Map::<u16, u64>::new();
+    /// let key = 100;
+    ///
+    /// // Key not present, remove fails
+    /// assert!(map.remove(&key).is_none());
+    ///
+    /// map.insert(key, 7);
+    ///
+    /// // Key present, remove succeeds
+    /// assert_eq!(map.remove(&key), Some(7));
+    ///
+    /// // Key no longer present
+    /// assert!(map.get(&key).is_none());
+    /// ```
+    pub fn remove(&mut self, key: &K::Borrowed) -> Option<V> {
+        self.remove_impl::<path::Retain<_>>(K::Read::from(key))
+    }
+
+    /// If there is a value associated with `key`, remove it from the map,
+    /// **without** recursively removing empty tree nodes.
+    ///
+    /// <div class="warning">
+    ///
+    /// This method is much faster than [`Map::remove`], because no traversal
+    /// stack or node scanning and replacement is necessary; however, it means
+    /// the memory usage of the tree is no longer correlated with the number of
+    /// keys and values it contains.
+    ///
+    /// This method should only be used if removals are rare or removed keys
+    /// are expected to be reinserted.
+    //
+    /// </div>
+    ///
+    /// Returns `Some(old_value)` if the remove succeeded, or else `None` if
+    /// there was no old value associated with `key`.
+    pub fn remove_non_recursive(&mut self, key: &K::Borrowed) -> Option<V> {
+        self.remove_impl::<path::Discard>(K::Read::from(key))
+    }
+
     /// Get a logical entry associated with `key` (see also [`std::collections::BTreeMap::entry`]).
     ///
     /// This is a lazy operation, and does not allocate or modify the tree structure.
@@ -363,6 +419,36 @@ where
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
         cursor.traverse_get()?;
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_ref() })
+    }
+
+    pub(super) fn remove_impl<'k, P: cursor::Path<K::Read<'k>>>(
+        &mut self,
+        reader: K::Read<'k>,
+    ) -> Option<V> {
+        let mut cursor = unsafe { self.raw.cursor::<path::Retain<_>>(reader) };
+
+        let update = cursor.traverse_update()?;
+
+        unsafe {
+            cursor
+                .edge_mut()
+                .store_packed(Edge::<K::Edge>::NULL, Ordering::Relaxed);
+        }
+
+        while let Ok(Some(target)) = cursor.pop() {
+            if unsafe { target.len::<K::Edge>() } > 0 {
+                break;
+            }
+
+            let old = unsafe { cursor.edge_mut() }.get_mut_packed();
+            validate_eq!(old.child(), Some(edge::Child::Node(target)));
+
+            let (_smo, new) = unsafe { target.replace::<K::Edge>(old.meta()) };
+            *unsafe { cursor.edge_mut() }.get_mut_packed() = new;
+            unsafe { target.deallocate() };
+        }
+
+        Some(unsafe { V::from_raw_unchecked(update.value) })
     }
 
     #[inline]

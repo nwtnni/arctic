@@ -298,7 +298,7 @@ impl Len for u6 {
 }
 
 /// Non-null child of an edge.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Child {
     Node(ribbit::Packed<node::Ptr>),
     Value(u64),
