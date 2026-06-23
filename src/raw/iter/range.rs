@@ -23,6 +23,7 @@ use crate::sync::Atomic;
 pub(crate) enum RangeIter<'g, K: key::Read, W: key::Write<K>, R: Range<K>, O> {
     Root {
         writer: W,
+        #[expect(clippy::type_complexity)]
         next: Option<(u64, NonNull<Atomic<Edge<K::Edge>>>)>,
     },
     Node(NodeIter<'g, K, W, R, O>),
@@ -114,6 +115,7 @@ where
     }
 
     #[inline]
+    #[expect(clippy::type_complexity)]
     pub(crate) fn lend(&mut self) -> Option<(&W, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
         match self {
             RangeIter::Root { writer, next } => {
@@ -136,6 +138,7 @@ where
     lower: R::Lower,
     upper: R::Upper,
     writer: W,
+    #[expect(clippy::type_complexity)]
     stack: Vec<(
         W::Len,
         <R::Lower as Lower<K::Edge>>::Bound,
@@ -153,6 +156,7 @@ where
     O: Order,
 {
     #[inline]
+    #[expect(clippy::type_complexity)]
     fn lend(&mut self) -> Option<(&W, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
         self.walk::<true, _>(|(_, _, _)| unreachable!())
     }
@@ -165,6 +169,7 @@ where
         self.walk::<false, _>(apply);
     }
 
+    #[expect(clippy::type_complexity)]
     fn walk<
         const YIELD: bool,
         F: FnMut((&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>,

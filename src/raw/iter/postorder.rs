@@ -24,7 +24,10 @@ where
             stack: vec![RepeatIter::new(unsafe {
                 node::EntryIter::new(
                     node::KeyIter::ROOT,
-                    core::slice::from_ref(core::mem::transmute(root)),
+                    core::slice::from_ref(core::mem::transmute::<
+                        &'g Atomic<Edge<M>>,
+                        &'g Atomic<edge::Raw>,
+                    >(root)),
                 )
             })],
         }

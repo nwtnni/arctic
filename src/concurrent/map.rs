@@ -603,6 +603,7 @@ where
     ///     },
     /// }
     /// ```
+    #[expect(clippy::type_complexity)]
     pub fn insert_with<'g, 'k, F>(
         &'g self,
         key: K::Insert<'k>,

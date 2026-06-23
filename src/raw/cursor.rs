@@ -242,6 +242,7 @@ where
     /// Locally create a path from the current edge
     /// to insert this key value pair. May create nodes recursively if
     /// the remaining key is long.
+    #[expect(clippy::type_complexity)]
     pub(crate) fn create_path(
         &self,
         old: ribbit::Packed<Edge<R::Edge>>,

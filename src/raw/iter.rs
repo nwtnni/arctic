@@ -26,6 +26,7 @@ where
     O: Order,
 {
     #[inline]
+    #[expect(clippy::type_complexity)]
     pub(crate) fn lend(&mut self) -> Option<(K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
         self.0
             .lend()
@@ -57,6 +58,7 @@ where
     O: Order,
 {
     #[inline]
+    #[expect(clippy::type_complexity)]
     pub(crate) fn lend(&mut self) -> Option<(u64, NonNull<Atomic<Edge<K::Edge>>>)> {
         self.0.lend().map(|(_, value, edge)| (value, edge))
     }

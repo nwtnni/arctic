@@ -284,6 +284,7 @@ impl Histogram {
     }
 }
 
+#[cfg_attr(not(feature = "stat"), expect(clippy::derivable_impls))]
 impl Default for Histogram {
     fn default() -> Self {
         Self {

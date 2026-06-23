@@ -114,6 +114,7 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
     /// re-traversing the new path. (The concurrent map never
     /// returns direct pointers.)
     #[inline]
+    #[expect(clippy::type_complexity)]
     pub(crate) fn new_path<R>(
         mut reader: R,
         value: u64,
