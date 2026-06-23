@@ -6,9 +6,13 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 use std::ffi::CString;
 
+#[cfg(feature = "proptest")]
+use proptest::prelude::Strategy;
 use ribbit::u6;
 
 use crate::Key;
+#[cfg(feature = "proptest")]
+use crate::key::Invariant;
 use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -38,6 +42,18 @@ where
         Self {
             invariant: PhantomData,
             raw: self.raw.clone(),
+        }
+    }
+}
+
+impl<I, R: ?Sized> Default for BoxedSlice<I, R>
+where
+    Box<R>: Default,
+{
+    fn default() -> Self {
+        Self {
+            invariant: PhantomData,
+            raw: Default::default(),
         }
     }
 }
@@ -108,6 +124,25 @@ impl From<CString> for BoxedSlice<Terminated<0>, [u8]> {
     fn from(string: CString) -> Self {
         // SAFETY: `CString` is null terminated
         unsafe { Self::new_unchecked(string.into_bytes_with_nul().into_boxed_slice()) }
+    }
+}
+
+#[cfg(feature = "proptest")]
+impl<I, R> proptest::arbitrary::Arbitrary for BoxedSlice<I, R>
+where
+    I: Invariant,
+    R: ?Sized + r#unsized::slice::Raw + core::fmt::Debug,
+    Box<R>: proptest::arbitrary::Arbitrary,
+{
+    type Parameters = <Box<R> as proptest::arbitrary::Arbitrary>::Parameters;
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        <Box<R>>::arbitrary_with(args)
+            .prop_filter_map("Invariant violated", |boxed_slice| {
+                Self::new(boxed_slice).ok()
+            })
+            .boxed()
     }
 }
 

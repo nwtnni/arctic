@@ -15,6 +15,8 @@ use proptest_state_machine::ReferenceStateMachine;
 use proptest_state_machine::StateMachineTest;
 use proptest_state_machine::prop_state_machine;
 
+type NonNullString = arctic::key::BoxedStr<arctic::key::NonNull>;
+
 prop_state_machine! {
     #[test]
     fn u16_u64(
@@ -48,13 +50,13 @@ prop_state_machine! {
         Arctic<u128, u64>
     );
 
-    // #[test]
-    // fn string_u64(
-    //     sequential
-    //     1000
-    //     =>
-    //     Arctic<NonNullString, u64>
-    // );
+    #[test]
+    fn boxed_str_non_null_u64(
+        sequential
+        1000
+        =>
+        Arctic<NonNullString, u64>
+    );
 }
 
 #[derive(Clone, Debug)]
