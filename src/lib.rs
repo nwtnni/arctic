@@ -43,6 +43,43 @@
 //! - 128-bit atomic support required for good performance (currently using [portable-atomic](https://github.com/taiki-e/portable-atomic) crate)
 //! - SIMD acceleration is hand-written and currently restricted to AVX2
 //! - Theoretically supports big-endian targets, but untested
+//!
+//! # Correctness
+//!
+//! The research paper presents sketch proofs of linearizability and lock-freedom.
+//!
+//! More practically, we employ property testing (via [proptest](https://docs.rs/proptest/latest/proptest/))
+//! to test edges, node headers, and SIMD algorithms. The `state_machine` test suite uses
+//! [proptest-state-machine](https://proptest-rs.github.io/proptest/proptest/state-machine.html)
+//! to ensure [`concurrent::Map`] and [`sequential::Map`] match [BTreeMap][std::collections::BTreeMap]
+//! on arbitrary sequences of operations.
+//!
+//! The `random` test suite inserts and removes disjoint sets of keys on each thread.
+//! The `orthogonal` test suite is a WIP attempt to build a concurrent version of the
+//! `state_machine` test. There is some preliminary work on writing
+//! [shuttle](https://github.com/awslabs/shuttle)-based tests.
+//!
+//! The entire test suite can be run with `cargo test --release --features proptest,validate`.
+//!
+//! # Feature flags
+//!
+//! **Public features**.
+//! - `smr-hazard`, `smr-epoch`, and `smr-seize` enable their
+//!   respective safe memory reclamation ([`Smr`][crate::concurrent::Smr]) backends. At least
+//!   one SMR backend is required to use [`concurrent::Map`]; by
+//!   default, seize is enabled and used.
+//!
+//! **Development features**. These have no stability guarantees.
+//!
+//! - `validate` enables runtime checks of local invariants.
+//! - `stat` enables runtime statistic gathering.
+//! - `opt-no-*` disable optimizations for ablation measurements.
+//! - `opt-membarrier` enables [`membarrier`](https://man7.org/linux/man-pages/man2/membarrier.2.html)
+//!   for hazard key and seize SMR backends.
+//! - `shuttle` enables integration with the [shuttle](https://github.com/awslabs/shuttle)
+//!   concurrency testing runtime.
+//! - `proptest` enables integration with the [proptest](https://docs.rs/proptest/latest/proptest/)
+//!   property testing framework.
 
 macro_rules! const_assert_size_align {
     ($ty:ty, $size:expr, $align:expr) => {
