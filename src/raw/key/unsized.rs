@@ -30,7 +30,7 @@ pub unsafe trait Invariant:
     fn validate(key: &[u8]) -> Result<(), Self::Error>;
 }
 
-/// [`Invariant`] that this key does not contain any null bytes.
+/// [`Invariant`] ZST indicating this key does not contain any null bytes.
 ///
 /// Allows a null byte to be internally appended to each key,
 /// which guarantees the prefix property and does not change
@@ -66,7 +66,7 @@ unsafe impl Invariant for NonNull {
     }
 }
 
-/// [`Invariant`] that this key contains exactly one
+/// [`Invariant`] ZST indicating this key contains exactly one
 /// `TERMINATOR` byte at the end of the key.
 ///
 /// Implies the prefix property.

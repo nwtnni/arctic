@@ -17,10 +17,10 @@ use seize::Guard as _;
 /// # Examples
 ///
 /// ```rust
-/// use arctic::concurrent;
+/// use arctic::ConcurrentMap;
 /// use arctic::concurrent::smr::Seize;
 ///
-/// let map = concurrent::Map::<u64, Box<u64>, Seize>::with_smr(Seize::from(
+/// let map = ConcurrentMap::<u64, Box<u64>, Seize>::with_smr(Seize::from(
 ///     seize::Collector::new().batch_size(256)
 /// ));
 /// ```

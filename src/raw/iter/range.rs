@@ -9,7 +9,11 @@ use core::ops::RangeToInclusive;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
+#[cfg_attr(not(doc), expect(unused))]
+use crate::ConcurrentMap;
 use crate::Order;
+#[cfg_attr(not(doc), expect(unused))]
+use crate::SequentialMap;
 use crate::raw;
 use crate::raw::Edge;
 use crate::raw::edge;
@@ -298,7 +302,7 @@ impl<T> Debug for Unbound<T> {
 }
 
 /// Native range types (`..`, `lower..`, `..=upper`, `lower..=upper`) that can be passed as bounds to
-/// [`crate::sequential::Map::range`] and [`crate::concurrent::Map::range`].
+/// [`SequentialMap::range`] and [`ConcurrentMap::range`].
 ///
 /// Currently, only [`RangeFull`], [`RangeFrom`], [`RangeToInclusive`], and [`RangeInclusive`] are supported.
 /// [`Range`][std::ops::Range] (with an exclusive upper bound) is not supported.

@@ -1,10 +1,14 @@
-//! Auxiliary types for use with [`concurrent::Map`][crate::concurrent::Map].
+//! Auxiliary types for use with [`ConcurrentMap`][crate::concurrent::Map].
 
 use core::ops::ControlFlow;
 use core::ops::RangeFull;
 use core::sync::atomic::Ordering;
 
+#[cfg_attr(not(doc), expect(unused))]
+use crate::ConcurrentMap;
 use crate::Key;
+#[cfg_attr(not(doc), expect(unused))]
+use crate::SequentialMap;
 use crate::concurrent::Shard;
 use crate::concurrent::Smr;
 use crate::concurrent::Value;
@@ -41,16 +45,16 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 ///
 /// # Usage
 ///
-/// Refer to [`sequential::Map`] for an introduction.
-/// The [`Map`] API differs in three ways: concurrent operations,
+/// Refer to [`SequentialMap`] for an introduction.
+/// The [`ConcurrentMap`] API differs in three ways: concurrent operations,
 /// safe memory reclamation, and advanced point operations.
 ///
 /// ## Concurrent operations
 ///
-/// Unlike [`sequential::Map`], an instance of [`Map`] can be shared
+/// Unlike [`SequentialMap`], an instance of [`ConcurrentMap`] can be shared
 /// and modified concurrently across threads. Methods that usually require a mutable reference
-/// (e.g., [`sequential::Map::upsert`]) instead use atomics to synchronize internally,
-/// allowing them to take an immutable reference (e.g., [`Map::upsert`]).
+/// (e.g., [`SequentialMap::upsert`]) instead use atomics to synchronize internally,
+/// allowing them to take an immutable reference (e.g., [`ConcurrentMap::upsert`]).
 ///
 /// Note that scan operations are not linearizable. They do, however,
 /// satisfy weaker guarantees: (a) scans observe keys at most once, in order;
@@ -59,13 +63,13 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 ///
 /// ## Safe memory reclamation
 ///
-/// In order to provide wait-free reads, [`Map`] requires
+/// In order to provide wait-free reads, [`ConcurrentMap`] requires
 /// a safe memory reclamation (SMR) mechanism to detect when
 /// allocations are safe to free. This results in the following API changes:
 ///
 /// 1. Values are always returned behind guards. For example,
 ///    while a successful [`sequential::Map::update`] returns ownership of
-///    the old value, a successful [`Map::update`] instead returns an [`Updated`]
+///    the old value, a successful [`ConcurrentMap::update`] instead returns an [`Updated`]
 ///    guard that allows references to the old and new value.
 ///
 ///    The guard may have other restrictions depending on the SMR implementation:
@@ -74,8 +78,8 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 ///
 /// 2. Values behind guards are always read-only. This can be worked around by
 ///    either using a value type with internal synchronization (e.g., `Box<Mutex<T>>`),
-///    or by obtaining a mutable reference to [`Map`] and then using the
-///    sequential API via [`Map::as_sequential`].
+///    or by obtaining a mutable reference to [`ConcurrentMap`] and then using the
+///    sequential API via [`ConcurrentMap::as_sequential`].
 ///
 /// 3. Values distinguish between inline (e.g., integers) and indirect (e.g., `Box<T>`).
 ///    In short, we return [`Value::Borrowed`] instead of `&V`, because the memory location
@@ -86,13 +90,14 @@ pub type Upserted<'g, K, V, S> = value::Upserted<Guard<'g, K, V, S>, V>;
 ///
 /// Point operations can internally fail and retry under contention.
 /// We give the caller control over retries by providing variants of point
-/// operations (ending in suffix `_with`, e.g., [`Map::update_with`]) that
+/// operations (ending in suffix `_with`, e.g.,
+/// [`ConcurrentMap::update_with`]) that
 /// take a closure.
 ///
 /// This can be used to efficiently implement lazy value initialization,
 /// or synchronization logic where the next value is computed from the
 /// current value, and then atomically inserted or updated.
-pub struct Map<K: Key, V: Value, S = smr::Seize> {
+pub struct Map<K: Key, V: Value, S = smr::Default> {
     smr: S,
     seq: sequential::Map<K, V>,
 }
@@ -122,7 +127,7 @@ impl<K: Key, V: Value, S> Map<K, V, S> {
 
 /// # Basic operations
 impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
-    /// Get a mutable view as a [`sequential::Map`] for temporary access to a more
+    /// Get a mutable view as a [`SequentialMap`] for temporary access to a more
     /// efficient and flexible single-threaded API. For permanent access, use
     /// [`From`].
     ///
@@ -135,11 +140,11 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// use core::ops::ControlFlow;
     /// use std::thread;
     ///
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     /// use arctic::sequential;
     /// use arctic::concurrent::smr;
     ///
-    /// let mut map = concurrent::Map::<u32, u64>::default();
+    /// let mut map = ConcurrentMap::<u32, u64>::default();
     ///
     /// // Concurrently insert into map
     /// thread::scope(|scope| {
@@ -206,15 +211,16 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
 impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// Returns an immutable reference to the value associated with `key`.
     ///
-    /// For a mutable reference, see [`Map::as_sequential`] and [`sequential::Map::get_mut`].
+    /// For a mutable reference, see [`ConcurrentMap::as_sequential`] and
+    /// [`SequentialMap::get_mut`].
     /// There is no way to safely get a mutable reference to a value from an immutable [`Map`].
     ///
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     ///
-    /// let map = concurrent::Map::<u64, u64>::default();
+    /// let map = ConcurrentMap::<u64, u64>::default();
     /// let key = 64;
     ///
     /// assert!(map.get(&key).is_none());
@@ -248,16 +254,16 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// or else `Err((&old_value, new_value))` if there is an existing
     /// `old_value` associated with the key.
     ///
-    /// See [`Map::insert_with`] for dynamic control flow and value construction.
+    /// See [`ConcurrentMap::insert_with`] for dynamic control flow and value construction.
     ///
     /// # Examples
     ///
     /// ```rust
     /// use arctic::key::Str;
     /// use arctic::key::NonNull;
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     ///
-    /// let map = concurrent::Map::<&'static Str<NonNull>, u64>::default();
+    /// let map = ConcurrentMap::<&'static Str<NonNull>, u64>::default();
     /// let key = Str::new("korlex").expect("No null byte");
     ///
     /// // Key is not present, insert succeeds
@@ -298,7 +304,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// Returns an [`Upserted`] guard that provides immutable references
     /// to the (optional) old value and the newly updated (or inserted) value.
     ///
-    /// See [`Map::upsert_with`] for dynamic control flow and value construction.
+    /// See [`ConcurrentMap::upsert_with`] for dynamic control flow and value construction.
     ///
     /// # Examples
     ///
@@ -306,9 +312,9 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// use arctic::key::BoxedStr;
     /// use arctic::key::Terminated;
     /// use arctic::key::Str;
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     ///
-    /// let map = concurrent::Map::<BoxedStr<Terminated<b'\n'>>, u64>::default();
+    /// let map = ConcurrentMap::<BoxedStr<Terminated<b'\n'>>, u64>::default();
     /// let key = Str::new("arqad\n").expect("Newline terminated");
     ///
     /// // Key is not present, upsert performs insert
@@ -335,14 +341,14 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// Returns `Ok((&old_value, &new_value))` if the update succeeded,
     /// or else `Err(new_value)` if there was no old value associated with `key`.
     ///
-    /// See [`Map::update_with`] for dynamic control flow and value construction.
+    /// See [`ConcurrentMap::update_with`] for dynamic control flow and value construction.
     ///
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     ///
-    /// let map = concurrent::Map::<u32, Box<u64>>::default();
+    /// let map = ConcurrentMap::<u32, Box<u64>>::default();
     ///
     /// match map.update(&37, Box::new(5)) {
     ///     Err(new) => assert_eq!(*new, 5),
@@ -376,20 +382,20 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// recursively removing empty tree nodes.
     ///
     /// This method is slow because it must keep a traversal stack, and scan and
-    /// delete empty nodes. See [`Map::remove_non_recursive`] for a faster,
-    /// but potentially memory-intensive alternative.
+    /// delete empty nodes. See [`ConcurrentMap::remove_non_recursive`]
+    /// for a faster, but potentially memory-intensive alternative.
     ///
     /// Returns `Some(&old_value)` if the remove succeeded, or else `None` if
     /// there was no old value associated with `key`.
     ///
-    /// See [`Map::remove_with`] for dynamic control flow.
+    /// See [`ConcurrentMap::remove_with`] for dynamic control flow.
     ///
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     ///
-    /// let map = concurrent::Map::<u128, u64>::default();
+    /// let map = ConcurrentMap::<u128, u64>::default();
     /// let key = 0xabc;
     ///
     /// assert!(map.remove(&key).is_none());
@@ -412,7 +418,8 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     ///
     /// <div class="warning">
     ///
-    /// This method is much faster than [`Map::remove`], because no traversal
+    /// This method is much faster than [`ConcurrentMap::remove`],
+    /// because no traversal
     /// stack or node scanning and replacement is necessary; however, it means
     /// the memory usage of the tree is no longer correlated with the number of
     /// keys and values it contains.
@@ -425,7 +432,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// Returns `Some(&old_value)` if the remove succeeded, or else `None` if
     /// there was no old value associated with `key`.
     ///
-    /// See [`Map::remove_non_recursive_with`] for dynamic control flow.
+    /// See [`ConcurrentMap::remove_non_recursive_with`] for dynamic control flow.
     pub fn remove_non_recursive(&self, key: &K::Borrowed) -> Option<Owned<'_, K, V, S>> {
         match self.remove_non_recursive_with(key, |_| ControlFlow::Continue(())) {
             Remove::Absent => None,
@@ -450,9 +457,9 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     ///
-    /// let map = concurrent::Map::<u64, u64>::default();
+    /// let map = ConcurrentMap::<u64, u64>::default();
     /// map.insert(1, 2).expect("Key not present");
     /// map.insert(3, 4).expect("Key not present");
     ///
@@ -469,11 +476,12 @@ where
     ///
     /// ```rust
     /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     /// use arctic::key::BoxedStr;
     /// use arctic::key::NonNull;
     /// use arctic::key::Str;
     ///
-    /// let map = concurrent::Map::<BoxedStr<NonNull>, Box<u64>>::default();
+    /// let map = ConcurrentMap::<BoxedStr<NonNull>, Box<u64>>::default();
     ///
     /// for (key, value) in [("prefix-one", 3), ("prefix-two", 2), ("three", 1)] {
     ///     map.insert(
@@ -517,9 +525,9 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     ///
-    /// let map = concurrent::Map::<u64, u64>::default();
+    /// let map = ConcurrentMap::<u64, u64>::default();
     /// map.insert(1, 2).expect("Key not present");
     /// map.insert(3, 4).expect("Key not present");
     /// map.insert(5, 6).expect("Key not present");
@@ -548,10 +556,11 @@ where
 /// currently associated with a key before deciding what to do, which enables
 /// more complex coordination in a concurrent setting.
 ///
-/// For example, a concurrent counter could use [`Map::upsert_with`] to either
+/// For example, a concurrent counter could use
+/// [`ConcurrentMap::upsert_with`] to either
 /// insert one or update the current count by one, or an index could use
-/// [`Map::remove_with`] to remove a value only if it hasn't been concurrently
-/// updated.
+/// [`ConcurrentMap::remove_with`] to
+/// remove a value only if it hasn't been concurrently updated.
 ///
 /// These operations are linearizable.
 impl<K, V, S> Map<K, V, S>
@@ -577,12 +586,12 @@ where
     /// ```rust
     /// use core::ops::ControlFlow;
     ///
+    /// use arctic::ConcurrentMap;
     /// use arctic::key::BoxedStr;
     /// use arctic::key::NonNull;
     /// use arctic::key::Str;
-    /// use arctic::concurrent;
     ///
-    /// let map = concurrent::Map::<BoxedStr<NonNull>, Box<u64>>::default();
+    /// let map = ConcurrentMap::<BoxedStr<NonNull>, Box<u64>>::default();
     /// let key = Str::new("zipir").expect("No null byte");
     ///
     /// // Key not present, new value lazily allocated
@@ -642,10 +651,10 @@ where
     /// ```rust
     /// use core::ops::ControlFlow;
     ///
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     /// use arctic::concurrent::map::Upsert;
     ///
-    /// let map = concurrent::Map::<u16, Box<u64>>::default();
+    /// let map = ConcurrentMap::<u16, Box<u64>>::default();
     /// let key = 20;
     ///
     /// // Key not present, closure continues, new value lazily allocated
@@ -732,10 +741,10 @@ where
     /// ```rust
     /// use core::ops::ControlFlow;
     ///
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     /// use arctic::concurrent::map::Update;
     ///
-    /// let map = concurrent::Map::<u64, Box<u64>>::default();
+    /// let map = ConcurrentMap::<u64, Box<u64>>::default();
     /// let key = 5;
     ///
     /// // Key not present, closure never called, new value not allocated
@@ -801,17 +810,19 @@ where
     ///
     /// Returns a [`Remove`] enum.
     ///
-    /// See also: [`Map::remove`], [`Map::remove_non_recursive`], [`Map::remove_non_recursive_with`].
+    /// See also: [`ConcurrentMap::remove`],
+    /// [`ConcurrentMap::remove_non_recursive`],
+    /// [`ConcurrentMap::remove_non_recursive_with`].
     ///
     /// # Examples
     ///
     /// ```rust
     /// use core::ops::ControlFlow;
     ///
-    /// use arctic::concurrent;
+    /// use arctic::ConcurrentMap;
     /// use arctic::concurrent::map::Remove;
     ///
-    /// let map = concurrent::Map::<u128, u64>::default();
+    /// let map = ConcurrentMap::<u128, u64>::default();
     /// let key = 0xfeed;
     ///
     /// // Key not present, closure never called
@@ -867,7 +878,9 @@ where
     ///
     /// Returns a [`Remove`] enum.
     ///
-    /// See also: [`Map::remove`], [`Map::remove_with`], [`Map::remove_non_recursive`].
+    /// See also: [`ConcurrentMap::remove`],
+    /// [`ConcurrentMap::remove_with`],
+    /// [`ConcurrentMap::remove_non_recursive`].
     pub fn remove_non_recursive_with<F>(
         &self,
         key: &K::Borrowed,
@@ -884,7 +897,7 @@ where
     }
 }
 
-/// Outcome of a call to [`Map::upsert_with`].
+/// Outcome of a call to [`ConcurrentMap::upsert_with`].
 pub enum Upsert<'g, K, V, S>
 where
     K: Key,
@@ -902,7 +915,7 @@ where
     },
 }
 
-/// Outcome of a call to [`Map::update_with`].
+/// Outcome of a call to [`ConcurrentMap::update_with`].
 pub enum Update<'g, K, V, S>
 where
     K: Key,
@@ -925,7 +938,7 @@ where
     },
 }
 
-/// Outcome of a call to [`Map::remove_with`].
+/// Outcome of a call to [`ConcurrentMap::remove_with`].
 pub enum Remove<'g, K, V, S>
 where
     K: Key,

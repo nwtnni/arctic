@@ -3,26 +3,26 @@
 //! This is the original implementation of
 //! [Arctic: a practical lock-free adaptive radix tree](https://www.usenix.org/conference/osdi26/presentation/ni).
 //!
-//! The main data structure is [`concurrent::Map`],
+//! The main data structure is [`ConcurrentMap`],
 //! which is a thread-safe [map](https://en.wikipedia.org/wiki/Associative_array) that provides
 //! [lock-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm#Lock-freedom),
 //! [linearizable](https://en.wikipedia.org/wiki/Linearizability)
-//! writes (e.g., [`upsert`][concurrent::Map::upsert], [`remove`][concurrent::Map::remove]);
+//! writes (e.g., [`upsert`][ConcurrentMap::upsert], [`remove`][ConcurrentMap::remove]);
 //! [wait-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm#Wait-freedom),
-//! linearizable reads (i.e., [`get`][concurrent::Map::get]);
+//! linearizable reads (i.e., [`get`][ConcurrentMap::get]);
 //! and wait-free, **non-linearizable** scans
 //! over key ranges and prefixes, in sorted order.
 //!
-//! This crate also includes [`sequential::Map`], which shares
-//! the same underlying structure as [`concurrent::Map`], but
+//! This crate also includes [`SequentialMap`], which shares
+//! the same underlying structure as [`ConcurrentMap`], but
 //! gives up thread safety in exchange for single threaded performance
 //! and a more convenient API. The borrow checker allows us to
-//! safely take advantage of both APIs at runtime, via [`concurrent::Map::as_sequential`].
+//! safely take advantage of both APIs at runtime, via [`ConcurrentMap::as_sequential`].
 //!
 //! # Why use this crate?
 //!
 //! As far as we know (corrections welcome!), out of all map data structures that (a) are lock-free
-//! and (b) support ordered scan operations, [`concurrent::Map`] provides the highest scalability and throughput.
+//! and (b) support ordered scan operations, [`ConcurrentMap`] provides the highest scalability and throughput.
 //! In fact, under various conditions (integer keys, skewed requests, update-heavy),
 //! we even out-perform data structures without properties (a) and/or (b).
 //! Our benchmarking infrastructure is in [this repository](https://github.com/nwtnni/index-bench);
@@ -51,7 +51,7 @@
 //! More practically, we employ property testing (via [proptest](https://docs.rs/proptest/latest/proptest/))
 //! to test edges, node headers, and SIMD algorithms. The `state_machine` test suite uses
 //! [proptest-state-machine](https://proptest-rs.github.io/proptest/proptest/state-machine.html)
-//! to ensure [`concurrent::Map`] and [`sequential::Map`] match [BTreeMap][std::collections::BTreeMap]
+//! to ensure [`ConcurrentMap`] and [`SequentialMap`] match [BTreeMap][std::collections::BTreeMap]
 //! on arbitrary sequences of operations.
 //!
 //! The `random` test suite inserts and removes disjoint sets of keys on each thread.
@@ -66,7 +66,7 @@
 //! **Public features**.
 //! - `smr-hazard`, `smr-epoch`, and `smr-seize` enable their
 //!   respective safe memory reclamation ([`Smr`][crate::concurrent::Smr]) backends. At least
-//!   one SMR backend is required to use [`concurrent::Map`]; by
+//!   one SMR backend is required to use [`ConcurrentMap`]; by
 //!   default, seize is enabled and used.
 //!
 //! **Development features**. These have no stability guarantees.
@@ -143,6 +143,15 @@ pub use raw::Key;
 pub use raw::iter::Range;
 #[doc(inline)]
 pub use raw::key;
+
+#[doc(inline)]
+pub use concurrent::Map as ConcurrentMap;
+
+#[doc(inline)]
+pub use sequential::Map as SequentialMap;
+
+#[doc(inline)]
+pub use sequential::Set as SequentialSet;
 
 /// Key order for scan operations (e.g., [`concurrent::Shard::entries`]).
 ///

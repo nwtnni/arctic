@@ -21,10 +21,10 @@ use crate::stat;
 /// # Examples
 ///
 /// ```rust
-/// use arctic::concurrent;
+/// use arctic::ConcurrentMap;
 /// use arctic::concurrent::smr::Epoch;
 ///
-/// let map = concurrent::Map::<u64, Box<u64>, Epoch>::new();
+/// let map = ConcurrentMap::<u64, Box<u64>, Epoch>::new();
 /// ```
 #[derive(Default)]
 pub struct Epoch;

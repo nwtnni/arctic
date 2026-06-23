@@ -64,8 +64,8 @@ struct Cache<T>(T);
 ///
 /// Second, note that each operation is also associated with
 /// a key prefix. This can be a full key for point operations like
-/// [`concurrent::Map::get`][crate::concurrent::Map::get], or a key prefix for prefix
-/// operations like [`concurrent::Map::prefix`][crate::concurrent::Map::prefix].
+/// [`ConcurrentMap::get`][crate::concurrent::Map::get], or a key prefix for prefix
+/// operations like [`ConcurrentMap::prefix`][crate::concurrent::Map::prefix].
 ///
 /// Then the core insight is that a trie operation will never access
 /// nodes or values whose key prefixes do not overlap with its own.

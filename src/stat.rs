@@ -111,7 +111,7 @@ pub fn reset() {
     THREAD.with_borrow_mut(|thread| *thread = Thread::default());
 }
 
-/// Process-level statistics for a [`concurrent::Map`].
+/// Process-level statistics for a [`ConcurrentMap`][concurrent::Map].
 ///
 /// Can be serialized and fed into external tools.
 #[derive(Default)]
@@ -131,6 +131,10 @@ pub(crate) enum Counter {
     InsertPessimistic,
     UpdatePessimistic,
 
+    #[cfg_attr(
+        not(any(feature = "smr-hazard", feature = "smr-seize", feature = "smr-epoch")),
+        expect(unused)
+    )]
     Retire,
     FreeConflict,
     FreeRetire,
@@ -169,7 +173,7 @@ pub(crate) enum Record {
     ReclaimAge3,
 }
 
-/// Thread-level statistics for a [`concurrent::Map`].
+/// Thread-level statistics for a [`ConcurrentMap`][concurrent::Map].
 ///
 /// Can be serialized and fed into external tools.
 #[cfg(feature = "stat")]
@@ -205,7 +209,7 @@ pub struct Thread {
     reclaim_age_3: Histogram,
 }
 
-/// Thread-level statistics for a [`concurrent::Map`].
+/// Thread-level statistics for a [`ConcurrentMap`][concurrent::Map].
 ///
 /// Can be serialized and fed into external tools.
 #[cfg(not(feature = "stat"))]

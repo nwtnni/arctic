@@ -1,4 +1,4 @@
-//! Values that can safely be stored in a [`concurrent::Map`][crate::concurrent::Map],
+//! Values that can safely be stored in a [`ConcurrentMap`][crate::concurrent::Map],
 //! and referenced behind an [`smr::Guard`].
 
 use core::borrow::Borrow;
@@ -11,7 +11,7 @@ use crate::concurrent::smr::Guard as _;
 use crate::sequential;
 pub use crate::sequential::value::Arc;
 
-/// Values that can safely be stored in a [`concurrent::Map`][crate::concurrent::Map].
+/// Values that can safely be stored in a [`ConcurrentMap`][crate::concurrent::Map].
 ///
 /// Values may be either inline or indirect. An inline
 /// value (e.g., [`u64`]) is stored directly in an edge and can be freely
@@ -22,7 +22,7 @@ pub use crate::sequential::value::Arc;
 /// It's fine to create a concurrent map with non-Sync
 /// values; the map instance just won't implement Sync.
 pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
-    /// We need this extra layer of indirection relative to [`sequential::Map`]
+    /// We need this extra layer of indirection relative to [`SequentialMap`][crate::sequential::Map]
     /// because edges can be concurrently modified.
     ///
     /// For an inline value, the sequential map can return a reference

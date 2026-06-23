@@ -1,7 +1,7 @@
 use core::ops::Deref;
 use std::rc::Rc;
 
-/// Values that can be safely stored in a [`sequential::Map`][crate::sequential::Map].
+/// Values that can be safely stored in a [`SequentialMap`][crate::sequential::Map].
 ///
 /// # Safety
 ///

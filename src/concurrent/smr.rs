@@ -1,10 +1,10 @@
 //! Implementations of [`Smr`].
 //!
-//! By default, [`concurrent::Map`][crate::concurrent::Map] uses hazard keys
+//! By default, [`ConcurrentMap`][crate::concurrent::Map] uses [seize](https://docs.rs/seize/0.5.1/seize/)
 //! for safe memory reclamation. Support for
 //! [crossbeam-epoch](https://docs.rs/crossbeam-epoch/0.9.18/crossbeam_epoch/)
-//! and [seize](https://docs.rs/seize/0.5.1/seize/) can be enabled with
-//! `feature=smr-seize` and `feature=smr-epoch`, respectively.
+//! and hazard keys can be enabled with the
+//! `smr-seize` and `smr-hazard` Cargo features, respectively.
 //! Downstream users can also implement [`Smr`] and [`Guard`]
 //! to provide their own SMR backends.
 
@@ -27,6 +27,17 @@ pub use hazard::Hazard;
 pub use no_op::NoOp;
 #[cfg(feature = "smr-seize")]
 pub use seize::Seize;
+
+cfg_select! {
+    feature = "smr-seize" => {
+        /// Default [`Smr`] backend.
+        pub type Default = Seize;
+    }
+    _ => {
+        /// Default [`Smr`] backend.
+        pub type Default = NoOp;
+    }
+}
 
 use crate::Key;
 use crate::concurrent::Value;

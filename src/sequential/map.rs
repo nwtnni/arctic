@@ -1,11 +1,15 @@
-//! Auxiliary types for use with [`sequential::Map`][crate::sequential::Map].
+//! Auxiliary types for use with [`SequentialMap`].
 
 use core::marker::PhantomData;
 use core::ops::RangeFull;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
+#[cfg_attr(not(doc), expect(unused))]
+use std::collections::btree_map;
 
 use crate::Ascend;
+#[cfg_attr(not(doc), expect(unused))]
+use crate::SequentialMap;
 use crate::raw;
 use crate::raw::Cursor;
 use crate::raw::Edge;
@@ -24,28 +28,28 @@ use crate::stat;
 ///
 /// # Usage
 ///
-/// [`Map`] supports both point and scan operations, and tries to be roughly
+/// [`SequentialMap`] supports both point and scan operations, and tries to be roughly
 /// compatible with the standard library's [`BTreeMap`][std::collections::BTreeMap].
 ///
 /// In general, radix trees do not explicitly store keys; they are implicitly
-/// encoded in the structure of the tree. This means that operations on [`Map`]
-/// generally take references to keys (see [`crate::Key`]). Operations that insert and typically
+/// encoded in the structure of the tree. This means that operations on [`SequentialMap`]
+/// generally take references to keys (see [`Key`]). Operations that insert and typically
 /// would take an owned key, like [`BTreeMap::insert`][std::collections::BTreeMap::insert],
 /// instead take a [`Key::Insert<'_>`][crate::Key::Insert]. Operations that
 /// do not insert a new key take a [`&Key::Borrowed`][crate::Key::Borrowed].
 ///
 /// ## Point operations
 ///
-/// The main caveat here is that [`Map::insert`] errors if the key is present,
+/// The main caveat here is that [`SequentialMap::insert`] errors if the key is present,
 /// whereas [`BTreeMap::insert`][std::collections::BTreeMap::insert]
-/// updates. (To match the standard library behavior, use [`Map::upsert`] instead.)
-/// For more complex conditional logic, the [`Map::entry`] API mimics
+/// updates. (To match the standard library behavior, use [`SequentialMap::upsert`] instead.)
+/// For more complex conditional logic, the [`SequentialMap::entry`] API mimics
 /// [`BTreeMap::entry`][std::collections::BTreeMap::entry].
 ///
 /// ## Scan operations
 ///
-/// For scan operations, [`Map`] exposes a two-phase API: the caller first selects
-/// a subtree (e.g., [`Map::prefix`] or [`Map::range_mut`]). This returns
+/// For scan operations, [`SequentialMap`] exposes a two-phase API: the caller first selects
+/// a subtree (e.g., [`SequentialMap::prefix`] or [`SequentialMap::range_mut`]). This returns
 /// a [`Shard`] or [`ShardMut`], which can then be iterated over
 /// (e.g., [`Shard::entries`] or [`ShardMut::values_mut`]).
 /// This is in contrast to the standard library, where [`BTreeMap::range`][std::collections::BTreeMap::range]
@@ -109,9 +113,9 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::sequential::Map;
+    /// use arctic::SequentialMap;
     ///
-    /// let mut map = Map::<u64, u64>::new();
+    /// let mut map = SequentialMap::<u64, u64>::new();
     /// map.insert(1, 2).expect("Key is not present");
     /// assert_eq!(map.get(&1), Some(&2));
     /// assert_eq!(map.get(&2), None);
@@ -128,9 +132,9 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::sequential::Map;
+    /// use arctic::SequentialMap;
     ///
-    /// let mut map = Map::<u64, u64>::new();
+    /// let mut map = SequentialMap::<u64, u64>::new();
     /// let key = 1;
     /// map.insert(key, 2).expect("Key is not present");
     /// let value = map.get_mut(&key).expect("Key is present");
@@ -163,9 +167,9 @@ where
     /// use arctic::key::BoxedStr;
     /// use arctic::key::NonNull;
     /// use arctic::key::Str;
-    /// use arctic::sequential::Map;
+    /// use arctic::SequentialMap;
     ///
-    /// let mut map = Map::<BoxedStr<NonNull>, Box<u64>>::new();
+    /// let mut map = SequentialMap::<BoxedStr<NonNull>, Box<u64>>::new();
     /// let key = Str::<NonNull>::new("regent").expect("No null byte");
     ///
     /// // Key not present, insert succeeds
@@ -201,9 +205,9 @@ where
     /// use arctic::key::BoxedStr;
     /// use arctic::key::Terminated;
     /// use arctic::key::Str;
-    /// use arctic::sequential::Map;
+    /// use arctic::SequentialMap;
     ///
-    /// let mut map = Map::<BoxedStr<Terminated<b'\n'>>, u64>::new();
+    /// let mut map = SequentialMap::<BoxedStr<Terminated<b'\n'>>, u64>::new();
     /// let key = Str::new("silent\n").expect("Newline terminated");
     ///
     /// // Key not present, upsert performs insert
@@ -239,9 +243,9 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::sequential::Map;
+    /// use arctic::SequentialMap;
     ///
-    /// let mut map = Map::<[u8; 3], Box<u64>>::new();
+    /// let mut map = SequentialMap::<[u8; 3], Box<u64>>::new();
     /// let key = [0, 1, 2];
     ///
     /// // Key not present, update fails
@@ -284,9 +288,9 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// use arctic::sequential::Map;
+    /// use arctic::SequentialMap;
     ///
-    /// let mut map = Map::<u16, u64>::new();
+    /// let mut map = SequentialMap::<u16, u64>::new();
     /// let key = 100;
     ///
     /// // Key not present, remove fails
@@ -334,9 +338,9 @@ where
     /// ```rust
     /// use arctic::key::Str;
     /// use arctic::key::NonNull;
-    /// use arctic::sequential::Map;
+    /// use arctic::SequentialMap;
     ///
-    /// let mut counter = Map::<&'static Str<NonNull>, u64>::new();
+    /// let mut counter = SequentialMap::<&'static Str<NonNull>, u64>::new();
     /// let claw = Str::new("claw").expect("No null byte");
     /// let hotfix = Str::new("hotfix").expect("No null byte");
     /// let hologram = Str::new("hologram").expect("No null byte");
@@ -540,9 +544,9 @@ where
     }
 }
 
-/// A logical entry in a [`sequential::Map`][Map] that may be vacant or occupied.
+/// A logical entry in a [`SequentialMap`] that may be vacant or occupied.
 ///
-/// See: [`btree_map::Entry`][std::collections::btree_map::Entry].
+/// See: [`btree_map::Entry`].
 pub enum Entry<'g, 'k, K, V>
 where
     K: Key,
@@ -558,7 +562,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
     /// Insert `default` if there is no value associated with this
     /// entry, then return a mutable reference to the current value.
     ///
-    /// See: [`btree_map::Entry::or_insert`][std::collections::btree_map::Entry::or_insert].
+    /// See: [`btree_map::Entry::or_insert`].
     #[inline]
     pub fn or_insert(self, default: V) -> &'g mut V {
         match self {
@@ -570,7 +574,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
     /// Like [`or_insert`][Self::or_insert], but lazily evaluates
     /// `default`.
     ///
-    /// See: [`btree_map::Entry::or_insert_with`][std::collections::btree_map::Entry::or_insert_with].
+    /// See: [`btree_map::Entry::or_insert_with`].
     #[inline]
     pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'g mut V {
         match self {
@@ -581,7 +585,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
 
     /// If there is a value associated with this entry, then apply `modify` to it.
     ///
-    /// See: [`btree_map::Entry::and_modify`][std::collections::btree_map::Entry::and_modify].
+    /// See: [`btree_map::Entry::and_modify`].
     #[inline]
     pub fn and_modify<F>(self, modify: F) -> Self
     where
@@ -600,14 +604,14 @@ impl<'g, 'k, K: Key, V: Value + 'g> Entry<'g, 'k, K, V> {
 impl<'g, 'k, K: Key, V: Value + Default + 'g> Entry<'g, 'k, K, V> {
     /// Call [`or_insert_with`][Self::or_insert_with] with [`Default::default`].
     ///
-    /// See: [`btree_map::Entry::or_default`][std::collections::btree_map::Entry::or_default].
+    /// See: [`btree_map::Entry::or_default`]
     #[inline]
     pub fn or_default(self) -> &'g mut V {
         self.or_insert_with(V::default)
     }
 }
 
-/// A vacant entry in a [`sequential::Map`][Map].
+/// A vacant entry in a [`SequentialMap`].
 pub struct Vacant<'g, 'k, K: Key, V: Value + 'g> {
     pub(super) cursor: Cursor<'g, K::Read<'k>, path::Discard>,
     pub(super) replace: bool,
@@ -617,7 +621,7 @@ pub struct Vacant<'g, 'k, K: Key, V: Value + 'g> {
 impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
     /// Insert `value` into this entry and return a mutable reference to it.
     ///
-    /// See: [`btree_map::VacantEntry::insert`][std::collections::btree_map::VacantEntry::insert].
+    /// See: [`btree_map::VacantEntry::insert`].
     #[inline]
     pub fn insert(self, value: V) -> &'g mut V {
         self.insert_entry(value).into_mut()
@@ -625,7 +629,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
 
     /// Insert `value` into this entry and return an occupied entry.
     ///
-    /// See: [`btree_map::VacantEntry::insert_entry`][std::collections::btree_map::VacantEntry::insert_entry].
+    /// See: [`btree_map::VacantEntry::insert_entry`].
     pub fn insert_entry(mut self, value: V) -> Occupied<'g, V> {
         let new_value = V::into_raw(value);
 
@@ -665,7 +669,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
     }
 }
 
-/// An occupied entry in a [`sequential::Map`][Map].
+/// An occupied entry in a [`SequentialMap`].
 pub struct Occupied<'g, V: Value + 'g> {
     pub(super) value: NonNull<V>,
     pub(super) _value: PhantomData<&'g mut V>,
@@ -674,7 +678,7 @@ pub struct Occupied<'g, V: Value + 'g> {
 impl<'g, V: Value> Occupied<'g, V> {
     /// Get an immutable reference to the value in this entry.
     ///
-    /// See: [`btree_map::OccupiedEntry::get`][std::collections::btree_map::OccupiedEntry::get].
+    /// See: [`btree_map::OccupiedEntry::get`].
     #[inline]
     pub fn get(&self) -> &V {
         unsafe { self.value.as_ref() }
@@ -682,7 +686,7 @@ impl<'g, V: Value> Occupied<'g, V> {
 
     /// Get a mutable reference to the value in this entry.
     ///
-    /// See: [`btree_map::OccupiedEntry::get_mut`][std::collections::btree_map::OccupiedEntry::get_mut].
+    /// See: [`btree_map::OccupiedEntry::get_mut`].
     #[inline]
     pub fn get_mut(&mut self) -> &mut V {
         unsafe { self.value.as_mut() }
@@ -690,7 +694,7 @@ impl<'g, V: Value> Occupied<'g, V> {
 
     /// Update the value in this entry to `value`.
     ///
-    /// See: [`btree_map::OccupiedEntry::insert`][std::collections::btree_map::OccupiedEntry::insert].
+    /// See: [`btree_map::OccupiedEntry::insert`].
     #[inline]
     pub fn update(&mut self, value: V) -> V {
         unsafe { core::mem::replace(self.value.as_mut(), value) }
@@ -699,7 +703,7 @@ impl<'g, V: Value> Occupied<'g, V> {
     /// Convert this entry into a mutable reference,
     /// preserving the lifetime.
     ///
-    /// See: [`btree_map::OccupiedEntry::into_mut`][std::collections::btree_map::OccupiedEntry::into_mut].
+    /// See: [`btree_map::OccupiedEntry::into_mut`].
     #[inline]
     pub fn into_mut(mut self) -> &'g mut V {
         unsafe { self.value.as_mut() }
