@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! This is the original implementation of
 //! [Arctic: a practical lock-free adaptive radix tree](https://www.usenix.org/conference/osdi26/presentation/ni).
 //!

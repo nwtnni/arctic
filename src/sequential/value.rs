@@ -100,13 +100,6 @@ unsafe impl<T: Sized> Value for Rc<T> {
 #[derive(Debug)]
 pub struct Arc<T>(pub(crate) crate::sync::Arc<T>);
 
-impl<T> Arc<T> {
-    #[inline]
-    pub const fn new(arc: crate::sync::Arc<T>) -> Self {
-        Self(arc)
-    }
-}
-
 impl<T> From<crate::sync::Arc<T>> for Arc<T> {
     #[inline]
     fn from(arc: crate::sync::Arc<T>) -> Self {
