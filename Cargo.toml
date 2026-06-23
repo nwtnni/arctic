@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
+default = ["smr-seize"]
+
 stat = ["dep:serde", "dep:base64", "dep:hdrhistogram"]
 stat-garbage = []
 opt-no-node3-get = []
@@ -21,7 +23,7 @@ opt-membarrier = ["dep:libc", "seize/fast-barrier"]
 opt-no-path = []
 opt-no-dispatch = []
 
-smr-disable = []
+smr-hazard = []
 smr-epoch = ["dep:crossbeam-epoch"]
 smr-seize = ["dep:seize"]
 

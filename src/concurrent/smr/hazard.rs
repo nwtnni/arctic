@@ -1,5 +1,6 @@
 mod membarrier;
 pub mod prefix;
+mod thread;
 pub(crate) use prefix::Prefix;
 mod key;
 pub use key::Key;
@@ -103,8 +104,8 @@ struct Global<K: Key, V: Value> {
     garbage: AtomicU64,
 
     // FIXME: jagged/triangular array
-    hazards: [Cache<Atomic<K::Prefix>>; smr::thread::MAX],
-    locals: [UnsafeCell<Local<K::Prefix, V>>; smr::thread::MAX],
+    hazards: [Cache<Atomic<K::Prefix>>; thread::MAX],
+    locals: [UnsafeCell<Local<K::Prefix, V>>; thread::MAX],
     membarrier: AtomicBool,
     reclaim_threshold: usize,
     value: PhantomData<V>,
@@ -170,7 +171,7 @@ impl<K: Key, V: Value> Global<K, V> {
     fn reclaim(&mut self) {
         self.locals
             .iter_mut()
-            .take(smr::thread::count())
+            .take(thread::count())
             .map(|local| local.get_mut())
             .flat_map(|local| local.retired.drain(..))
             .for_each(|(prefix, raw)| {
@@ -198,7 +199,7 @@ impl<K: Key, V: Value> Smr<K, V> for Hazard<K, V> {
     where
         V: 'g,
     {
-        let id = usize::from(smr::thread::Id::current());
+        let id = usize::from(thread::Id::current());
         let membarrier = self.0.membarrier.load(Ordering::Relaxed);
         let hazard = &self.0.hazards[id].0;
         let local = &self.0.locals[id];
@@ -236,7 +237,7 @@ impl<K: Key, V: Value> Global<K, V> {
         membarrier::slow(global.membarrier.load(Ordering::Relaxed));
 
         local.snapshot.extend(
-            global.hazards[..smr::thread::count().next_multiple_of(4)]
+            global.hazards[..thread::count().next_multiple_of(4)]
                 .iter()
                 .map(|hazard| hazard.0.load_packed(Ordering::Relaxed)),
         );
@@ -301,6 +302,7 @@ impl<K: Key, V: Value> Global<K, V> {
     }
 }
 
+/// Guard for [`Hazard`] SMR backend.
 pub struct Guard<'g, K: Key, V: Value> {
     hazard: &'g Atomic<K::Prefix>,
     local: &'g UnsafeCell<Local<K::Prefix, V>>,
@@ -401,11 +403,9 @@ fn deallocate<P: ribbit::Pack<Packed: Prefix>, V: Value>(prefix: ribbit::Packed<
     if prefix.is_node() {
         unsafe {
             let ptr = NonZeroU64::new(raw).unwrap();
-            crate::raw::node::Ptr::from_raw_unchecked(ptr).deallocate();
+            smr::deallocate_node(ptr)
         }
     } else {
-        unsafe {
-            drop(V::from_raw_unchecked(raw));
-        }
+        unsafe { smr::deallocate_value::<V>(raw) }
     }
 }

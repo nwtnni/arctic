@@ -134,8 +134,10 @@ pub(crate) enum Counter {
     Retire,
     FreeConflict,
     FreeRetire,
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     FreeReclaim,
     FreeDrop,
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     HazardMatch,
 
     Node47Consistent,
@@ -146,17 +148,24 @@ pub(crate) enum Counter {
     EntriesMany,
 }
 
+#[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
 pub(crate) enum Max {
     RetireCache,
 }
 
 pub(crate) enum Record {
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     Flush,
     FreezePop,
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     ReclaimDepth,
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     ReclaimAge0,
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     ReclaimAge1,
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     ReclaimAge2,
+    #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     ReclaimAge3,
 }
 
@@ -230,6 +239,7 @@ pub(crate) fn increment<C: Into<Counter>>(_counter: C) {
 }
 
 #[inline]
+#[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
 pub(crate) fn max(_max: Max, _value: u64) {
     #[cfg(feature = "stat")]
     if RECORD.load(Ordering::Relaxed) {

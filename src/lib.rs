@@ -417,7 +417,7 @@ mod tests {
     fn insert_all<I, K>(iter: I) -> Map<K, u64>
     where
         I: IntoIterator<Item = K>,
-        K: crate::concurrent::smr::hazard::Key + Clone + Ord + core::fmt::Debug,
+        K: crate::Key + Clone + Ord + core::fmt::Debug,
     {
         let mut keys = iter
             .into_iter()

@@ -154,13 +154,11 @@ where
     }
 }
 
-struct Arctic<K: arctic::concurrent::smr::hazard::Key, V: arctic::concurrent::Value>(
-    arctic::concurrent::Map<K, V>,
-);
+struct Arctic<K: arctic::Key, V: arctic::concurrent::Value>(arctic::concurrent::Map<K, V>);
 
 impl<K, V> StateMachineTest for Arctic<K, V>
 where
-    K: arctic::concurrent::smr::hazard::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
+    K: arctic::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
     K::Borrowed: Ord + core::fmt::Debug,
     V: arctic::concurrent::Value + Arbitrary + Clone + Debug + Eq + Send + Sync + 'static,
     V::Borrowed: Debug + PartialEq + PartialEq<V> + Clone,

@@ -11,17 +11,18 @@
 #[cfg(feature = "smr-epoch")]
 mod epoch;
 /// Auxiliary types for use with hazard keys.
+#[cfg(feature = "smr-hazard")]
 pub mod hazard;
 pub(crate) mod no_op;
 #[cfg(feature = "smr-seize")]
 mod seize;
-mod thread;
 
 use core::num::NonZeroU64;
 
 #[cfg(feature = "smr-epoch")]
 pub use epoch::Epoch;
 #[doc(inline)]
+#[cfg(feature = "smr-hazard")]
 pub use hazard::Hazard;
 pub use no_op::NoOp;
 #[cfg(feature = "smr-seize")]
@@ -34,6 +35,8 @@ use crate::stat;
 /// Provides [safe memory reclamation](https://arxiv.org/abs/2509.02457) for the
 /// given key and value type.
 pub trait Smr<K: Key, V: Value> {
+    /// Guard type that protects nodes and values during its lifetime,
+    /// can be used to retire allocations, and unprotects when it is dropped.
     type Guard<'g>: Guard<V>
     where
         V: 'g,

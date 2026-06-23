@@ -297,18 +297,6 @@ impl Ptr {
         }
     }
 
-    /// # Safety
-    ///
-    /// Caller must guarantee the following:
-    /// - `raw` was created by a previous call to [`PtrPacked::into_raw`].
-    /// - `from_raw` is called at most once for each [`PtrPacked::into_raw`] call.
-    /// - There are no live borrows when [`Ptr::from_raw_unchecked`] is called.
-    #[inline]
-    pub unsafe fn from_raw_unchecked(raw: NonZeroU64) -> ribbit::Packed<Self> {
-        let node: Option<_> = unsafe { ribbit::Unpack::from_raw_unchecked(raw.get()) };
-        if_validate!(node.unwrap(), unsafe { node.unwrap_unchecked() })
-    }
-
     // The only way a larger node can be created is through node replacement.
     #[inline]
     pub(super) fn new_node_3(node: Box<Node3>) -> ribbit::Packed<Self> {

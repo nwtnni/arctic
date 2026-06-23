@@ -10,6 +10,10 @@ use seize::Guard as _;
 
 /// [`seize::Collector`] backend for safe memory reclamation.
 ///
+/// Defaults to a batch size of 256, which we found to provide
+/// the best balance of throughput and reclamation efficiency
+/// in our benchmarks.
+///
 /// # Examples
 ///
 /// ```rust
@@ -20,8 +24,13 @@ use seize::Guard as _;
 ///     seize::Collector::new().batch_size(256)
 /// ));
 /// ```
-#[derive(Default)]
 pub struct Seize(seize::Collector);
+
+impl Default for Seize {
+    fn default() -> Self {
+        Self(seize::Collector::default().batch_size(256))
+    }
+}
 
 impl From<seize::Collector> for Seize {
     fn from(collector: seize::Collector) -> Self {

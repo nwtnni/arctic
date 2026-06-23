@@ -28,9 +28,11 @@ pub(crate) use discard::Discard;
 pub(crate) use len::Bit;
 pub(crate) use len::Byte;
 pub(crate) use len::Len;
+#[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
 pub(crate) use sized::int;
 pub(crate) use r#unsized::Terminate;
 pub(crate) use r#unsized::boxed_slice;
+#[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
 pub(crate) use r#unsized::slice;
 
 pub use r#unsized::Invariant;

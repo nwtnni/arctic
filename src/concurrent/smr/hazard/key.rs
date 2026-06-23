@@ -9,10 +9,13 @@ use crate::raw::key;
 use crate::raw::key::Len;
 use crate::raw::key::Read as _;
 
+/// Extract a hazard key from an operation key.
 pub trait Key: raw::Key {
+    /// The hazard key representation.
     #[expect(private_bounds)]
     type Prefix: ribbit::Pack<Packed: hazard::Prefix>;
 
+    /// Get a hazard for the given key reader.
     fn hazard(reader: Self::Read<'_>) -> ribbit::Packed<Self::Prefix>;
 }
 

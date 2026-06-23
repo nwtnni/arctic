@@ -1,3 +1,5 @@
+#![expect(missing_docs)]
+
 #[cfg(target_feature = "avx2")]
 mod avx2;
 
