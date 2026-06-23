@@ -148,21 +148,23 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
     }
 }
 
-impl<T: ribbit::Pack> Eq for SlicePacked<T> {}
+impl<T: Terminate> Eq for SlicePacked<T> {}
 
-impl<T: ribbit::Pack> PartialEq for SlicePacked<T> {
+impl<T: Terminate> PartialEq for SlicePacked<T> {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { self.as_slice() == other.as_slice() }
+        unsafe {
+            self.as_slice() == other.as_slice() && self.terminate().get() == other.terminate().get()
+        }
     }
 }
 
-impl<T: ribbit::Pack> Ord for SlicePacked<T> {
+impl<T: Terminate> Ord for SlicePacked<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         unsafe { self.as_slice().cmp(other.as_slice()) }
     }
 }
 
-impl<T: ribbit::Pack> PartialOrd for SlicePacked<T> {
+impl<T: Terminate> PartialOrd for SlicePacked<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }

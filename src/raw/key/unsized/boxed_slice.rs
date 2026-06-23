@@ -317,7 +317,10 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
         Self {
             // NOTE: slice key implementation requires us to preserve the
             // `self.slice` pointer, even if the slice is empty.
-            slice: self.slice.get(start..).unwrap_or(&self.slice[..0]),
+            slice: self
+                .slice
+                .get(start..)
+                .unwrap_or(&self.slice[self.slice.len()..]),
             terminate: T::new(self.terminate.get() && (start <= self.slice.len())),
         }
     }

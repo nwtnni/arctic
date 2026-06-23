@@ -420,7 +420,6 @@ where
                 barrier.wait();
 
                 for (index, key) in chunk.iter().take(chunk.len() / 2) {
-                    // FIXME: change to recursive removal after figuring out retiring
                     let value = map
                         .remove(key.borrow())
                         .unwrap_or_else(|| panic!("failed to find {:x?}", key));
