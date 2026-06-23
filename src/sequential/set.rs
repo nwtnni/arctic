@@ -6,7 +6,7 @@ use crate::raw;
 use crate::raw::key;
 use crate::sequential::Map;
 
-/// Non-concurrent set. (TODO: support iteration.)
+/// Non-concurrent set.
 #[repr(transparent)]
 pub struct Set<K: key::Split> {
     map: Map<K, raw::Set>,
@@ -31,7 +31,20 @@ where
         Self { map: Map::new() }
     }
 
-    pub fn contains_key(&self, key: &K::Borrowed) -> bool {
+    /// Returns `true` if this set contains `key`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::sequential;
+    ///
+    /// let mut set = sequential::Set::<[u8; 4]>::new();
+    /// let key = [8, 2, 3, 255];
+    /// assert!(set.insert(&key), "Key is not present");
+    /// assert!(set.contains(&key), "Key is present");
+    ///
+    /// ```
+    pub fn contains(&self, key: &K::Borrowed) -> bool {
         let (reader, byte) = K::split_last(key);
 
         self.map
@@ -39,6 +52,19 @@ where
             .is_some_and(|set| set.contains(byte))
     }
 
+    /// Insert `key` into this set.
+    ///
+    /// Returns `true` if successful, i.e., the key was not present and was newly inserted.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::sequential;
+    ///
+    /// let mut set = sequential::Set::<u128>::new();
+    /// assert!(set.insert(5), "Key is not present");
+    /// assert!(!set.insert(5), "Key is present");
+    /// ```
     pub fn insert(&mut self, key: K::Insert<'_>) -> bool {
         let (reader, byte) = K::split_last(key.borrow());
 
@@ -62,6 +88,6 @@ mod tests {
     fn smoke_contains() {
         let mut set = Set::<u64>::default();
         assert!(set.insert(0xdeadbeef));
-        assert!(set.contains_key(&0xdeadbeef));
+        assert!(set.contains(&0xdeadbeef));
     }
 }
