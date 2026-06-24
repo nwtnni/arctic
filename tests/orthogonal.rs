@@ -46,8 +46,8 @@ impl Orthogonal for BoxedStr<NonNull> {
 
 enum Op {
     Upsert,
-    // Update,
-    // Insert,
+    Update,
+    Insert,
     Remove,
     Get,
     Range,
@@ -55,8 +55,8 @@ enum Op {
 
 static OPS: &[Op] = &[
     Op::Upsert,
-    // Op::Update,
-    // Op::Insert,
+    Op::Update,
+    Op::Insert,
     Op::Remove,
     Op::Get,
     Op::Range,
@@ -97,8 +97,32 @@ where
                             assert_eq!(upserted.old(), expected.insert(key.clone(), value).as_ref());
                             assert_eq!(*upserted.new(), value);
                         }
-                        // Op::Update => todo!(),
-                        // Op::Insert => todo!(),
+                        Op::Update => {
+                            let value = rng.next_u64();
+                            match map.update(key.borrow(), value) {
+                                Ok(updated) => {
+                                    assert_eq!(Some(updated.old()), expected.insert(key.clone(), value).as_ref());
+                                    assert_eq!(*updated.new(), value);
+                                }
+                                Err(new) => {
+                                    assert!(expected.get(key.borrow()).is_none());
+                                    assert_eq!(new, value);
+                                }
+                            }
+                        },
+                        Op::Insert => {
+                            let value = rng.next_u64();
+                            match map.insert(key.as_insert(), value) {
+                                Ok(new) => {
+                                    assert!(expected.insert(key.clone(), value).is_none());
+                                    assert_eq!(*new, value);
+                                }
+                                Err((old, new)) => {
+                                    assert_eq!(Some(&*old), expected.get(key.borrow()));
+                                    assert_eq!(new, value);
+                                }
+                            }
+                        },
                         Op::Remove => {
                             assert_eq!(map.remove(key.borrow()).as_deref(), expected.remove(key.borrow()).as_ref());
                         }
