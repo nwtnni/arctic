@@ -96,6 +96,12 @@ impl<I, R: ?Sized> BoxedSlice<I, R> {
     pub const fn as_slice(&self) -> &Slice<I, R> {
         unsafe { Slice::new_unchecked(&self.raw) }
     }
+
+    /// Get an owned boxed slice.
+    #[inline]
+    pub fn into_boxed_slice(self) -> Box<R> {
+        self.raw
+    }
 }
 
 impl<I, R: ?Sized> Deref for BoxedSlice<I, R> {
