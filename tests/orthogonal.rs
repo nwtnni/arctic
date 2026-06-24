@@ -1,41 +1,46 @@
+#![cfg(feature = "rand")]
+
 use core::borrow::Borrow as _;
+use core::fmt::Debug;
+use core::ops::Bound;
 use core::ops::ControlFlow;
 use std::collections::BTreeMap;
 use std::thread;
 
 use arctic::concurrent::Map;
+use arctic::key::BoxedStr;
+use arctic::key::NonNull;
 use rand::Rng as _;
 use rand::RngExt as _;
 use rand::SeedableRng;
 
-trait Orthogonal: arctic::Key {
-    fn is_thread(&self, thread: u8) -> bool;
+trait Orthogonal: ::arctic::Key {
+    fn is_thread(key: Self::Insert<'_>, thread: u8) -> bool;
     fn mask(self, thread: u8) -> Self;
 }
 
 impl Orthogonal for u64 {
-    fn is_thread(&self, thread: u8) -> bool {
-        for bit in 0..8 {
-            let set = ((thread >> bit) & 1) as u64;
-            let byte = (bit << 3) + 4;
-
-            if self & (1 << byte) != (set << byte) {
-                return false;
-            }
-        }
-
-        true
+    fn is_thread(key: Self::Insert<'_>, thread: u8) -> bool {
+        key as u8 == thread
     }
 
     fn mask(mut self, thread: u8) -> Self {
-        for bit in 0..8 {
-            let set = ((thread >> bit) & 1) as u64;
-            let byte = (bit << 3) + 4;
-
-            self &= !(1 << byte);
-            self |= set << byte;
-        }
+        self &= !(u8::MAX as u64);
+        self |= thread as u64;
         self
+    }
+}
+
+impl Orthogonal for BoxedStr<NonNull> {
+    fn is_thread(key: Self::Insert<'_>, thread: u8) -> bool {
+        key.as_str().as_bytes().last() == Some(&(thread + 1))
+    }
+
+    fn mask(self, thread: u8) -> Self {
+        let mut string = self.into_boxed_slice().into_string();
+        assert!(thread < 0b0111_1111);
+        string.push((thread + 1) as char);
+        unsafe { Self::new_unchecked(string.into_boxed_str()) }
     }
 }
 
@@ -58,45 +63,59 @@ static OPS: &[Op] = &[
 ];
 
 #[test]
-fn orthogonal() {
-    let map = &Map::<u64, u64>::new();
+fn orthogonal_u64_u64() {
+    orthogonal::<u64>();
+}
+
+#[test]
+fn orthogonal_boxed_str_non_null_u64() {
+    orthogonal::<BoxedStr<NonNull>>();
+}
+
+fn orthogonal<K>()
+where
+    K: ::arctic::Key + Orthogonal + Debug + Ord + Clone,
+    K::Borrowed: Ord + Eq,
+    rand::distr::StandardUniform: rand::distr::Distribution<K>,
+{
+    let map = &Map::<K, u64>::new();
     let ops = &rand::distr::slice::Choose::new(OPS).unwrap();
 
     thread::scope(|scope| {
         for thread in 0..16 {
             scope.spawn(move || {
                 let mut rng = rand::rngs::Xoshiro256PlusPlus::seed_from_u64(thread);
-                let mut expected = BTreeMap::<u64, u64>::new();
+                let mut expected = BTreeMap::<K, u64>::new();
 
                 for _ in 0..10_000 {
-                    let key = rng.next_u64().mask(thread as u8);
+                    let key = rng.random::<K>().mask(thread as u8);
 
                     match rng.sample(ops) {
                         Op::Upsert => {
                             let value = rng.next_u64();
-                            let upserted = map.upsert(key, value);
-                            assert_eq!(upserted.old(), expected.insert(key, value).as_ref());
+                            let upserted = map.upsert(key.as_insert(), value);
+                            assert_eq!(upserted.old(), expected.insert(key.clone(), value).as_ref());
                             assert_eq!(*upserted.new(), value);
                         }
                         // Op::Update => todo!(),
                         // Op::Insert => todo!(),
                         Op::Remove => {
-                            assert_eq!(map.remove(&key).as_deref(), expected.remove(&key).as_ref());
+                            assert_eq!(map.remove(key.borrow()).as_deref(), expected.remove(key.borrow()).as_ref());
                         }
                         Op::Get => {
-                            assert_eq!(map.get(&key).as_deref(), expected.get(&key));
+                            assert_eq!(map.get(key.borrow()).as_deref(), expected.get(key.borrow()));
                         }
                         Op::Range => {
                             let descend = rng.random::<bool>();
-                            let mut lower = rng.next_u64();
-                            let mut upper = rng.next_u64();
+                            let mut lower = rng.random::<K>();
+                            let mut upper = rng.random::<K>();
 
                             if lower > upper {
                                 core::mem::swap(&mut lower, &mut upper);
                             }
 
-                            let actual = map.range(lower..=upper);
-                            let expected = expected.range(lower..=upper);
+                            let actual = map.range(lower.borrow()..=upper.borrow());
+                            let expected = expected.range((Bound::Included(lower.borrow()), Bound::Included(upper.borrow())));
                             let mut expected = if descend {
                                 Box::new(expected.rev())
                             } else {
@@ -106,7 +125,7 @@ fn orthogonal() {
                             macro_rules! compare {
                                 () => {
                                     |(key_actual, value_actual)| {
-                                        if !key_actual.is_thread(thread as u8) {
+                                        if !K::is_thread(key_actual, thread as u8) {
                                             return ControlFlow::Continue(());
                                         }
 

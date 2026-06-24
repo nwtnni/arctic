@@ -59,7 +59,7 @@
 //! `state_machine` test. There is some preliminary work on writing
 //! [shuttle](https://github.com/awslabs/shuttle)-based tests.
 //!
-//! The entire test suite can be run with `cargo test --release --features proptest,validate`.
+//! The entire test suite can be run with `cargo test --release --features proptest,rand,validate`.
 //!
 //! # Feature flags
 //!
@@ -76,7 +76,8 @@
 //! - `opt-no-*` disable optimizations for ablation measurements.
 //! - `opt-membarrier` enables [`membarrier`](https://man7.org/linux/man-pages/man2/membarrier.2.html)
 //!   for hazard key and seize SMR backends.
-//! - `shuttle` enables integration with the [shuttle](https://github.com/awslabs/shuttle)
+//! - `rand` enables integration with [rand](https://docs.rs/rand/latest/rand/)
+//! - `shuttle` enables integration with the [shuttle](https://docs.rs/shuttle/latest/shuttle/)
 //!   concurrency testing runtime.
 //! - `proptest` enables integration with the [proptest](https://docs.rs/proptest/latest/proptest/)
 //!   property testing framework.

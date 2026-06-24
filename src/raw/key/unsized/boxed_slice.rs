@@ -152,6 +152,17 @@ where
     }
 }
 
+#[cfg(feature = "rand")]
+impl rand::distr::Distribution<BoxedSlice<r#unsized::NonNull, str>>
+    for rand::distr::StandardUniform
+{
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> BoxedSlice<r#unsized::NonNull, str> {
+        let uniform = rand::distr::Uniform::new_inclusive(1 as char, char::MAX).unwrap();
+        let string = rand::distr::SampleString::sample_string(&uniform, rng, 32);
+        unsafe { BoxedSlice::new_unchecked(string.into_boxed_str()) }
+    }
+}
+
 impl<I, R> Key for BoxedSlice<I, R>
 where
     I: r#unsized::Invariant,

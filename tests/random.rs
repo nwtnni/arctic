@@ -1,3 +1,5 @@
+#![cfg(feature = "rand")]
+
 use core::borrow::Borrow as _;
 use std::sync::Barrier;
 
