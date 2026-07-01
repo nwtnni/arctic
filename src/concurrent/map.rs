@@ -237,7 +237,9 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// ```
     pub fn get<'g>(&'g self, key: &K::Borrowed) -> Option<Shared<'g, K, V, S>> {
         let reader = K::Read::from(key);
-        self.get_impl(reader)
+        let mut guard = self.smr.guard(reader);
+        let value = self.get_raw(&mut guard, reader)?;
+        Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
     }
 
     /// If there is no value associated with `key`, associate it with `value`.
@@ -967,15 +969,8 @@ where
     S: Smr<K, V>,
 {
     #[inline]
-    fn get_impl<'g>(&'g self, reader: K::Read<'_>) -> Option<Shared<'g, K, V, S>> {
-        let guard = self.smr.guard(reader);
-        let value = unsafe {
-            self.seq
-                .raw
-                .cursor::<path::Discard>(reader)
-                .traverse_get()?
-        };
-        Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
+    fn get_raw<'g>(&'g self, _guard: &mut S::Guard<'g>, reader: K::Read<'_>) -> Option<u64> {
+        unsafe { self.seq.raw.cursor::<path::Discard>(reader).traverse_get() }
     }
 
     #[inline]
