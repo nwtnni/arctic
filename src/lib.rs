@@ -200,7 +200,10 @@ pub use sequential::Set as SequentialSet;
 /// because the latter would require maintaining two stacks at runtime (for the lower and
 /// upper bound).
 #[expect(private_bounds)]
-pub trait Order: seal::Seal {}
+pub trait Order: seal::Seal {
+    #[doc(hidden)]
+    const ASCEND: bool;
+}
 
 /// Ascending key order.
 ///
@@ -212,23 +215,19 @@ pub struct Ascend;
 /// Also see [`Order`].
 pub struct Descend;
 
-impl Order for Ascend {}
-impl Order for Descend {}
+impl Order for Ascend {
+    const ASCEND: bool = true;
+}
+
+impl Order for Descend {
+    const ASCEND: bool = false;
+}
 
 mod seal {
     //! [Seal](https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/) for [`crate::Order`].
-
-    pub(crate) trait Seal {
-        const ASCEND: bool;
-    }
-
-    impl Seal for super::Ascend {
-        const ASCEND: bool = true;
-    }
-
-    impl Seal for super::Descend {
-        const ASCEND: bool = false;
-    }
+    pub(crate) trait Seal {}
+    impl Seal for super::Ascend {}
+    impl Seal for super::Descend {}
 }
 
 /// <https://users.rust-lang.org/t/compiler-hint-for-unlikely-likely-for-if-branches/62102/4>
