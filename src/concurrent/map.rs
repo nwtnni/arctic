@@ -939,8 +939,21 @@ where
         F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let reader = K::Read::from(key);
-        let Ok(remove) = self.remove_with_impl::<true, path::Retain<_>, _>(reader, &mut remove);
-        remove
+        let mut guard = self.smr.guard(reader);
+        let Ok(remove) =
+            self.remove_with_raw::<true, path::Retain<_>, _>(&mut guard, reader, |value| {
+                remove(unsafe { V::borrow_from_raw_unchecked(&value) })
+            });
+
+        match remove {
+            RemoveRaw::Absent => Remove::Absent,
+            RemoveRaw::Success { old } => Remove::Success {
+                old: unsafe { Owned::<K, V, S>::wrap(guard, old) },
+            },
+            RemoveRaw::Break { old } => Remove::Break {
+                old: unsafe { Shared::<K, V, S>::wrap(guard, old) },
+            },
+        }
     }
 
     /// If there is a value associated with `key`, call `remove` to determine whether
@@ -960,15 +973,32 @@ where
     pub fn remove_non_recursive_with<F>(
         &self,
         key: &K::Borrowed,
-        mut with: F,
+        mut remove: F,
     ) -> Remove<'_, K, V, S>
     where
         F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let reader = K::Read::from(key);
-        match self.remove_non_recursive_with_optimistic(reader, &mut with) {
+        let mut guard = self.smr.guard(reader);
+        let mut remove = |value: u64| remove(unsafe { V::borrow_from_raw_unchecked(&value) });
+
+        let remove = match if cfg!(feature = "opt-no-path") {
+            self.remove_non_recursive_with_optimistic(&mut guard, reader, &mut remove)
+        } else {
+            Err(())
+        } {
             Ok(remove) => remove,
-            Err(()) => self.remove_non_recursive_with_pessimistic(reader, &mut with),
+            Err(()) => self.remove_non_recursive_with_pessimistic(&mut guard, reader, &mut remove),
+        };
+
+        match remove {
+            RemoveRaw::Absent => Remove::Absent,
+            RemoveRaw::Success { old } => Remove::Success {
+                old: unsafe { Owned::<K, V, S>::wrap(guard, old) },
+            },
+            RemoveRaw::Break { old } => Remove::Break {
+                old: unsafe { Shared::<K, V, S>::wrap(guard, old) },
+            },
         }
     }
 }
@@ -1044,6 +1074,12 @@ where
         /// Latest value observed by closure.
         old: Shared<'g, K, V, S>,
     },
+}
+
+enum RemoveRaw {
+    Absent,
+    Success { old: u64 },
+    Break { old: u64 },
 }
 
 /// # Private implementations
@@ -1278,46 +1314,48 @@ where
     }
 
     #[inline]
-    fn remove_non_recursive_with_optimistic<F>(
-        &self,
+    fn remove_non_recursive_with_optimistic<'g, F>(
+        &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
-        remove: &mut F,
-    ) -> Result<Remove<'_, K, V, S>, ()>
+        remove: F,
+    ) -> Result<RemoveRaw, ()>
     where
-        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
+        F: FnMut(u64) -> ControlFlow<(), ()>,
     {
-        self.remove_with_impl::<false, path::Discard, _>(reader, remove)
+        self.remove_with_raw::<false, path::Discard, _>(guard, reader, remove)
     }
 
     #[cold]
-    fn remove_non_recursive_with_pessimistic<F>(
-        &self,
+    fn remove_non_recursive_with_pessimistic<'g, F>(
+        &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
-        remove: &mut F,
-    ) -> Remove<'_, K, V, S>
+        remove: F,
+    ) -> RemoveRaw
     where
-        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
+        F: FnMut(u64) -> ControlFlow<(), ()>,
     {
-        let Ok(remove) = self.remove_with_impl::<false, path::Retain<_>, _>(reader, remove);
+        let Ok(remove) = self.remove_with_raw::<false, path::Retain<_>, _>(guard, reader, remove);
         remove
     }
 
     #[inline]
-    fn remove_with_impl<'g, 'k, const RECURSIVE: bool, P, F>(
+    fn remove_with_raw<'g, 'k, const RECURSIVE: bool, P, F>(
         &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
-        remove: &mut F,
-    ) -> Result<Remove<'g, K, V, S>, P::PopError>
+        mut remove: F,
+    ) -> Result<RemoveRaw, P::PopError>
     where
         P: Path<K::Read<'k>>,
-        F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
+        F: FnMut(u64) -> ControlFlow<(), ()>,
     {
-        let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
-        let update = loop {
-            let update = match cursor.traverse_update() {
-                None => return Ok(Remove::Absent),
+        let (value, edge) = loop {
+            let cursor::Update { value, edge } = match cursor.traverse_update() {
+                None => return Ok(RemoveRaw::Absent),
                 Some(update) if !update.edge.meta().is_frozen() => update,
                 Some(_) => match cursor.freeze()? {
                     None => continue,
@@ -1328,31 +1366,24 @@ where
                 },
             };
 
-            match remove(unsafe { V::borrow_from_raw_unchecked(&update.value) }) {
+            match remove(value) {
                 ControlFlow::Continue(()) => (),
                 ControlFlow::Break(()) => {
-                    return Ok(Remove::Break {
-                        old: unsafe { Shared::<K, V, S>::wrap(guard, update.value) },
-                    });
+                    return Ok(RemoveRaw::Break { old: value });
                 }
             }
 
             if cursor
                 .edge()
-                .compare_exchange_packed(
-                    update.edge,
-                    Edge::NULL,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
+                .compare_exchange_packed(edge, Edge::NULL, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
-                break update;
+                break (value, edge);
             }
         };
 
         if RECURSIVE {
-            let mut trim = update.edge.meta().len();
+            let mut trim = edge.meta().len();
 
             'outer: while let Some(target) = cursor
                 .pop()
@@ -1413,9 +1444,7 @@ where
             }
         }
 
-        Ok(Remove::Success {
-            old: unsafe { Owned::<K, V, S>::wrap(guard, update.value) },
-        })
+        Ok(RemoveRaw::Success { old: value })
     }
 }
 
