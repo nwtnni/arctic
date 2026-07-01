@@ -709,23 +709,60 @@ where
     pub fn upsert_with<'g, 'k, F>(
         &'g self,
         key: K::Insert<'k>,
-        initial: Option<V>,
+        mut initial: Option<V>,
         mut upsert: F,
     ) -> Upsert<'g, K, V, S>
     where
         F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let reader = K::insert_as_read(key);
-        let initial = if cfg!(feature = "opt-no-path") {
-            initial
+        let mut guard = self.smr.guard(reader);
+
+        // NOTE: this is a macro so we get disjoint mutable borrows of `initial`
+        macro_rules! upsert {
+            () => {
+                |old: Option<u64>, new: Option<u64>| unsafe {
+                    initial = new.map(|new| V::from_raw_unchecked(new));
+
+                    match upsert(
+                        old.as_ref().map(|old| V::borrow_from_raw_unchecked(old)),
+                        &mut initial,
+                    ) {
+                        ControlFlow::Continue(new) => ControlFlow::Continue(new.into_raw()),
+                        ControlFlow::Break(()) => ControlFlow::Break(()),
+                    }
+                }
+            };
+        }
+
+        let upsert = match if cfg!(feature = "opt-no-path") {
+            self.upsert_with_optimistic(
+                &mut guard,
+                reader,
+                initial.take().map(V::into_raw),
+                upsert!(),
+            )
         } else {
-            match self.upsert_with_optimistic(reader, initial, &mut upsert) {
-                Ok(update) => return update,
-                Err(initial) => initial,
-            }
+            Err(())
+        } {
+            Ok(upsert) => upsert,
+            Err(()) => self.upsert_with_pessimistic(
+                &mut guard,
+                reader,
+                initial.take().map(V::into_raw),
+                upsert!(),
+            ),
         };
 
-        self.upsert_with_pessimistic(reader, initial, upsert)
+        match upsert {
+            UpsertRaw::Success { old, new } => {
+                Upsert::Success(unsafe { Upserted::<K, V, S>::wrap(guard, old, new) })
+            }
+            UpsertRaw::Break { old } => Upsert::Break {
+                old: old.map(|old| unsafe { Shared::<K, V, S>::wrap(guard, old) }),
+                new: initial,
+            },
+        }
     }
 
     /// If there is a value associated with `key`, call the provided `update` closure
@@ -917,6 +954,11 @@ where
     },
 }
 
+enum UpsertRaw {
+    Success { old: Option<u64>, new: u64 },
+    Break { old: Option<u64> },
+}
+
 /// Outcome of a call to [`ConcurrentMap::update_with`].
 pub enum Update<'g, K, V, S>
 where
@@ -976,95 +1018,87 @@ where
     #[inline]
     fn upsert_with_optimistic<'g, 'k, F>(
         &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
-        initial: Option<V>,
+        initial: Option<u64>,
         upsert: F,
-    ) -> Result<Upsert<'g, K, V, S>, Option<V>>
+    ) -> Result<UpsertRaw, ()>
     where
-        F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
-        self.upsert_with_impl::<path::Discard, _>(reader, initial, upsert)
+        self.upsert_with_raw::<path::Discard, _>(guard, reader, initial, upsert)
     }
 
     #[cold]
     fn upsert_with_pessimistic<'g, 'k, F>(
         &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
-        initial: Option<V>,
+        initial: Option<u64>,
         upsert: F,
-    ) -> Upsert<'g, K, V, S>
+    ) -> UpsertRaw
     where
-        F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::InsertPessimistic);
-        match self.upsert_with_impl::<path::Retain<_>, _>(reader, initial, upsert) {
+        match self.upsert_with_raw::<path::Retain<_>, _>(guard, reader, initial, upsert) {
             Ok(upsert) => upsert,
-            Err(_) => unreachable!(),
         }
     }
 
     #[inline]
-    fn upsert_with_impl<'g, 'k, P, F>(
+    fn upsert_with_raw<'g, 'k, P, F>(
         &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
-        mut initial: Option<V>,
+        mut initial: Option<u64>,
         mut upsert: F,
-    ) -> Result<Upsert<'g, K, V, S>, Option<V>>
+    ) -> Result<UpsertRaw, P::PopError>
     where
         P: Path<K::Read<'k>>,
-        F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
-        let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
         loop {
             match cursor.traverse_insert() {
                 cursor::Insert::Value {
                     value: old_value,
-                    edge: old,
+                    edge: old_edge,
                 } => {
-                    let new_value = match upsert(
-                        old_value
-                            .as_ref()
-                            .map(|old| unsafe { V::borrow_from_raw_unchecked(old) }),
-                        &mut initial,
-                    ) {
-                        ControlFlow::Continue(value) => V::into_raw(value),
+                    let new_value = match upsert(old_value, initial) {
+                        ControlFlow::Continue(new_value) => new_value,
                         ControlFlow::Break(()) => {
-                            return Ok(Upsert::Break {
-                                old: old_value.map(|old_value| unsafe {
-                                    Shared::<K, V, S>::wrap(guard, old_value)
-                                }),
-                                new: initial,
-                            });
+                            return Ok(UpsertRaw::Break { old: old_value });
                         }
                     };
 
-                    if old.meta().is_frozen() {
+                    if old_edge.meta().is_frozen() {
                         // Restore value and fall through to freeze
-                        initial = Some(unsafe { V::from_raw_unchecked(new_value) });
+                        initial = Some(new_value);
                     } else {
-                        let (new, _) = cursor.create_path(old, new_value);
+                        let (new_edge, _) = cursor.create_path(old_edge, new_value);
                         match cursor.edge().compare_exchange_packed(
-                            old,
-                            new,
+                            old_edge,
+                            new_edge,
                             Ordering::AcqRel,
                             Ordering::Acquire,
                         ) {
                             Ok(_) => {
-                                return Ok(Upsert::Success(unsafe {
-                                    Upserted::<K, V, S>::wrap(guard, old_value, new_value)
-                                }));
+                                return Ok(UpsertRaw::Success {
+                                    old: old_value,
+                                    new: new_value,
+                                });
                             }
                             Err(_) => {
-                                if let Some(node) = new.as_node() {
+                                if let Some(node) = new_edge.as_node() {
                                     unsafe {
                                         stat::increment(stat::Counter::FreeConflict);
                                         node.deallocate_recursive::<K::Edge>();
                                     }
                                 }
 
-                                initial = Some(unsafe { V::from_raw_unchecked(new_value) });
+                                initial = Some(new_value);
                                 continue;
                             }
                         }
@@ -1072,15 +1106,15 @@ where
                 }
                 cursor::Insert::Replace {
                     node: old_node,
-                    edge: old,
-                } if !old.meta().is_frozen() => {
-                    let (smo, new) = unsafe {
+                    edge: old_edge,
+                } if !old_edge.meta().is_frozen() => {
+                    let (smo, new_edge) = unsafe {
                         old_node.freeze::<K::Edge>();
-                        old_node.replace(old.meta())
+                        old_node.replace(old_edge.meta())
                     };
                     match cursor.edge().compare_exchange_packed(
-                        old,
-                        new,
+                        old_edge,
+                        new_edge,
                         Ordering::AcqRel,
                         Ordering::Acquire,
                     ) {
@@ -1090,7 +1124,7 @@ where
                         Err(_) => {
                             // Does not go through SMR because `new` is still thread-local
                             if smo.is_allocate() {
-                                let node = new.as_node().expect("Allocating SMO creates node");
+                                let node = new_edge.as_node().expect("Allocating SMO creates node");
                                 unsafe {
                                     stat::increment(stat::Counter::FreeConflict);
                                     node.deallocate();
@@ -1106,12 +1140,9 @@ where
                 cursor::Insert::Replace { .. } => (),
             }
 
-            match cursor.freeze() {
-                Err(_) => return Err(initial),
-                Ok(None) => (),
-                Ok(Some(node)) => unsafe {
-                    guard.retire_node(cursor.len().bits(), node.into_raw())
-                },
+            match cursor.freeze()? {
+                None => (),
+                Some(node) => unsafe { guard.retire_node(cursor.len().bits(), node.into_raw()) },
             }
         }
     }
