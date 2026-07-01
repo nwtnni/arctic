@@ -49,6 +49,7 @@ where
 
         self.map
             .get_impl(reader)
+            .map(|value| unsafe { value.cast::<raw::Set>().as_ref() })
             .is_some_and(|set| set.contains(byte))
     }
 

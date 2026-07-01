@@ -123,6 +123,7 @@ where
     pub fn get(&self, key: &K::Borrowed) -> Option<&V> {
         let reader = K::Read::from(key);
         self.get_impl(reader)
+            .map(|value| unsafe { value.cast::<V>().as_ref() })
     }
 
     /// Returns a mutable reference to the value associated with `key`.
@@ -266,7 +267,9 @@ where
     /// }
     /// ```
     pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
-        self.update_impl(K::Read::from(key), value)
+        self.update_impl(K::Read::from(key), value.into_raw())
+            .map(|(old, new)| unsafe { (V::from_raw_unchecked(old), new.cast::<V>().as_mut()) })
+            .map_err(|new| unsafe { V::from_raw_unchecked(new) })
     }
 
     /// If there is a value associated with `key`, remove it from the map,
@@ -300,6 +303,7 @@ where
     /// ```
     pub fn remove(&mut self, key: &K::Borrowed) -> Option<V> {
         self.remove_impl::<path::Retain<_>>(K::Read::from(key))
+            .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
     /// If there is a value associated with `key`, remove it from the map,
@@ -321,6 +325,7 @@ where
     /// there was no old value associated with `key`.
     pub fn remove_non_recursive(&mut self, key: &K::Borrowed) -> Option<V> {
         self.remove_impl::<path::Discard>(K::Read::from(key))
+            .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
     /// Get a logical entry associated with `key` (see also [`std::collections::BTreeMap::entry`]).
@@ -412,34 +417,34 @@ where
     V: Value,
 {
     #[inline]
-    pub(super) fn get_impl(&self, reader: K::Read<'_>) -> Option<&V> {
+    pub(super) fn get_impl(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
         cursor.traverse_get()?;
-        Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_ref() })
+        Some(unsafe { cursor.as_value_unchecked() })
     }
 
-    #[inline]
-    pub(super) fn update_impl(&mut self, reader: K::Read<'_>, value: V) -> Result<(V, &mut V), V> {
+    pub(super) fn update_impl(
+        &mut self,
+        reader: K::Read<'_>,
+        value: u64,
+    ) -> Result<(u64, NonNull<u64>), u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
         match cursor.traverse_update() {
             None => Err(value),
-            Some(update) => unsafe {
-                let edge = cursor.edge_mut();
+            Some(update) => {
+                let edge = unsafe { cursor.edge_mut() };
                 *edge.get_mut_packed() = Edge::new_value(update.edge.meta(), value.into_raw());
-                Ok((
-                    V::from_raw_unchecked(update.value),
+                Ok((update.value, unsafe {
                     Edge::as_value_unchecked(NonNull::from(edge))
-                        .cast::<V>()
-                        .as_mut(),
-                ))
-            },
+                }))
+            }
         }
     }
 
     pub(super) fn remove_impl<'k, P: cursor::Path<K::Read<'k>>>(
         &mut self,
         reader: K::Read<'k>,
-    ) -> Option<V> {
+    ) -> Option<u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Retain<_>>(reader) };
 
         let update = cursor.traverse_update()?;
@@ -463,7 +468,7 @@ where
             unsafe { target.deallocate() };
         }
 
-        Some(unsafe { V::from_raw_unchecked(update.value) })
+        Some(update.value)
     }
 
     #[inline]
