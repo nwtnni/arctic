@@ -266,13 +266,7 @@ where
     /// }
     /// ```
     pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
-        match self.entry_impl(K::Read::from(key)) {
-            Entry::Vacant(_) => Err(value),
-            Entry::Occupied(mut entry) => {
-                let old = entry.update(value);
-                Ok((old, entry.into_mut()))
-            }
-        }
+        self.update_impl(K::Read::from(key), value)
     }
 
     /// If there is a value associated with `key`, remove it from the map,
@@ -422,6 +416,24 @@ where
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
         cursor.traverse_get()?;
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_ref() })
+    }
+
+    #[inline]
+    pub(super) fn update_impl(&mut self, reader: K::Read<'_>, value: V) -> Result<(V, &mut V), V> {
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
+        match cursor.traverse_update() {
+            None => Err(value),
+            Some(update) => unsafe {
+                let edge = cursor.edge_mut();
+                *edge.get_mut_packed() = Edge::new_value(update.edge.meta(), value.into_raw());
+                Ok((
+                    V::from_raw_unchecked(update.value),
+                    Edge::as_value_unchecked(NonNull::from(edge))
+                        .cast::<V>()
+                        .as_mut(),
+                ))
+            },
+        }
     }
 
     pub(super) fn remove_impl<'k, P: cursor::Path<K::Read<'k>>>(
