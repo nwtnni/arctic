@@ -13,7 +13,8 @@ mod epoch;
 /// Auxiliary types for use with hazard keys.
 #[cfg(feature = "smr-hazard")]
 pub mod hazard;
-pub(crate) mod no_op;
+/// Auxiliary types for use with no-op SMR.
+pub mod no_op;
 #[cfg(feature = "smr-seize")]
 mod seize;
 

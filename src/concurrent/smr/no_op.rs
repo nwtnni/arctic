@@ -43,6 +43,7 @@ impl<K: Key, V: Value> Smr<K, V> for NoOp {
     }
 }
 
+/// Guard type for [`NoOp`] SMR backend.
 pub struct Guard<G, V> {
     _guard: PhantomData<G>,
     _value: PhantomData<V>,
