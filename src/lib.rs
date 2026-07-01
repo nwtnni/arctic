@@ -19,6 +19,46 @@
 //! and a more convenient API. The borrow checker allows us to
 //! safely take advantage of both APIs at runtime, via [`ConcurrentMap::as_sequential`].
 //!
+//! # Examples
+//!
+//! ```rust
+//! use std::thread;
+//!
+//! use arctic::ConcurrentMap;
+//!
+//! let map = ConcurrentMap::<u64, u64>::default();
+//!
+//! thread::scope(|scope| {
+//!     let map = &map;
+//!
+//!     // Concurrent writers (with overlapping keys)
+//!     for thread in 0..8 {
+//!         scope.spawn(move || {
+//!             for offset in 0..128 {
+//!                 // 0..128, 64..192, ..., 448..576
+//!                 map.upsert(thread * 64 + offset, thread);
+//!             }
+//!         });
+//!     }
+//! });
+//!
+//! // Ordered iteration over ranges
+//! assert!(
+//!     map.range(5..=102)
+//!         .entries::<arctic::Ascend>()
+//!         .map(|(key, _)| key)
+//!         .eq(5..=102)
+//! );
+//!
+//! // Ordered iteration over prefixes
+//! assert!(
+//!     map.prefix(&[0, 0, 0, 0, 0, 0, 2])
+//!         .entries::<arctic::Descend>()
+//!         .map(|(key, _)| key)
+//!         .eq((512..576).rev())
+//! );
+//! ```
+//!
 //! # Why use this crate?
 //!
 //! As far as we know (corrections welcome!), out of all map data structures that (a) are lock-free
