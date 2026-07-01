@@ -8,6 +8,7 @@ use crate::raw::node;
 use crate::sync::Atomic;
 
 pub(crate) struct PostorderIter<'g, M: ribbit::Pack> {
+    sort: bool,
     stack: Vec<RepeatIter<'g, M>>,
 }
 
@@ -16,11 +17,12 @@ where
     M: ribbit::Pack<Packed: edge::Meta> + 'g,
 {
     #[inline]
-    pub(crate) unsafe fn new(root: &'g Atomic<Edge<M>>) -> Self {
+    pub(crate) unsafe fn new(root: &'g Atomic<Edge<M>>, sort: bool) -> Self {
         // HACK: we're masquerading as a node here--this is okay
         // since this iterator doesn't keep track of the key state,
         // so we can use an arbitrary byte.
         Self {
+            sort,
             stack: vec![RepeatIter::new(unsafe {
                 node::EntryIter::new(
                     node::KeyIter::ROOT,
@@ -64,7 +66,7 @@ where
                         edge::Child::Node(node) if first => {
                             match unsafe {
                                 node.entry_or_entries::<_, _>(
-                                    false,
+                                    self.sort,
                                     Unbound::<()>::default(),
                                     Unbound::<()>::default(),
                                 )

@@ -556,7 +556,7 @@ where
     V: Value,
 {
     fn drop(&mut self) {
-        self.raw.postorder().for_each_internal(|_, child| {
+        self.raw.postorder(false).for_each_internal(|_, child| {
             stat::increment(stat::Counter::FreeDrop);
 
             // SAFETY: we have exclusive access to nodes and values in destructor

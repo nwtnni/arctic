@@ -20,8 +20,8 @@ impl<K: Key> Map<K> {
         )))
     }
 
-    pub(crate) fn postorder<'g>(&'g mut self) -> PostorderIter<'g, K::Edge> {
-        unsafe { PostorderIter::new(self.root()) }
+    pub(crate) fn postorder<'g>(&'g mut self, sort: bool) -> PostorderIter<'g, K::Edge> {
+        unsafe { PostorderIter::new(self.root(), sort) }
     }
 
     #[inline]

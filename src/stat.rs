@@ -34,7 +34,7 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S
 
     map.as_sequential()
         .raw
-        .postorder()
+        .postorder(false)
         .for_each_internal(|meta, child| {
             let bits = meta.len().bits();
             compression.record((bits >> 3) as u64);
