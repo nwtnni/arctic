@@ -825,23 +825,60 @@ where
     pub fn update_with<'g, F>(
         &'g self,
         key: &K::Borrowed,
-        initial: Option<V>,
+        mut initial: Option<V>,
         mut update: F,
     ) -> Update<'g, K, V, S>
     where
         F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let reader = K::Read::from(key);
-        let initial = if cfg!(feature = "opt-no-path") {
-            initial
+        let mut guard = self.smr.guard(reader);
+
+        // NOTE: this is a macro so we get disjoint mutable borrows of `initial`
+        macro_rules! update {
+            () => {
+                |old: u64, new: Option<u64>| unsafe {
+                    initial = new.map(|new| V::from_raw_unchecked(new));
+
+                    match update(V::borrow_from_raw_unchecked(&old), &mut initial) {
+                        ControlFlow::Continue(new) => ControlFlow::Continue(new.into_raw()),
+                        ControlFlow::Break(()) => ControlFlow::Break(()),
+                    }
+                }
+            };
+        }
+
+        let update = match if cfg!(feature = "opt-no-path") {
+            self.update_with_optimistic(
+                &mut guard,
+                reader,
+                initial.take().map(V::into_raw),
+                update!(),
+            )
         } else {
-            match self.update_with_optimistic(reader, initial, &mut update) {
-                Ok(update) => return update,
-                Err(initial) => initial,
-            }
+            Err(())
+        } {
+            Ok(update) => update,
+            Err(()) => self.update_with_pessimistic(
+                &mut guard,
+                reader,
+                initial.take().map(V::into_raw),
+                update!(),
+            ),
         };
 
-        self.update_with_pessimistic(reader, initial, update)
+        match update {
+            UpdateRaw::Absent { new } => Update::Absent {
+                new: new.map(|new| unsafe { V::from_raw_unchecked(new) }),
+            },
+            UpdateRaw::Success { old, new } => {
+                Update::Success(unsafe { Updated::<K, V, S>::wrap(guard, old, new) })
+            }
+            UpdateRaw::Break { old } => Update::Break {
+                old: unsafe { Shared::<K, V, S>::wrap(guard, old) },
+                new: initial,
+            },
+        }
     }
 
     /// If there is a value associated with `key`, call `remove` to determine whether
@@ -980,6 +1017,12 @@ where
         /// Latest value passed as argument or returned from closure.
         new: Option<V>,
     },
+}
+
+enum UpdateRaw {
+    Absent { new: Option<u64> },
+    Success { old: u64, new: u64 },
+    Break { old: u64 },
 }
 
 /// Outcome of a call to [`ConcurrentMap::remove_with`].
@@ -1150,87 +1193,85 @@ where
     #[inline]
     fn update_with_optimistic<'g, F>(
         &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
-        initial: Option<V>,
+        initial: Option<u64>,
         update: F,
-    ) -> Result<Update<'g, K, V, S>, Option<V>>
+    ) -> Result<UpdateRaw, ()>
     where
-        F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
-        self.update_with_impl::<path::Discard, _>(reader, initial, update)
+        self.update_with_raw::<path::Discard, _>(guard, reader, initial, update)
     }
 
     #[cold]
     fn update_with_pessimistic<'g, F>(
         &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
-        initial: Option<V>,
+        initial: Option<u64>,
         update: F,
-    ) -> Update<'g, K, V, S>
+    ) -> UpdateRaw
     where
-        F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::UpdatePessimistic);
-        match self.update_with_impl::<path::Retain<_>, _>(reader, initial, update) {
+        match self.update_with_raw::<path::Retain<_>, _>(guard, reader, initial, update) {
             Ok(update) => update,
-            Err(_) => unreachable!(),
         }
     }
 
     #[inline]
-    fn update_with_impl<'g, 'k, P, F>(
+    fn update_with_raw<'g, 'k, P, F>(
         &'g self,
+        guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
-        mut initial: Option<V>,
-        mut update_: F,
-    ) -> Result<Update<'g, K, V, S>, Option<V>>
+        mut initial: Option<u64>,
+        mut update: F,
+    ) -> Result<UpdateRaw, P::PopError>
     where
         P: Path<K::Read<'k>>,
-        F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
+        F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
-        let mut guard = self.smr.guard(reader);
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
         loop {
-            let update = match cursor.traverse_update() {
-                None => return Ok(Update::Absent { new: initial }),
+            let cursor::Update {
+                value: old_value,
+                edge: old_edge,
+            } = match cursor.traverse_update() {
+                None => return Ok(UpdateRaw::Absent { new: initial }),
                 Some(update) if !update.edge.meta().is_frozen() => update,
-                Some(_) => match cursor.freeze() {
-                    Err(_) => return Err(initial),
-                    Ok(None) => continue,
-                    Ok(Some(node)) => unsafe {
+                Some(_) => match cursor.freeze()? {
+                    None => continue,
+                    Some(node) => unsafe {
                         guard.retire_node(cursor.len().bits(), node.into_raw());
                         continue;
                     },
                 },
             };
 
-            let new_value = match update_(
-                unsafe { V::borrow_from_raw_unchecked(&update.value) },
-                &mut initial,
-            ) {
-                ControlFlow::Continue(new) => V::into_raw(new),
+            let new_value = match update(old_value, initial) {
+                ControlFlow::Continue(new_value) => new_value,
                 ControlFlow::Break(()) => {
-                    return Ok(Update::Break {
-                        old: unsafe { Shared::<K, V, S>::wrap(guard, update.value) },
-                        new: initial,
-                    });
+                    return Ok(UpdateRaw::Break { old: old_value });
                 }
             };
 
             match cursor.edge().compare_exchange_packed(
-                update.edge,
-                Edge::new_value(update.edge.meta(), new_value),
+                old_edge,
+                Edge::new_value(old_edge.meta(), new_value),
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    return Ok(Update::Success(unsafe {
-                        Updated::<K, V, S>::wrap(guard, update.value, new_value)
-                    }));
+                    return Ok(UpdateRaw::Success {
+                        old: old_value,
+                        new: new_value,
+                    });
                 }
                 Err(_) => {
-                    initial = Some(unsafe { V::from_raw_unchecked(new_value) });
+                    initial = Some(new_value);
                 }
             }
         }
