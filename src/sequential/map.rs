@@ -122,7 +122,7 @@ where
     /// ```
     pub fn get(&self, key: &K::Borrowed) -> Option<&V> {
         let reader = K::Read::from(key);
-        self.get_impl(reader)
+        self.get_raw(reader)
             .map(|value| unsafe { value.cast::<V>().as_ref() })
     }
 
@@ -267,7 +267,7 @@ where
     /// }
     /// ```
     pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
-        self.update_impl(K::Read::from(key), value.into_raw())
+        self.update_raw(K::Read::from(key), value.into_raw())
             .map(|(old, new)| unsafe { (V::from_raw_unchecked(old), new.cast::<V>().as_mut()) })
             .map_err(|new| unsafe { V::from_raw_unchecked(new) })
     }
@@ -302,7 +302,7 @@ where
     /// assert!(map.get(&key).is_none());
     /// ```
     pub fn remove(&mut self, key: &K::Borrowed) -> Option<V> {
-        self.remove_impl::<path::Retain<_>>(K::Read::from(key))
+        self.remove_raw::<path::Retain<_>>(K::Read::from(key))
             .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
@@ -324,7 +324,7 @@ where
     /// Returns `Some(old_value)` if the remove succeeded, or else `None` if
     /// there was no old value associated with `key`.
     pub fn remove_non_recursive(&mut self, key: &K::Borrowed) -> Option<V> {
-        self.remove_impl::<path::Discard>(K::Read::from(key))
+        self.remove_raw::<path::Discard>(K::Read::from(key))
             .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
@@ -353,7 +353,7 @@ where
     /// assert_eq!(*counter.get(claw).unwrap(), 3);
     /// ```
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
-        self.entry_impl(K::insert_as_read(key))
+        self.entry_raw(K::insert_as_read(key))
     }
 }
 
@@ -417,13 +417,13 @@ where
     V: Value,
 {
     #[inline]
-    pub(super) fn get_impl(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
+    pub(super) fn get_raw(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
         cursor.traverse_get()?;
         Some(unsafe { cursor.as_value_unchecked() })
     }
 
-    pub(super) fn update_impl(
+    pub(super) fn update_raw(
         &mut self,
         reader: K::Read<'_>,
         value: u64,
@@ -441,7 +441,7 @@ where
         }
     }
 
-    pub(super) fn remove_impl<'k, P: cursor::Path<K::Read<'k>>>(
+    pub(super) fn remove_raw<'k, P: cursor::Path<K::Read<'k>>>(
         &mut self,
         reader: K::Read<'k>,
     ) -> Option<u64> {
@@ -472,7 +472,7 @@ where
     }
 
     #[inline]
-    pub(super) fn entry_impl<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
+    pub(super) fn entry_raw<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
 
         match cursor.traverse_insert() {

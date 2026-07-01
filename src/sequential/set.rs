@@ -48,7 +48,7 @@ where
         let (reader, byte) = K::split_last(key);
 
         self.map
-            .get_impl(reader)
+            .get_raw(reader)
             .map(|value| unsafe { value.cast::<raw::Set>().as_ref() })
             .is_some_and(|set| set.contains(byte))
     }
@@ -69,7 +69,7 @@ where
     pub fn insert(&mut self, key: K::Insert<'_>) -> bool {
         let (reader, byte) = K::split_last(key.borrow());
 
-        self.map.entry_impl(reader).or_default().insert_mut(byte)
+        self.map.entry_raw(reader).or_default().insert_mut(byte)
     }
 }
 
