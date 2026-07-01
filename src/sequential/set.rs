@@ -69,7 +69,9 @@ where
     pub fn insert(&mut self, key: K::Insert<'_>) -> bool {
         let (reader, byte) = K::split_last(key.borrow());
 
-        self.map.entry_raw(reader).or_default().insert_mut(byte)
+        unsafe { self.map.entry_raw(reader) }
+            .or_default()
+            .insert_mut(byte)
     }
 }
 

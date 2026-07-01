@@ -238,7 +238,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     pub fn get<'g>(&'g self, key: &K::Borrowed) -> Option<Shared<'g, K, V, S>> {
         let reader = K::Read::from(key);
         let mut guard = self.smr.guard(reader);
-        let value = self.get_raw(&mut guard, reader)?;
+        let value = unsafe { self.get_raw(&mut guard, reader)? };
         Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
     }
 
@@ -721,7 +721,7 @@ where
         // NOTE: this is a macro so we get disjoint mutable borrows of `initial`
         macro_rules! upsert {
             () => {
-                |old: Option<u64>, new: Option<u64>| unsafe {
+                |old: Option<u64>, new: Option<u64>| {
                     initial = new.map(|new| V::from_raw_unchecked(new));
 
                     match upsert(
@@ -736,22 +736,26 @@ where
         }
 
         let upsert = match if cfg!(feature = "opt-no-path") {
-            self.upsert_with_optimistic(
-                &mut guard,
-                reader,
-                initial.take().map(V::into_raw),
-                upsert!(),
-            )
+            unsafe {
+                self.upsert_with_optimistic(
+                    &mut guard,
+                    reader,
+                    initial.take().map(V::into_raw),
+                    upsert!(),
+                )
+            }
         } else {
             Err(())
         } {
             Ok(upsert) => upsert,
-            Err(()) => self.upsert_with_pessimistic(
-                &mut guard,
-                reader,
-                initial.take().map(V::into_raw),
-                upsert!(),
-            ),
+            Err(()) => unsafe {
+                self.upsert_with_pessimistic(
+                    &mut guard,
+                    reader,
+                    initial.take().map(V::into_raw),
+                    upsert!(),
+                )
+            },
         };
 
         match upsert {
@@ -837,7 +841,7 @@ where
         // NOTE: this is a macro so we get disjoint mutable borrows of `initial`
         macro_rules! update {
             () => {
-                |old: u64, new: Option<u64>| unsafe {
+                |old: u64, new: Option<u64>| {
                     initial = new.map(|new| V::from_raw_unchecked(new));
 
                     match update(V::borrow_from_raw_unchecked(&old), &mut initial) {
@@ -849,22 +853,26 @@ where
         }
 
         let update = match if cfg!(feature = "opt-no-path") {
-            self.update_with_optimistic(
-                &mut guard,
-                reader,
-                initial.take().map(V::into_raw),
-                update!(),
-            )
+            unsafe {
+                self.update_with_optimistic(
+                    &mut guard,
+                    reader,
+                    initial.take().map(V::into_raw),
+                    update!(),
+                )
+            }
         } else {
             Err(())
         } {
             Ok(update) => update,
-            Err(()) => self.update_with_pessimistic(
-                &mut guard,
-                reader,
-                initial.take().map(V::into_raw),
-                update!(),
-            ),
+            Err(()) => unsafe {
+                self.update_with_pessimistic(
+                    &mut guard,
+                    reader,
+                    initial.take().map(V::into_raw),
+                    update!(),
+                )
+            },
         };
 
         match update {
@@ -940,10 +948,11 @@ where
     {
         let reader = K::Read::from(key);
         let mut guard = self.smr.guard(reader);
-        let Ok(remove) =
+        let Ok(remove) = unsafe {
             self.remove_with_raw::<true, path::Retain<_>, _>(&mut guard, reader, |value| {
-                remove(unsafe { V::borrow_from_raw_unchecked(&value) })
-            });
+                remove(V::borrow_from_raw_unchecked(&value))
+            })
+        };
 
         match remove {
             RemoveRaw::Absent => Remove::Absent,
@@ -983,12 +992,14 @@ where
         let mut remove = |value: u64| remove(unsafe { V::borrow_from_raw_unchecked(&value) });
 
         let remove = match if cfg!(feature = "opt-no-path") {
-            self.remove_non_recursive_with_optimistic(&mut guard, reader, &mut remove)
+            unsafe { self.remove_non_recursive_with_optimistic(&mut guard, reader, &mut remove) }
         } else {
             Err(())
         } {
             Ok(remove) => remove,
-            Err(()) => self.remove_non_recursive_with_pessimistic(&mut guard, reader, &mut remove),
+            Err(()) => unsafe {
+                self.remove_non_recursive_with_pessimistic(&mut guard, reader, &mut remove)
+            },
         };
 
         match remove {
@@ -1021,6 +1032,7 @@ where
     },
 }
 
+/// Type-erased version of [`Upsert`].
 enum UpsertRaw {
     Success { old: Option<u64>, new: u64 },
     Break { old: Option<u64> },
@@ -1049,6 +1061,7 @@ where
     },
 }
 
+/// Type-erased version of [`Update`].
 enum UpdateRaw {
     Absent { new: Option<u64> },
     Success { old: u64, new: u64 },
@@ -1076,6 +1089,7 @@ where
     },
 }
 
+/// Type-erased version of [`Remove`].
 enum RemoveRaw {
     Absent,
     Success { old: u64 },
@@ -1083,6 +1097,17 @@ enum RemoveRaw {
 }
 
 /// # Private implementations
+///
+/// These methods erase value types and accept arbitrary key readers and SMR guards.
+/// This reduces monomorphization and allows a future `concurrent::Set` implementation
+/// to reuse this logic, at the cost of reducing type safety.
+///
+/// # Safety
+///
+/// Caller must guarantee:
+/// - `_guard` protects nodes and values under `reader` for its lifetime.
+/// - When inserting or upserting, `reader` preserves the prefix property.
+/// - `initial` and every value returned from a closure was created via `V::into_raw`.
 impl<K, V, S> Map<K, V, S>
 where
     K: Key,
@@ -1090,12 +1115,12 @@ where
     S: Smr<K, V>,
 {
     #[inline]
-    fn get_raw<'g>(&'g self, _guard: &mut S::Guard<'g>, reader: K::Read<'_>) -> Option<u64> {
+    unsafe fn get_raw<'g>(&'g self, _guard: &mut S::Guard<'g>, reader: K::Read<'_>) -> Option<u64> {
         unsafe { self.seq.raw.cursor::<path::Discard>(reader).traverse_get() }
     }
 
     #[inline]
-    fn upsert_with_optimistic<'g, 'k, F>(
+    unsafe fn upsert_with_optimistic<'g, 'k, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
@@ -1105,11 +1130,11 @@ where
     where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
-        self.upsert_with_raw::<path::Discard, _>(guard, reader, initial, upsert)
+        unsafe { self.upsert_with_raw::<path::Discard, _>(guard, reader, initial, upsert) }
     }
 
     #[cold]
-    fn upsert_with_pessimistic<'g, 'k, F>(
+    unsafe fn upsert_with_pessimistic<'g, 'k, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
@@ -1120,13 +1145,13 @@ where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::InsertPessimistic);
-        match self.upsert_with_raw::<path::Retain<_>, _>(guard, reader, initial, upsert) {
-            Ok(upsert) => upsert,
-        }
+        let Ok(upsert) =
+            unsafe { self.upsert_with_raw::<path::Retain<_>, _>(guard, reader, initial, upsert) };
+        upsert
     }
 
     #[inline]
-    fn upsert_with_raw<'g, 'k, P, F>(
+    unsafe fn upsert_with_raw<'g, 'k, P, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
@@ -1227,7 +1252,7 @@ where
     }
 
     #[inline]
-    fn update_with_optimistic<'g, F>(
+    unsafe fn update_with_optimistic<'g, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
@@ -1237,11 +1262,11 @@ where
     where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
-        self.update_with_raw::<path::Discard, _>(guard, reader, initial, update)
+        unsafe { self.update_with_raw::<path::Discard, _>(guard, reader, initial, update) }
     }
 
     #[cold]
-    fn update_with_pessimistic<'g, F>(
+    unsafe fn update_with_pessimistic<'g, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
@@ -1252,13 +1277,13 @@ where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::UpdatePessimistic);
-        match self.update_with_raw::<path::Retain<_>, _>(guard, reader, initial, update) {
-            Ok(update) => update,
-        }
+        let Ok(update) =
+            unsafe { self.update_with_raw::<path::Retain<_>, _>(guard, reader, initial, update) };
+        update
     }
 
     #[inline]
-    fn update_with_raw<'g, 'k, P, F>(
+    unsafe fn update_with_raw<'g, 'k, P, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,
@@ -1314,7 +1339,7 @@ where
     }
 
     #[inline]
-    fn remove_non_recursive_with_optimistic<'g, F>(
+    unsafe fn remove_non_recursive_with_optimistic<'g, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
@@ -1323,11 +1348,11 @@ where
     where
         F: FnMut(u64) -> ControlFlow<(), ()>,
     {
-        self.remove_with_raw::<false, path::Discard, _>(guard, reader, remove)
+        unsafe { self.remove_with_raw::<false, path::Discard, _>(guard, reader, remove) }
     }
 
     #[cold]
-    fn remove_non_recursive_with_pessimistic<'g, F>(
+    unsafe fn remove_non_recursive_with_pessimistic<'g, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'_>,
@@ -1336,12 +1361,13 @@ where
     where
         F: FnMut(u64) -> ControlFlow<(), ()>,
     {
-        let Ok(remove) = self.remove_with_raw::<false, path::Retain<_>, _>(guard, reader, remove);
+        let Ok(remove) =
+            unsafe { self.remove_with_raw::<false, path::Retain<_>, _>(guard, reader, remove) };
         remove
     }
 
     #[inline]
-    fn remove_with_raw<'g, 'k, const RECURSIVE: bool, P, F>(
+    unsafe fn remove_with_raw<'g, 'k, const RECURSIVE: bool, P, F>(
         &'g self,
         guard: &mut S::Guard<'g>,
         reader: K::Read<'k>,

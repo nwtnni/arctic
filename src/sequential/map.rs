@@ -267,7 +267,7 @@ where
     /// }
     /// ```
     pub fn update(&mut self, key: &K::Borrowed, value: V) -> Result<(V, &mut V), V> {
-        self.update_raw(K::Read::from(key), value.into_raw())
+        unsafe { self.update_raw(K::Read::from(key), value.into_raw()) }
             .map(|(old, new)| unsafe { (V::from_raw_unchecked(old), new.cast::<V>().as_mut()) })
             .map_err(|new| unsafe { V::from_raw_unchecked(new) })
     }
@@ -302,7 +302,7 @@ where
     /// assert!(map.get(&key).is_none());
     /// ```
     pub fn remove(&mut self, key: &K::Borrowed) -> Option<V> {
-        self.remove_raw::<path::Retain<_>>(K::Read::from(key))
+        unsafe { self.remove_raw::<path::Retain<_>>(K::Read::from(key)) }
             .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
@@ -324,7 +324,7 @@ where
     /// Returns `Some(old_value)` if the remove succeeded, or else `None` if
     /// there was no old value associated with `key`.
     pub fn remove_non_recursive(&mut self, key: &K::Borrowed) -> Option<V> {
-        self.remove_raw::<path::Discard>(K::Read::from(key))
+        unsafe { self.remove_raw::<path::Discard>(K::Read::from(key)) }
             .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
@@ -353,7 +353,7 @@ where
     /// assert_eq!(*counter.get(claw).unwrap(), 3);
     /// ```
     pub fn entry<'k>(&mut self, key: K::Insert<'k>) -> Entry<'_, 'k, K, V> {
-        self.entry_raw(K::insert_as_read(key))
+        unsafe { self.entry_raw(K::insert_as_read(key)) }
     }
 }
 
@@ -411,11 +411,21 @@ where
 }
 
 /// # Private implementations
+///
+/// These methods erase value types and accept arbitrary key readers
+/// This reduces monomorphization and allows the `sequential::Set` implementation
+/// to reuse this logic, at the cost of reducing type safety.
+///
+/// # Safety
+///
+/// - When inserting, caller must guarantee `reader` preserves the prefix property.
+/// - All values are created via `V::into_raw`.
 impl<K, V> Map<K, V>
 where
     K: Key,
     V: Value,
 {
+    // NOTE: this method is safe because it does not insert a key or insert/update a value.
     #[inline]
     pub(super) fn get_raw(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
@@ -423,7 +433,7 @@ where
         Some(unsafe { cursor.as_value_unchecked() })
     }
 
-    pub(super) fn update_raw(
+    pub(super) unsafe fn update_raw(
         &mut self,
         reader: K::Read<'_>,
         value: u64,
@@ -441,7 +451,7 @@ where
         }
     }
 
-    pub(super) fn remove_raw<'k, P: cursor::Path<K::Read<'k>>>(
+    pub(super) unsafe fn remove_raw<'k, P: cursor::Path<K::Read<'k>>>(
         &mut self,
         reader: K::Read<'k>,
     ) -> Option<u64> {
@@ -472,7 +482,7 @@ where
     }
 
     #[inline]
-    pub(super) fn entry_raw<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
+    pub(super) unsafe fn entry_raw<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
 
         match cursor.traverse_insert() {
