@@ -1,5 +1,5 @@
-/// Integer key types.
-pub trait Int:
+/// Abstraction over unsigned native integer types.
+pub(crate) trait Int:
     'static
     + Sized
     + Copy

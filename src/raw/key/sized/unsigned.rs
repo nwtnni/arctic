@@ -1,4 +1,4 @@
-//! Support for integer keys (`u16`, `u32`, `u64`, `u128`).
+//! Support for unsigned integer keys.
 
 use ribbit::u6;
 
