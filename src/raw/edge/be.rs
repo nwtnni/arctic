@@ -9,7 +9,6 @@ use ribbit::u3;
 use ribbit::u6;
 use ribbit::u56;
 
-use crate::raw::Int;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 
@@ -129,7 +128,7 @@ impl edge::Meta for BePacked {
         }
 
         let parent = Be::new(self.raw(), index);
-        let byte = self.raw().get_u8(index.value());
+        let byte = self.raw().rotate_left(8 + index.value() as u32) as u8;
         let index_child = index + Self::Len::BYTE;
         let len_child = len - index_child;
 

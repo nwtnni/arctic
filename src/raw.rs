@@ -17,7 +17,6 @@
 
 pub(crate) mod cursor;
 pub(crate) mod edge;
-mod int;
 pub(crate) mod iter;
 pub mod key;
 pub(crate) mod map;
@@ -27,7 +26,6 @@ pub(crate) mod shard;
 
 pub(crate) use cursor::Cursor;
 pub(crate) use edge::Edge;
-pub(crate) use int::Int;
 pub use key::Key;
 pub(crate) use map::Map;
 pub(crate) use set::Set;
