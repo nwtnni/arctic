@@ -108,6 +108,22 @@ where
     K: Key,
     V: Value,
 {
+    /// Returns whether `key` has an associated value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::SequentialMap;
+    ///
+    /// let mut map = SequentialMap::<u64, u64>::new();
+    /// map.insert(1, 2).expect("Key is not present");
+    /// assert!(map.contains_key(&1));
+    /// assert!(!map.contains_key(&2));
+    /// ```
+    pub fn contains_key(&self, key: &K::Borrowed) -> bool {
+        self.get(key).is_some()
+    }
+
     /// Returns an immutable reference to the value associated with `key`.
     ///
     /// For a mutable reference, see [`Map::get_mut`].

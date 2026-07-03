@@ -211,6 +211,24 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
 ///
 /// These operations are linearizable.
 impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
+    /// Returns whether `key` has an associated value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use arctic::ConcurrentMap;
+    ///
+    /// let mut map = ConcurrentMap::<u64, u64>::new();
+    /// map.insert(1, 2).expect("Key is not present");
+    /// assert!(map.contains_key(&1));
+    /// assert!(!map.contains_key(&2));
+    /// ```
+    pub fn contains_key(&self, key: &K::Borrowed) -> bool {
+        let reader = K::Read::from(key);
+        let mut guard = self.smr.guard(reader);
+        unsafe { self.get_raw(&mut guard, reader) }.is_some()
+    }
+
     /// Returns an immutable reference to the value associated with `key`.
     ///
     /// For a mutable reference, see [`ConcurrentMap::as_sequential`] and
