@@ -116,14 +116,17 @@ where
 
     /// Internal iteration over keys and immutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &'g V)) -> ControlFlow<()>>(
-        self,
-        mut apply: F,
-    ) {
-        self.inner.for_each_internal(|(key, _, edge)| {
-            apply((key, unsafe {
-                Edge::as_value_unchecked(edge).cast::<V>().as_ref()
-            }))
+    pub fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (K::Insert<'_>, &'g V)) -> ControlFlow<B, C>,
+    {
+        self.inner.try_fold(init, |acc, (key, _, edge)| {
+            apply(
+                acc,
+                (key, unsafe {
+                    Edge::as_value_unchecked(edge).cast::<V>().as_ref()
+                }),
+            )
         })
     }
 }
@@ -169,14 +172,17 @@ where
 
     /// Internal iteration over keys and mutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &'g mut V)) -> ControlFlow<()>>(
-        self,
-        mut apply: F,
-    ) {
-        self.inner.for_each_internal(|(key, _, edge)| {
-            apply((key, unsafe {
-                Edge::as_value_unchecked(edge).cast::<V>().as_mut()
-            }))
+    pub fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (K::Insert<'_>, &'g mut V)) -> ControlFlow<B, C>,
+    {
+        self.inner.try_fold(init, |acc, (key, _, edge)| {
+            apply(
+                acc,
+                (key, unsafe {
+                    Edge::as_value_unchecked(edge).cast::<V>().as_mut()
+                }),
+            )
         })
     }
 }
@@ -212,9 +218,14 @@ where
 {
     /// Internal iteration over immutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut(&'g V) -> ControlFlow<()>>(self, mut apply: F) {
-        self.inner.for_each_internal(|(_, edge)| {
-            apply(unsafe { Edge::as_value_unchecked(edge).cast::<V>().as_ref() })
+    pub fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, &'g V) -> ControlFlow<B, C>,
+    {
+        self.inner.try_fold(init, |acc, (_, edge)| {
+            apply(acc, unsafe {
+                Edge::as_value_unchecked(edge).cast::<V>().as_ref()
+            })
         })
     }
 }
@@ -251,9 +262,14 @@ where
 {
     /// Internal iteration over mutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut(&'g mut V) -> ControlFlow<()>>(self, mut apply: F) {
-        self.inner.for_each_internal(|(_, edge)| {
-            apply(unsafe { Edge::as_value_unchecked(edge).cast::<V>().as_mut() })
+    pub fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, &'g mut V) -> ControlFlow<B, C>,
+    {
+        self.inner.try_fold(init, |acc, (_, edge)| {
+            apply(acc, unsafe {
+                Edge::as_value_unchecked(edge).cast::<V>().as_mut()
+            })
         })
     }
 }
@@ -277,6 +293,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use core::convert::Infallible;
     use core::ops::ControlFlow;
 
     use crate::Ascend;
@@ -293,16 +310,16 @@ mod tests {
 
         map.all_mut()
             .values_mut::<Ascend>()
-            .for_each_internal(|value| {
+            .try_fold((), |(), value| {
                 **value += 1;
-                ControlFlow::Continue(())
+                ControlFlow::<Infallible>::Continue(())
             });
 
         map.all()
             .entries::<Descend>()
-            .for_each_internal(|(key, value)| {
+            .try_fold((), |(), (key, value)| {
                 assert_eq!(key + 1, **value);
-                ControlFlow::Continue(())
+                ControlFlow::<Infallible>::Continue(())
             });
     }
 
@@ -316,16 +333,16 @@ mod tests {
 
         map.all_mut()
             .values_mut::<Ascend>()
-            .for_each_internal(|value| {
+            .try_fold((), |(), value| {
                 *value += 1;
-                ControlFlow::Continue(())
+                ControlFlow::<Infallible>::Continue(())
             });
 
         map.all()
             .entries::<Descend>()
-            .for_each_internal(|(key, value)| {
+            .try_fold((), |(), (key, value)| {
                 assert_eq!(key + 1, *value);
-                ControlFlow::Continue(())
+                ControlFlow::<Infallible>::Continue(())
             });
     }
 }

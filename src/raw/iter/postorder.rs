@@ -36,7 +36,7 @@ where
     }
 
     #[inline]
-    pub(crate) fn for_each_internal<F: FnMut(ribbit::Packed<M>, edge::Child)>(
+    pub(crate) fn try_fold<F: FnMut(ribbit::Packed<M>, edge::Child)>(
         mut self,
         mut apply: F,
     ) {

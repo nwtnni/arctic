@@ -1,6 +1,7 @@
 #![cfg(feature = "rand")]
 
 use core::borrow::Borrow as _;
+use core::convert::Infallible;
 use core::fmt::Debug;
 use core::ops::Bound;
 use core::ops::ControlFlow;
@@ -148,9 +149,9 @@ where
 
                             macro_rules! compare {
                                 () => {
-                                    |(key_actual, value_actual)| {
+                                    |(), (key_actual, value_actual)| {
                                         if !K::is_thread(key_actual, thread as u8) {
-                                            return ControlFlow::Continue(());
+                                            return ControlFlow::<Infallible>::Continue(());
                                         }
 
                                         let key_actual = key_actual.borrow();
@@ -164,7 +165,7 @@ where
                                             value_actual, value_expected,
                                             "actual value: {value_actual:x?}, expected value: {value_expected:x?}",
                                         );
-                                        ControlFlow::Continue(())
+                                        ControlFlow::<Infallible>::Continue(())
                                     }
                                 };
                             }
@@ -172,12 +173,12 @@ where
                             if descend {
                                 actual
                                     .entries::<arctic::Descend>()
-                                    .for_each_internal(compare!())
+                                    .try_fold((), compare!())
                             } else {
                                 actual
                                     .entries::<arctic::Ascend>()
-                                    .for_each_internal(compare!())
-                            }
+                                    .try_fold((), compare!())
+                            };
 
                             let next = expected.next();
                             assert!(next.is_none(), "Missing entry {next:?}");

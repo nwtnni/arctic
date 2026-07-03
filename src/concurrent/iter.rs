@@ -92,13 +92,16 @@ where
 
     /// Internal iteration over keys and immutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut((K::Insert<'_>, &V::Borrowed)) -> ControlFlow<()>>(
-        mut self,
-        mut apply: F,
-    ) {
-        self.inner.for_each_internal(|(key, value, _)| {
+    pub fn try_fold<F, B, C>(mut self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (K::Insert<'_>, &V::Borrowed)) -> ControlFlow<B, C>,
+    {
+        self.inner.try_fold(init, |acc, (key, value, _)| {
             self.value = value;
-            apply((key, unsafe { V::borrow_from_raw_unchecked(&self.value) }))
+            apply(
+                acc,
+                (key, unsafe { V::borrow_from_raw_unchecked(&self.value) }),
+            )
         })
     }
 }
@@ -148,10 +151,14 @@ where
 
     /// Internal iteration over immutable references to values.
     #[inline]
-    pub fn for_each_internal<F: FnMut(&V::Borrowed) -> ControlFlow<()>>(mut self, mut apply: F) {
-        self.inner.for_each_internal(|(value, _)| {
+    pub fn try_fold<F: FnMut(C, &V::Borrowed) -> ControlFlow<B, C>, B, C>(
+        mut self,
+        init: C,
+        mut apply: F,
+    ) -> ControlFlow<B, C> {
+        self.inner.try_fold(init, |acc, (value, _)| {
             self.value = value;
-            apply(unsafe { V::borrow_from_raw_unchecked(&self.value) })
+            apply(acc, unsafe { V::borrow_from_raw_unchecked(&self.value) })
         })
     }
 }

@@ -1,6 +1,7 @@
 #![cfg(feature = "proptest")]
 
 use core::borrow::Borrow as _;
+use core::convert::Infallible;
 use core::fmt::Debug;
 use core::ops::ControlFlow;
 use std::collections::BTreeMap;
@@ -225,11 +226,7 @@ where
                         assert_eq!(new, value);
                         let value = (*old).clone();
                         assert_eq!(
-                            state
-                                .0
-                                .get(key.borrow())
-                                .as_deref()
-                                .expect("Insert previous is Some"),
+                            state.0.get(key.borrow()).expect("Insert previous is Some"),
                             &value
                         );
                     }
@@ -258,7 +255,7 @@ where
 
                 macro_rules! compare {
                         () => {
-                            |(key_actual, value_actual)| {
+                            |(), (key_actual, value_actual)| {
                                 let key_actual: &K::Borrowed = key_actual.borrow();
                                 let (key_expected, value_expected) = expected.next().unwrap();
                                 assert_eq!(
@@ -270,20 +267,16 @@ where
                                     value_actual, value_expected,
                                     "actual value: {value_actual:x?}, expected value: {value_expected:x?}",
                                 );
-                                ControlFlow::Continue(())
+                                ControlFlow::<Infallible>::Continue(())
                             }
                         };
                     }
 
                 if descend {
-                    actual
-                        .entries::<arctic::Descend>()
-                        .for_each_internal(compare!())
+                    actual.entries::<arctic::Descend>().try_fold((), compare!())
                 } else {
-                    actual
-                        .entries::<arctic::Ascend>()
-                        .for_each_internal(compare!())
-                }
+                    actual.entries::<arctic::Ascend>().try_fold((), compare!())
+                };
 
                 let next = expected.next();
                 assert!(next.is_none(), "Missing entry {next:?}");
@@ -391,7 +384,7 @@ where
 
                 macro_rules! compare {
                         () => {
-                            |(key_actual, value_actual)| {
+                            |(), (key_actual, value_actual)| {
                                 let key_actual: &K::Borrowed = key_actual.borrow();
                                 let (key_expected, value_expected) = expected.next().unwrap();
                                 assert_eq!(
@@ -403,20 +396,16 @@ where
                                     value_actual, value_expected,
                                     "actual value: {value_actual:x?}, expected value: {value_expected:x?}",
                                 );
-                                ControlFlow::Continue(())
+                                ControlFlow::<Infallible>::Continue(())
                             }
                         };
                     }
 
                 if descend {
-                    actual
-                        .entries::<arctic::Descend>()
-                        .for_each_internal(compare!())
+                    actual.entries::<arctic::Descend>().try_fold((), compare!())
                 } else {
-                    actual
-                        .entries::<arctic::Ascend>()
-                        .for_each_internal(compare!())
-                }
+                    actual.entries::<arctic::Ascend>().try_fold((), compare!())
+                };
 
                 let next = expected.next();
                 assert!(next.is_none(), "Missing entry {next:?}");

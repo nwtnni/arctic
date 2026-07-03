@@ -34,14 +34,12 @@ where
     }
 
     #[inline]
-    pub(crate) fn for_each_internal<
-        F: FnMut((K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>,
-    >(
-        self,
-        mut apply: F,
-    ) {
-        self.0.for_each_internal(|(writer, value, edge)| {
-            apply((unsafe { K::write_as_insert(writer) }, value, edge))
+    pub(crate) fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+    {
+        self.0.try_fold(init, |acc, (writer, value, edge)| {
+            apply(acc, (unsafe { K::write_as_insert(writer) }, value, edge))
         })
     }
 }
@@ -64,13 +62,11 @@ where
     }
 
     #[inline]
-    pub(crate) fn for_each_internal<
-        F: FnMut((u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>,
-    >(
-        self,
-        mut apply: F,
-    ) {
+    pub(crate) fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+    {
         self.0
-            .for_each_internal(|(_, value, edge)| apply((value, edge)))
+            .try_fold(init, |acc, (_, value, edge)| apply(acc, (value, edge)))
     }
 }

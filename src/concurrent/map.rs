@@ -138,6 +138,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     ///
     /// ```rust
     /// use core::ops::ControlFlow;
+    /// use core::convert::Infallible;
     /// use std::thread;
     ///
     /// use arctic::ConcurrentMap;
@@ -165,23 +166,23 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// map.as_sequential()
     ///     .range_mut(5..=12)
     ///     .entries_mut::<arctic::Ascend>()
-    ///     .for_each_internal(|(key, value)| {
+    ///     .try_fold((), |(), (key, value)| {
     ///         assert!(key >= 5);
     ///         assert!(key <= 8, "Inserted up to 8");
     ///         assert_eq!(key, *value as u32);
     ///         *value += 1;
-    ///         ControlFlow::Continue(())
+    ///         ControlFlow::<Infallible>::Continue(())
     ///     });
     ///
     /// // Sanity check that mutations are visible from concurrent map
     /// let mut len = 0;
     /// map.all()
     ///     .entries::<arctic::Descend>()
-    ///     .for_each_internal(|(key, value)|{
+    ///     .try_fold((), |(), (key, value)|{
     ///         let expected = if key >= 5 { key + 1 } else { key };
     ///         assert_eq!(*value as u32, expected);
     ///         len += 1;
-    ///         ControlFlow::Continue(())
+    ///         ControlFlow::<Infallible>::Continue(())
     ///     });
     /// assert_eq!(len, 9);
     /// ```
@@ -1502,6 +1503,9 @@ where
 
 #[cfg(test)]
 mod tests {
+    use core::convert::Infallible;
+    use core::ops::ControlFlow;
+
     use crate::Ascend;
     use crate::Descend;
     use crate::concurrent::Map;
@@ -1631,10 +1635,10 @@ mod tests {
         map.as_sequential()
             .all()
             .entries::<Ascend>()
-            .for_each_internal(|(key, value)| {
+            .try_fold((), |(), (key, value)| {
                 assert_eq!(key, 1);
                 assert_eq!(*value, 3);
-                core::ops::ControlFlow::Continue(())
+                ControlFlow::<Infallible>::Continue(())
             });
     }
 

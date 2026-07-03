@@ -60,7 +60,7 @@ use crate::stat;
 /// during traversal, and then cloned once per key. This can be mitigated by
 /// (a) iterating over values instead of entries, (b) using the lending API
 /// (e.g., [`EntryIter::lend`]), which borrows from the iterator's internal
-/// buffer, or (c) using the internal iteration API[^iter] (e.g., [`EntryIterMut::for_each_internal`]),
+/// buffer, or (c) using the internal iteration API[^iter] (e.g., [`EntryIterMut::try_fold`]),
 /// which also borrows from the iterator and can be much faster.
 ///
 /// [^iter]: Should ideally replace with custom [`Iterator::try_fold`] implementation,
@@ -556,7 +556,7 @@ where
     V: Value,
 {
     fn drop(&mut self) {
-        self.raw.postorder(false).for_each_internal(|_, child| {
+        self.raw.postorder(false).try_fold(|_, child| {
             stat::increment(stat::Counter::FreeDrop);
 
             // SAFETY: we have exclusive access to nodes and values in destructor

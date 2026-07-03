@@ -101,20 +101,19 @@ where
     }
 
     #[inline]
-    pub(crate) fn for_each_internal<
-        F: FnMut((&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>,
-    >(
-        self,
-        mut apply: F,
-    ) {
+    pub(crate) fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+    {
         match self {
             RangeIter::Root { writer, mut next } => {
-                crate::cold();
                 if let Some((value, edge)) = next.take() {
-                    let _ = apply((&writer, value, edge));
+                    apply(init, (&writer, value, edge))
+                } else {
+                    ControlFlow::Continue(init)
                 }
             }
-            RangeIter::Node(mut iter) => iter.for_each_internal(apply),
+            RangeIter::Node(mut iter) => iter.try_fold(init, apply),
         }
     }
 
@@ -162,27 +161,28 @@ where
     #[inline]
     #[expect(clippy::type_complexity)]
     fn lend(&mut self) -> Option<(&W, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
-        self.walk::<true, _>(|(_, _, _)| unreachable!())
+        let next = match self.try_fold(None, |init, (_, value, edge)| {
+            validate!(init.is_none());
+            ControlFlow::Break((value, edge))
+        }) {
+            ControlFlow::Break((value, edge)) => Some((value, edge)),
+            ControlFlow::Continue(init) => {
+                validate!(init.is_none());
+                init
+            }
+        };
+
+        next.map(|(value, edge)| (&self.writer, value, edge))
     }
 
-    #[inline]
-    fn for_each_internal<F: FnMut((&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>>(
-        &mut self,
-        apply: F,
-    ) {
-        self.walk::<false, _>(apply);
-    }
-
-    #[expect(clippy::type_complexity)]
-    fn walk<
-        const YIELD: bool,
-        F: FnMut((&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<()>,
-    >(
-        &mut self,
-        mut apply: F,
-    ) -> Option<(&W, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
+    fn try_fold<F, B, C>(&mut self, mut init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+    {
         'vertical: loop {
-            let (len, lower, upper, iter) = self.stack.last_mut()?;
+            let Some((len, lower, upper, iter)) = self.stack.last_mut() else {
+                return ControlFlow::Continue(init);
+            };
             let len = *len;
 
             'horizontal: loop {
@@ -218,7 +218,7 @@ where
                             None if O::ASCEND => continue 'horizontal,
                             None => {
                                 self.stack.clear();
-                                return None;
+                                return ControlFlow::Continue(init);
                             }
                         }
                     } else {
@@ -230,7 +230,7 @@ where
                             Some(upper) => upper,
                             None if O::ASCEND => {
                                 self.stack.clear();
-                                return None;
+                                return ControlFlow::Continue(init);
                             }
                             None => continue 'horizontal,
                         }
@@ -239,15 +239,14 @@ where
                     };
 
                     match child {
-                        edge::Child::Value(value) if YIELD => {
-                            return Some((&self.writer, value, edge.cast()));
-                        }
                         edge::Child::Value(value) => {
-                            match apply((&self.writer, value, edge.cast())) {
-                                ControlFlow::Continue(()) => continue 'horizontal,
-                                ControlFlow::Break(()) => {
-                                    self.stack.clear();
-                                    return None;
+                            match apply(init, (&self.writer, value, edge.cast())) {
+                                ControlFlow::Continue(r#continue) => {
+                                    init = r#continue;
+                                    continue 'horizontal;
+                                }
+                                ControlFlow::Break(r#break) => {
+                                    return ControlFlow::Break(r#break);
                                 }
                             }
                         }
