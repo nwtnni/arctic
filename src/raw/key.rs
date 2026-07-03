@@ -48,7 +48,6 @@ pub type BoxedStr<I> = BoxedSlice<I, str>;
 
 use core::borrow::Borrow;
 use core::fmt;
-use core::fmt::Debug;
 
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
@@ -75,7 +74,7 @@ use crate::raw::edge::Meta as _;
 /// | Boxed Slice | [`BoxedStr<Terminated<b'\n'>>`][BoxedStr] | [`&'_ Str<Terminated<b'\n'>>`][Str] | [`Str<Terminated<b'\n'>>`][Str] | Y                  |
 pub trait Key: Borrow<Self::Borrowed> {
     /// A non-allocated byte sequence that a key can be cheaply borrowed as.
-    type Borrowed: 'static + ?Sized + Debug;
+    type Borrowed: 'static + ?Sized;
 
     /// Keys can either have edges that store inline bytes (e.g., u64, [`BoxedSlice`]),
     /// or pointers (i.e., [`Slice`]).

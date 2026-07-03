@@ -76,7 +76,7 @@ fn orthogonal_boxed_str_non_null_u64() {
 fn orthogonal<K>()
 where
     K: ::arctic::Key + Orthogonal + Debug + Ord + Clone,
-    K::Borrowed: Ord + Eq,
+    K::Borrowed: Debug + Eq + Ord,
     rand::distr::StandardUniform: rand::distr::Distribution<K>,
 {
     let map = &Map::<K, u64>::new();
