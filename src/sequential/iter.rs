@@ -2,10 +2,10 @@ use core::marker::PhantomData;
 use core::ops::ControlFlow;
 use core::ops::Deref;
 
-use crate::Order;
 use crate::raw;
 use crate::raw::Edge;
 use crate::raw::Key;
+use crate::raw::iter::Order;
 use crate::sequential::Value;
 
 /// Immutable reference to a subtree rooted at a key prefix,
@@ -29,20 +29,20 @@ where
         }
     }
 
-    /// Get an iterator over keys and immutable references to values in `O` order.
+    /// Get an iterator over keys and immutable references to values in `order`.
     #[inline]
-    pub fn entries<O: Order>(&self) -> EntryIter<'g, 'k, K, V, R, O> {
+    pub fn entries(&self, order: Order) -> EntryIter<'g, 'k, K, V, R> {
         EntryIter {
-            inner: self.inner.entries::<O>(true),
+            inner: self.inner.entries(Some(order)),
             _value: PhantomData,
         }
     }
 
-    /// Get an iterator over immutable references to values in `O` order.
+    /// Get an iterator over immutable references to values in `order`.
     #[inline]
-    pub fn values<O: Order>(&self) -> ValueIter<'g, 'k, K, V, R, O> {
+    pub fn values(&self, order: Order) -> ValueIter<'g, 'k, K, V, R> {
         ValueIter {
-            inner: self.inner.values::<O>(true),
+            inner: self.inner.values(Some(order)),
             _value: PhantomData,
         }
     }
@@ -65,18 +65,18 @@ where
 
     /// Get an iterator over keys and mutable references to values in `O` order.
     #[inline]
-    pub fn entries_mut<O: Order>(&mut self) -> EntryIterMut<'g, 'k, K, V, R, O> {
+    pub fn entries_mut(&mut self, order: Order) -> EntryIterMut<'g, 'k, K, V, R> {
         EntryIterMut {
-            inner: self.0.inner.entries::<O>(true),
+            inner: self.0.inner.entries(Some(order)),
             _value: PhantomData,
         }
     }
 
     /// Get an iterator over mutable references to values in `O` order.
     #[inline]
-    pub fn values_mut<O: Order>(&mut self) -> ValueIterMut<'g, 'k, K, V, R, O> {
+    pub fn values_mut(&mut self, order: Order) -> ValueIterMut<'g, 'k, K, V, R> {
         ValueIterMut {
-            inner: self.0.inner.values::<O>(true),
+            inner: self.0.inner.values(Some(order)),
             _value: PhantomData,
         }
     }
@@ -92,17 +92,16 @@ impl<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>> Deref
 }
 
 /// Iterator over keys and immutable references to values.
-pub struct EntryIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
+pub struct EntryIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>> {
+    inner: raw::iter::EntryIter<'g, 'k, K, R>,
     _value: PhantomData<&'g V>,
 }
 
-impl<'g, 'k, K, V, R, O> EntryIter<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> EntryIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     /// Lending equivalent to [`Iterator::next`] that borrows the current key from this [`EntryIter`].
     #[inline]
@@ -131,12 +130,11 @@ where
     }
 }
 
-impl<'g, 'k, K, V, R, O> Iterator for EntryIter<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> Iterator for EntryIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     type Item = (K, &'g V);
 
@@ -148,17 +146,16 @@ where
 }
 
 /// Iterator over keys and mutable references to values.
-pub struct EntryIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
+pub struct EntryIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>> {
+    inner: raw::iter::EntryIter<'g, 'k, K, R>,
     _value: PhantomData<&'g mut V>,
 }
 
-impl<'g, 'k, K, V, R, O> EntryIterMut<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> EntryIterMut<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     /// Lending equivalent to [`Iterator::next`] that borrows the current key from this [`EntryIter`].
     #[inline]
@@ -187,12 +184,11 @@ where
     }
 }
 
-impl<'g, 'k, K, V, R, O> Iterator for EntryIterMut<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> Iterator for EntryIterMut<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     type Item = (K, &'g mut V);
 
@@ -204,17 +200,16 @@ where
 }
 
 /// Iterator over references to values.
-pub struct ValueIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
+pub struct ValueIter<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>> {
+    inner: raw::iter::ValueIter<'g, 'k, K, R>,
     _value: PhantomData<&'g V>,
 }
 
-impl<'g, 'k, K, V, R, O> ValueIter<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> ValueIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     /// Internal iteration over immutable references to values.
     #[inline]
@@ -230,12 +225,11 @@ where
     }
 }
 
-impl<'g, 'k, K, V, R, O> Iterator for ValueIter<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> Iterator for ValueIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: crate::raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     type Item = &'g V;
 
@@ -248,17 +242,16 @@ where
 }
 
 /// Iterator over mutable references to values.
-pub struct ValueIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>, O> {
-    inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
+pub struct ValueIterMut<'g, 'k, K: Key, V, R: raw::iter::Range<K::Read<'k>>> {
+    inner: raw::iter::ValueIter<'g, 'k, K, R>,
     _value: PhantomData<&'g mut V>,
 }
 
-impl<'g, 'k, K, V, R, O> ValueIterMut<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> ValueIterMut<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     /// Internal iteration over mutable references to values.
     #[inline]
@@ -274,12 +267,11 @@ where
     }
 }
 
-impl<'g, 'k, K, V, R, O> Iterator for ValueIterMut<'g, 'k, K, V, R, O>
+impl<'g, 'k, K, V, R> Iterator for ValueIterMut<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: crate::raw::iter::Range<K::Read<'k>>,
-    O: Order,
 {
     type Item = &'g mut V;
 
@@ -296,8 +288,7 @@ mod tests {
     use core::convert::Infallible;
     use core::ops::ControlFlow;
 
-    use crate::Ascend;
-    use crate::Descend;
+    use crate::Order;
     use crate::sequential::Map;
 
     #[test]
@@ -309,14 +300,14 @@ mod tests {
         }
 
         map.all_mut()
-            .values_mut::<Ascend>()
+            .values_mut(Order::Ascend)
             .try_fold((), |(), value| {
                 **value += 1;
                 ControlFlow::<Infallible>::Continue(())
             });
 
         map.all()
-            .entries::<Descend>()
+            .entries(Order::Descend)
             .try_fold((), |(), (key, value)| {
                 assert_eq!(key + 1, **value);
                 ControlFlow::<Infallible>::Continue(())
@@ -332,14 +323,14 @@ mod tests {
         }
 
         map.all_mut()
-            .values_mut::<Ascend>()
+            .values_mut(Order::Ascend)
             .try_fold((), |(), value| {
                 *value += 1;
                 ControlFlow::<Infallible>::Continue(())
             });
 
         map.all()
-            .entries::<Descend>()
+            .entries(Order::Descend)
             .try_fold((), |(), (key, value)| {
                 assert_eq!(key + 1, *value);
                 ControlFlow::<Infallible>::Continue(())

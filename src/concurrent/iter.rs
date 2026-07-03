@@ -2,10 +2,10 @@ use core::marker::PhantomData;
 use core::ops::ControlFlow;
 
 use crate::Key;
-use crate::Order;
 use crate::concurrent::Value;
 use crate::concurrent::smr;
 use crate::raw;
+use crate::raw::iter::Order;
 
 /// Immutable reference to a subtree rooted at a key prefix, optionally bounded by a key range.
 pub struct Shard<'g, 'k, K: Key, V, R, G> {
@@ -43,42 +43,37 @@ where
 {
     /// Get an iterator over keys and immutable references to values in `O` order.
     #[inline]
-    pub fn entries<O: Order>(&self) -> EntryIter<'_, 'k, K, V, R, O, G> {
+    pub fn entries(&self, order: Order) -> EntryIter<'_, 'k, K, V, R> {
         EntryIter {
-            inner: self.inner.entries::<O>(true),
+            inner: self.inner.entries(Some(order)),
             value: 0,
-            _guard: PhantomData,
             _value: PhantomData,
         }
     }
 
     /// Get an iterator over immutable references to values in `O` order.
     #[inline]
-    pub fn values<O: Order>(&self) -> ValueIter<'_, 'k, K, V, R, O, G> {
+    pub fn values(&self, order: Order) -> ValueIter<'_, 'k, K, V, R> {
         ValueIter {
-            inner: self.inner.values::<O>(true),
+            inner: self.inner.values(Some(order)),
             value: 0,
-            _guard: PhantomData,
             _value: PhantomData,
         }
     }
 }
 
 /// Iterator over keys and references to values.
-pub struct EntryIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
-    inner: raw::iter::EntryIter<'g, 'k, K, R, O>,
+pub struct EntryIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>> {
+    inner: raw::iter::EntryIter<'g, 'k, K, R>,
     value: u64,
-    _guard: PhantomData<&'g G>,
     _value: PhantomData<V>,
 }
 
-impl<'g, 'k, K, V, R, O, G> EntryIter<'g, 'k, K, V, R, O, G>
+impl<'g, 'k, K, V, R> EntryIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
-    G: smr::Guard<V>,
 {
     /// Lending equivalent to [`Iterator::next`] that borrows the current key and
     /// value from this [`EntryIter`].
@@ -106,14 +101,12 @@ where
     }
 }
 
-impl<'g, 'k, K, V, R, O, G> Iterator for EntryIter<'g, 'k, K, V, R, O, G>
+impl<'g, 'k, K, V, R> Iterator for EntryIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     V::Borrowed: Clone,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
-    G: smr::Guard<V>,
 {
     type Item = (K, V::Borrowed);
 
@@ -125,20 +118,17 @@ where
 }
 
 /// Iterator over references to values.
-pub struct ValueIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>, O, G> {
-    inner: raw::iter::ValueIter<'g, 'k, K, R, O>,
+pub struct ValueIter<'g, 'k, K: Key, V: Value, R: raw::iter::Range<K::Read<'k>>> {
+    inner: raw::iter::ValueIter<'g, 'k, K, R>,
     value: u64,
-    _guard: PhantomData<&'g G>,
     _value: PhantomData<V>,
 }
 
-impl<'g, 'k, K, V, R, O, G> ValueIter<'g, 'k, K, V, R, O, G>
+impl<'g, 'k, K, V, R> ValueIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
-    G: smr::Guard<V>,
 {
     /// Lending equivalent to [`Iterator::next`] that borrows the current value from this [`EntryIter`].
     #[inline]
@@ -163,14 +153,12 @@ where
     }
 }
 
-impl<'g, 'k, K, V, R, O, G> Iterator for ValueIter<'g, 'k, K, V, R, O, G>
+impl<'g, 'k, K, V, R> Iterator for ValueIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
     V::Borrowed: Clone,
     R: raw::iter::Range<K::Read<'k>>,
-    O: Order,
-    G: smr::Guard<V>,
 {
     type Item = V::Borrowed;
 

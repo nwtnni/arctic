@@ -25,6 +25,7 @@
 //! use std::thread;
 //!
 //! use arctic::ConcurrentMap;
+//! use arctic::Order;
 //!
 //! let map = ConcurrentMap::<u64, u64>::default();
 //!
@@ -45,7 +46,7 @@
 //! // Ordered iteration over ranges
 //! assert!(
 //!     map.range(5..=102)
-//!         .entries::<arctic::Ascend>()
+//!         .entries(Order::Ascend)
 //!         .map(|(key, _)| key)
 //!         .eq(5..=102)
 //! );
@@ -53,7 +54,7 @@
 //! // Ordered iteration over prefixes
 //! assert!(
 //!     map.prefix(&[0, 0, 0, 0, 0, 0, 2])
-//!         .entries::<arctic::Descend>()
+//!         .entries(Order::Descend)
 //!         .map(|(key, _)| key)
 //!         .eq((512..576).rev())
 //! );
@@ -194,41 +195,8 @@ pub use sequential::Map as SequentialMap;
 #[doc(inline)]
 pub use sequential::Set as SequentialSet;
 
-/// Key order for scan operations (e.g., [`concurrent::Shard::entries`]).
-///
-/// We take a compile-time argument rather than implementing [`core::iter::DoubleEndedIterator`]
-/// because the latter would require maintaining two stacks at runtime (for the lower and
-/// upper bound).
-#[expect(private_bounds)]
-pub trait Order: seal::Seal {
-    #[doc(hidden)]
-    const ASCEND: bool;
-}
-
-/// Ascending key order.
-///
-/// Also see [`Order`].
-pub struct Ascend;
-
-/// Descending key order.
-///
-/// Also see [`Order`].
-pub struct Descend;
-
-impl Order for Ascend {
-    const ASCEND: bool = true;
-}
-
-impl Order for Descend {
-    const ASCEND: bool = false;
-}
-
-mod seal {
-    //! [Seal](https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/) for [`crate::Order`].
-    pub(crate) trait Seal {}
-    impl Seal for super::Ascend {}
-    impl Seal for super::Descend {}
-}
+#[doc(inline)]
+pub use raw::iter::Order;
 
 /// <https://users.rust-lang.org/t/compiler-hint-for-unlikely-likely-for-if-branches/62102/4>
 #[inline]

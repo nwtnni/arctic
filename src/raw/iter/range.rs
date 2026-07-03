@@ -11,34 +11,33 @@ use core::sync::atomic::Ordering;
 
 #[cfg_attr(not(doc), expect(unused))]
 use crate::ConcurrentMap;
-use crate::Order;
 #[cfg_attr(not(doc), expect(unused))]
 use crate::SequentialMap;
 use crate::raw;
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
+use crate::raw::iter::Order;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node::Lower as _;
 use crate::raw::node::Upper as _;
 use crate::sync::Atomic;
 
-pub(crate) enum RangeIter<'g, K: key::Read, W: key::Write<K>, R: Range<K>, O> {
+pub(crate) enum RangeIter<'g, K: key::Read, W: key::Write<K>, R: Range<K>> {
     Root {
         writer: W,
         #[expect(clippy::type_complexity)]
         next: Option<(u64, NonNull<Atomic<Edge<K::Edge>>>)>,
     },
-    Node(NodeIter<'g, K, W, R, O>),
+    Node(NodeIter<'g, K, W, R>),
 }
 
-impl<'g, K, W, R, O> Default for RangeIter<'g, K, W, R, O>
+impl<'g, K, W, R> Default for RangeIter<'g, K, W, R>
 where
     K: key::Read,
     W: key::Write<K>,
     R: Range<K>,
-    O: Order,
 {
     fn default() -> Self {
         Self::Root {
@@ -48,18 +47,17 @@ where
     }
 }
 
-impl<'g, K, W, R, O> RangeIter<'g, K, W, R, O>
+impl<'g, K, W, R> RangeIter<'g, K, W, R>
 where
     K: key::Read,
     W: key::Write<K>,
     R: Range<K>,
-    O: Order,
 {
     pub(crate) unsafe fn new_unchecked(
         root: *mut Atomic<Edge<K::Edge>>,
         edge: ribbit::Packed<Edge<K::Edge>>,
         prefix: K,
-        sort: bool,
+        order: Option<Order>,
         range: &R,
     ) -> Self {
         let Some((root, child)) = NonNull::new(root).zip(edge.child()) else {
@@ -85,16 +83,15 @@ where
             edge::Child::Node(node) => {
                 let mut stack = Vec::with_capacity(7);
                 stack.push((len, lower_byte, upper_byte, unsafe {
-                    node.entries(sort, lower_byte, upper_byte)
+                    node.entries(order.is_some(), lower_byte, upper_byte)
                 }));
 
                 Self::Node(NodeIter {
-                    sort,
+                    order,
                     lower,
                     upper,
                     writer,
                     stack,
-                    _order: PhantomData,
                 })
             }
         }
@@ -131,13 +128,13 @@ where
     }
 }
 
-pub(crate) struct NodeIter<'g, K, W, R, O>
+pub(crate) struct NodeIter<'g, K, W, R>
 where
     K: key::Read,
     W: key::Write<K>,
     R: Range<K>,
 {
-    sort: bool,
+    order: Option<Order>,
     lower: R::Lower,
     upper: R::Upper,
     writer: W,
@@ -148,15 +145,13 @@ where
         <R::Upper as Upper<K::Edge>>::Bound,
         raw::node::EntryIter<'g>,
     )>,
-    _order: PhantomData<O>,
 }
 
-impl<'g, K, W, R, O> NodeIter<'g, K, W, R, O>
+impl<'g, K, W, R> NodeIter<'g, K, W, R>
 where
     K: key::Read,
     R: Range<K>,
     W: key::Write<K>,
-    O: Order,
 {
     #[inline]
     #[expect(clippy::type_complexity)]
@@ -175,6 +170,23 @@ where
         next.map(|(value, edge)| (&self.writer, value, edge))
     }
 
+    // Imagine `self.lower` and `self.upper` defining a triangular subtree of
+    // the entire tree:
+    //
+    // ```text
+    //        /\
+    //       // \
+    //      / \  \
+    //     /  /   \
+    //    /  /\    \
+    //   /  /xx\    \
+    //  /  /xxxx\    \
+    // /  /xxxxxx\    \
+    // ```
+    //
+    // We only need to compare against the bounds on the exterior edges of this
+    // triangle; everything in the interior is included in the range, and everything
+    // in the exterior is excluded.
     fn try_fold<F, B, C>(&mut self, mut init: C, mut apply: F) -> ControlFlow<B, C>
     where
         F: FnMut(C, (&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
@@ -183,19 +195,19 @@ where
             let Some((len, lower, upper, iter)) = self.stack.last_mut() else {
                 return ControlFlow::Continue(init);
             };
-            let len = *len;
 
             'horizontal: loop {
-                let Some((mut byte, mut edge)) = (if O::ASCEND {
-                    iter.next()
-                } else {
-                    iter.next_back()
-                }) else {
+                let next = match self.order {
+                    None | Some(Order::Ascend) => iter.next(),
+                    Some(Order::Descend) => iter.next_back(),
+                };
+
+                let Some((mut byte, mut edge)) = next else {
                     self.stack.pop();
                     continue 'vertical;
                 };
 
-                let mut len = len;
+                let mut len = *len;
                 let mut lower = *lower;
                 let mut upper = *upper;
 
@@ -210,55 +222,57 @@ where
                         (meta, child)
                     };
 
-                    len = self.writer.replace(len, byte, meta);
-
-                    let lower_next = if lower.check(byte) {
+                    lower = if lower.check(byte) {
+                        // Exterior edge, check against bound
                         match self.lower.check(meta) {
                             Some(lower) => lower,
-                            None if O::ASCEND => continue 'horizontal,
+                            // Below lower bound, descending order
+                            None if matches!(self.order, Some(Order::Descend)) => {
+                                self.stack.clear();
+                                return ControlFlow::Continue(init);
+                            }
+                            // Below lower bound, ascending order
+                            None => continue 'horizontal,
+                        }
+                    } else {
+                        // Interior edge
+                        Default::default()
+                    };
+
+                    upper = if upper.check(byte) {
+                        // Exterior edge, check against bound
+                        match self.upper.check(meta) {
+                            Some(upper) => upper,
+                            // Above upper bound, descending order
+                            None if matches!(self.order, Some(Order::Descend)) => {
+                                continue 'horizontal;
+                            }
+                            // Above upper bound, ascending order
                             None => {
                                 self.stack.clear();
                                 return ControlFlow::Continue(init);
                             }
                         }
                     } else {
+                        // Interior edge
                         Default::default()
                     };
 
-                    let upper_next = if upper.check(byte) {
-                        match self.upper.check(meta) {
-                            Some(upper) => upper,
-                            None if O::ASCEND => {
-                                self.stack.clear();
-                                return ControlFlow::Continue(init);
-                            }
-                            None => continue 'horizontal,
-                        }
-                    } else {
-                        Default::default()
-                    };
+                    len = self.writer.replace(len, byte, meta);
 
                     match child {
                         edge::Child::Value(value) => {
-                            match apply(init, (&self.writer, value, edge.cast())) {
-                                ControlFlow::Continue(r#continue) => {
-                                    init = r#continue;
-                                    continue 'horizontal;
-                                }
-                                ControlFlow::Break(r#break) => {
-                                    return ControlFlow::Break(r#break);
-                                }
-                            }
+                            init = apply(init, (&self.writer, value, edge.cast()))?;
+                            continue 'horizontal;
                         }
                         edge::Child::Node(node) => {
-                            lower = lower_next;
-                            upper = upper_next;
-
-                            // Avoid pushing and popping iterators with only one child
-                            match unsafe { node.entry_or_entries(self.sort, lower, upper) } {
-                                Ok((byte_, edge_)) => {
-                                    byte = byte_;
-                                    edge = edge_;
+                            // Avoid pushing and popping node iterators with only one child
+                            match unsafe {
+                                node.entry_or_entries(self.order.is_some(), lower, upper)
+                            } {
+                                Ok((next_byte, next_edge)) => {
+                                    byte = next_byte;
+                                    edge = next_edge;
                                     continue 'flatten;
                                 }
                                 Err(iter) => {

@@ -7,7 +7,6 @@ use core::sync::atomic::Ordering;
 #[cfg_attr(not(doc), expect(unused))]
 use std::collections::btree_map;
 
-use crate::Ascend;
 #[cfg_attr(not(doc), expect(unused))]
 use crate::SequentialMap;
 use crate::raw;
@@ -17,6 +16,7 @@ use crate::raw::Key;
 use crate::raw::cursor;
 use crate::raw::cursor::path;
 use crate::raw::edge;
+use crate::raw::iter::Order;
 use crate::sequential::EntryIter;
 use crate::sequential::EntryIterMut;
 use crate::sequential::Shard;
@@ -532,9 +532,9 @@ where
     V: Value,
 {
     type Item = (K, &'g V);
-    type IntoIter = EntryIter<'g, 'static, K, V, RangeFull, Ascend>;
+    type IntoIter = EntryIter<'g, 'static, K, V, RangeFull>;
     fn into_iter(self) -> Self::IntoIter {
-        self.all().entries::<Ascend>()
+        self.all().entries(Order::Ascend)
     }
 }
 
@@ -544,9 +544,9 @@ where
     V: Value,
 {
     type Item = (K, &'g mut V);
-    type IntoIter = EntryIterMut<'g, 'static, K, V, RangeFull, Ascend>;
+    type IntoIter = EntryIterMut<'g, 'static, K, V, RangeFull>;
     fn into_iter(self) -> Self::IntoIter {
-        self.all_mut().entries_mut::<Ascend>()
+        self.all_mut().entries_mut(Order::Ascend)
     }
 }
 

@@ -141,9 +141,10 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// use core::convert::Infallible;
     /// use std::thread;
     ///
-    /// use arctic::ConcurrentMap;
-    /// use arctic::sequential;
     /// use arctic::concurrent::smr;
+    /// use arctic::ConcurrentMap;
+    /// use arctic::Order;
+    /// use arctic::sequential;
     ///
     /// let mut map = ConcurrentMap::<u32, u64>::default();
     ///
@@ -165,7 +166,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// // Access sequential mutable iteration API
     /// map.as_sequential()
     ///     .range_mut(5..=12)
-    ///     .entries_mut::<arctic::Ascend>()
+    ///     .entries_mut(Order::Ascend)
     ///     .try_fold((), |(), (key, value)| {
     ///         assert!(key >= 5);
     ///         assert!(key <= 8, "Inserted up to 8");
@@ -177,7 +178,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// // Sanity check that mutations are visible from concurrent map
     /// let mut len = 0;
     /// map.all()
-    ///     .entries::<arctic::Descend>()
+    ///     .entries(Order::Descend)
     ///     .try_fold((), |(), (key, value)|{
     ///         let expected = if key >= 5 { key + 1 } else { key };
     ///         assert_eq!(*value as u32, expected);
@@ -461,12 +462,13 @@ where
     ///
     /// ```rust
     /// use arctic::ConcurrentMap;
+    /// use arctic::Order;
     ///
     /// let map = ConcurrentMap::<u64, u64>::default();
     /// map.insert(1, 2).expect("Key not present");
     /// map.insert(3, 4).expect("Key not present");
     ///
-    /// assert_eq!(map.all().entries::<arctic::Ascend>().count(), 2);
+    /// assert_eq!(map.all().entries(Order::Ascend).count(), 2);
     /// ```
     pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
         let guard = self.smr.guard(K::Read::default());
@@ -483,6 +485,7 @@ where
     /// use arctic::key::BoxedStr;
     /// use arctic::key::NonNull;
     /// use arctic::key::Str;
+    /// use arctic::Order;
     ///
     /// let map = ConcurrentMap::<BoxedStr<NonNull>, Box<u64>>::default();
     ///
@@ -502,14 +505,14 @@ where
     /// // can be invalid UTF-8 or contain null or terminator bytes
     /// let prefix = map.prefix("prefix");
     ///
-    /// let entries: concurrent::EntryIter<_, _, _, _, _> = prefix.entries::<arctic::Ascend>();
+    /// let entries: concurrent::EntryIter<_, _, _> = prefix.entries(Order::Ascend);
     ///
     /// // WARNING: using `entries` as `Iterator` requires cloning keys,
     /// // which is expensive here due to BoxedStr keys
     /// assert_eq!(entries.count(), 2);
     ///
     /// // Can use lending iterator API to avoid cloning
-    /// let mut entries: concurrent::EntryIter<_, _, _, _, _> = prefix.entries::<arctic::Ascend>();
+    /// let mut entries: concurrent::EntryIter<_, _, _> = prefix.entries(Order::Ascend);
     /// while let Some((key, _)) = entries.lend() {
     ///     assert!(key.as_str().starts_with("prefix"));
     /// }
@@ -529,6 +532,7 @@ where
     ///
     /// ```rust
     /// use arctic::ConcurrentMap;
+    /// use arctic::Order;
     ///
     /// let map = ConcurrentMap::<u64, u64>::default();
     /// map.insert(1, 2).expect("Key not present");
@@ -537,7 +541,7 @@ where
     ///
     /// let range = map.range(3..=7);
     ///
-    /// for (key, value) in range.entries::<arctic::Descend>() {
+    /// for (key, value) in range.entries(Order::Descend) {
     ///     assert!((3..=7).contains(&key));
     /// }
     /// ```
@@ -1506,8 +1510,7 @@ mod tests {
     use core::convert::Infallible;
     use core::ops::ControlFlow;
 
-    use crate::Ascend;
-    use crate::Descend;
+    use crate::Order;
     use crate::concurrent::Map;
     use crate::key::BoxedSlice;
     use crate::key::BoxedStr;
@@ -1591,7 +1594,7 @@ mod tests {
         map.upsert(key, 2u64);
         assert_eq!(
             map.range(1u64..=1u64)
-                .entries::<Ascend>()
+                .entries(Order::Ascend)
                 .collect::<Vec<_>>(),
             vec![(1, 2)]
         );
@@ -1612,7 +1615,7 @@ mod tests {
         let map = insert_all((0u64..512).step_by(2));
         assert_eq!(
             map.range(256u64..=511u64)
-                .entries::<Ascend>()
+                .entries(Order::Ascend)
                 .collect::<Vec<_>>(),
             (256..512)
                 .step_by(2)
@@ -1630,11 +1633,11 @@ mod tests {
             assert_eq!(map.get(&1).as_deref().copied(), Some(value));
         }
 
-        assert_eq!(map.as_sequential().all().entries::<Ascend>().count(), 1);
+        assert_eq!(map.as_sequential().all().entries(Order::Ascend).count(), 1);
 
         map.as_sequential()
             .all()
-            .entries::<Ascend>()
+            .entries(Order::Ascend)
             .try_fold((), |(), (key, value)| {
                 assert_eq!(key, 1);
                 assert_eq!(*value, 3);
@@ -1692,7 +1695,7 @@ mod tests {
         }
 
         assert_eq!(
-            map.range(2..=4).entries::<Descend>().collect::<Vec<_>>(),
+            map.range(2..=4).entries(Order::Descend).collect::<Vec<_>>(),
             vec![(4, 4), (3, 3), (2, 2)]
         );
     }
@@ -1793,7 +1796,7 @@ mod tests {
             assert_eq!(map.get(key.borrow()).as_deref().copied(), Some(*value));
         }
 
-        let mut iter = map.as_sequential().all().entries::<Ascend>();
+        let mut iter = map.as_sequential().all().entries(Order::Ascend);
         let mut count = 0;
         while iter.lend().is_some() {
             count += 1;
@@ -1807,7 +1810,7 @@ mod tests {
         // Sequential iteration
         map.as_sequential()
             .all()
-            .entries::<Ascend>()
+            .entries(Order::Ascend)
             .zip(&keys)
             .for_each(|((lk, lv), (rk, rv))| {
                 assert_eq!(lk, *rk);
@@ -1820,7 +1823,7 @@ mod tests {
 
         // Concurrent prefix scan, non-linearizable
         map.prefix(K::Read::from(first.borrow()).common_prefix(K::Read::from(last.borrow())))
-            .entries::<Descend>()
+            .entries(Order::Descend)
             .zip(keys.iter().rev())
             .for_each(|((lk, lv), (rk, rv))| {
                 assert_eq!(lk, *rk);
@@ -1830,7 +1833,7 @@ mod tests {
         // Concurrent range scan, non-linearizable
         let mut i = 0;
         map.range(first.borrow()..=last.borrow())
-            .entries::<Descend>()
+            .entries(Order::Descend)
             .zip(keys.iter().rev())
             .for_each(|((lk, lv), (rk, rv))| {
                 i += 1;

@@ -1,4 +1,4 @@
-use arctic::Ascend;
+use arctic::Order;
 use arctic::concurrent;
 use arctic::sequential;
 
@@ -26,7 +26,7 @@ fn turso_range_24230c111c599daff93a7abc11c5c72b33d0ebfd() {
     }
 
     let prefix = map.range(turso_row_id(5)..=turso_row_id(i64::MAX));
-    let values = prefix.values::<Ascend>().copied().collect::<Vec<_>>();
+    let values = prefix.values(Order::Ascend).copied().collect::<Vec<_>>();
     assert_eq!(values, (5..10).collect::<Vec<u64>>());
 }
 
@@ -45,7 +45,7 @@ fn range_common_prefix_72c2fceda258b00fc2e9d4a805b28e9ad8e8107d() {
     const UPPER: u64 = 0xFF29_D24D_7E9A_920D;
     map.insert(NEEDLE, 0).unwrap();
     map.range(LOWER..=UPPER)
-        .entries::<crate::Ascend>()
+        .entries(Order::Ascend)
         .for_each(|(key, value)| {
             assert_eq!(key, NEEDLE);
             assert_eq!(value, 0);

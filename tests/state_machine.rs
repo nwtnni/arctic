@@ -273,9 +273,13 @@ where
                     }
 
                 if descend {
-                    actual.entries::<arctic::Descend>().try_fold((), compare!())
+                    actual
+                        .entries(arctic::Order::Descend)
+                        .try_fold((), compare!())
                 } else {
-                    actual.entries::<arctic::Ascend>().try_fold((), compare!())
+                    actual
+                        .entries(arctic::Order::Ascend)
+                        .try_fold((), compare!())
                 };
 
                 let next = expected.next();
@@ -402,9 +406,13 @@ where
                     }
 
                 if descend {
-                    actual.entries::<arctic::Descend>().try_fold((), compare!())
+                    actual
+                        .entries(arctic::Order::Descend)
+                        .try_fold((), compare!())
                 } else {
-                    actual.entries::<arctic::Ascend>().try_fold((), compare!())
+                    actual
+                        .entries(arctic::Order::Ascend)
+                        .try_fold((), compare!())
                 };
 
                 let next = expected.next();

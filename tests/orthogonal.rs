@@ -172,11 +172,11 @@ where
 
                             if descend {
                                 actual
-                                    .entries::<arctic::Descend>()
+                                    .entries(arctic::Order::Descend)
                                     .try_fold((), compare!())
                             } else {
                                 actual
-                                    .entries::<arctic::Ascend>()
+                                    .entries(arctic::Order::Ascend)
                                     .try_fold((), compare!())
                             };
 

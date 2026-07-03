@@ -2,13 +2,13 @@ use core::marker::PhantomData;
 use core::ops::RangeFull;
 use core::sync::atomic::Ordering;
 
-use crate::Order;
 use crate::raw;
 use crate::raw::Cursor;
 use crate::raw::Edge;
 use crate::raw::Key;
 use crate::raw::cursor::path;
 use crate::raw::iter::EntryIter;
+use crate::raw::iter::Order;
 use crate::raw::iter::Range;
 use crate::raw::iter::RangeIter;
 use crate::raw::iter::ValueIter;
@@ -85,16 +85,16 @@ where
     }
 
     #[inline]
-    pub(crate) fn entries<O: Order>(&self, sort: bool) -> EntryIter<'g, 'k, K, R, O> {
+    pub(crate) fn entries(&self, order: Option<Order>) -> EntryIter<'g, 'k, K, R> {
         EntryIter(unsafe {
-            RangeIter::new_unchecked(self.root, self.edge, self.prefix, sort, &self.range)
+            RangeIter::new_unchecked(self.root, self.edge, self.prefix, order, &self.range)
         })
     }
 
     #[inline]
-    pub(crate) fn values<O: Order>(&self, sort: bool) -> ValueIter<'g, 'k, K, R, O> {
+    pub(crate) fn values(&self, order: Option<Order>) -> ValueIter<'g, 'k, K, R> {
         ValueIter(unsafe {
-            RangeIter::new_unchecked(self.root, self.edge, self.prefix, sort, &self.range)
+            RangeIter::new_unchecked(self.root, self.edge, self.prefix, order, &self.range)
         })
     }
 }
