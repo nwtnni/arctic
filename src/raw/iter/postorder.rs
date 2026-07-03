@@ -1,14 +1,16 @@
+use core::ops::ControlFlow;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use crate::raw::Edge;
 use crate::raw::edge;
+use crate::raw::iter::Order;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
 use crate::sync::Atomic;
 
 pub(crate) struct PostorderIter<'g, M: ribbit::Pack> {
-    sort: bool,
+    order: Option<Order>,
     stack: Vec<RepeatIter<'g, M>>,
 }
 
@@ -17,12 +19,12 @@ where
     M: ribbit::Pack<Packed: edge::Meta> + 'g,
 {
     #[inline]
-    pub(crate) unsafe fn new(root: &'g Atomic<Edge<M>>, sort: bool) -> Self {
+    pub(crate) unsafe fn new(root: &'g Atomic<Edge<M>>, order: Option<Order>) -> Self {
         // HACK: we're masquerading as a node here--this is okay
         // since this iterator doesn't keep track of the key state,
         // so we can use an arbitrary byte.
         Self {
-            sort,
+            order,
             stack: vec![RepeatIter::new(unsafe {
                 node::EntryIter::new(
                     node::KeyIter::ROOT,
@@ -36,17 +38,17 @@ where
     }
 
     #[inline]
-    pub(crate) fn try_fold<F: FnMut(ribbit::Packed<M>, edge::Child)>(
-        mut self,
-        mut apply: F,
-    ) {
+    pub(crate) fn try_fold<F, B, C>(mut self, mut init: C, mut apply: F) -> ControlFlow<B, C>
+    where
+        F: FnMut(C, (ribbit::Packed<M>, edge::Child)) -> ControlFlow<B, C>,
+    {
         'vertical: loop {
             let Some(iter) = self.stack.last_mut() else {
-                return;
+                return ControlFlow::Continue(init);
             };
 
             'horizontal: loop {
-                let Some((mut first, mut edge)) = iter.next() else {
+                let Some((mut first, mut edge)) = iter.next(self.order) else {
                     self.stack.pop();
                     continue 'vertical;
                 };
@@ -66,7 +68,7 @@ where
                         edge::Child::Node(node) if first => {
                             match unsafe {
                                 node.entry_or_entries::<_, _>(
-                                    self.sort,
+                                    self.order.is_some(),
                                     Unbound::<()>::default(),
                                     Unbound::<()>::default(),
                                 )
@@ -84,7 +86,7 @@ where
                         }
                         _ => {
                             iter.skip();
-                            apply(meta, child);
+                            init = apply(init, (meta, child))?;
                             continue 'horizontal;
                         }
                     }
@@ -114,12 +116,15 @@ where
     }
 
     #[inline]
-    fn next(&mut self) -> Option<(bool, NonNull<Atomic<Edge<M>>>)> {
+    fn next(&mut self, order: Option<Order>) -> Option<(bool, NonNull<Atomic<Edge<M>>>)> {
         let first = self.first;
         self.first ^= true;
 
         if first {
-            let (_, edge) = self.iter.next()?;
+            let (_, edge) = match order {
+                None | Some(Order::Ascend) => self.iter.next(),
+                Some(Order::Descend) => self.iter.next_back(),
+            }?;
             self.edge = edge.cast();
         }
 

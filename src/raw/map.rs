@@ -5,6 +5,7 @@ use crate::raw::Cursor;
 use crate::raw::Edge;
 use crate::raw::Key;
 use crate::raw::cursor;
+use crate::raw::iter::Order;
 use crate::raw::iter::PostorderIter;
 use crate::sync::Atomic;
 
@@ -20,8 +21,8 @@ impl<K: Key> Map<K> {
         )))
     }
 
-    pub(crate) fn postorder<'g>(&'g mut self, sort: bool) -> PostorderIter<'g, K::Edge> {
-        unsafe { PostorderIter::new(self.root(), sort) }
+    pub(crate) fn postorder<'g>(&'g mut self, order: Option<Order>) -> PostorderIter<'g, K::Edge> {
+        unsafe { PostorderIter::new(self.root(), order) }
     }
 
     #[inline]

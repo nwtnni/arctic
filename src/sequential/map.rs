@@ -1,6 +1,8 @@
 //! Auxiliary types for use with [`SequentialMap`].
 
+use core::convert::Infallible;
 use core::marker::PhantomData;
+use core::ops::ControlFlow;
 use core::ops::RangeFull;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
@@ -556,7 +558,7 @@ where
     V: Value,
 {
     fn drop(&mut self) {
-        self.raw.postorder(false).try_fold(|_, child| {
+        let ControlFlow::Continue(()) = self.raw.postorder(None).try_fold((), |(), (_, child)| {
             stat::increment(stat::Counter::FreeDrop);
 
             // SAFETY: we have exclusive access to nodes and values in destructor
@@ -566,8 +568,10 @@ where
                     stat::increment(stat::Counter::FreeDrop);
                     node.deallocate();
                 },
-            }
-        })
+            };
+
+            ControlFlow::<Infallible>::Continue(())
+        });
     }
 }
 

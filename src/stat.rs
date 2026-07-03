@@ -1,5 +1,7 @@
 //! Record internal counters and histograms for performance analysis.
 
+use core::convert::Infallible;
+use core::ops::ControlFlow;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
@@ -34,8 +36,8 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S
 
     map.as_sequential()
         .raw
-        .postorder(false)
-        .try_fold(|meta, child| {
+        .postorder(None)
+        .try_fold((), |(), (meta, child)| {
             let bits = meta.len().bits();
             compression.record((bits >> 3) as u64);
 
@@ -62,6 +64,8 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S
                     histogram.record(children as u64);
                 }
             }
+
+            ControlFlow::<Infallible>::Continue(())
         });
 
     Process {
