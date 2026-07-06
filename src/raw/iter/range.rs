@@ -319,9 +319,11 @@ impl<T> Debug for Unbound<T> {
 ///
 /// Currently, only [`RangeFull`], [`RangeFrom`], [`RangeToInclusive`], and [`RangeInclusive`] are supported.
 /// [`Range`][std::ops::Range] (with an exclusive upper bound) is not supported.
-///
-/// The endpoints of the ranges can be borrowed keys ([`&'_ Key::Borrowed`][crate::Key::Borrowed]),
-/// key prefixes, or, for integer keys, owned integers.
+/// The following types can be used as range bounds:
+/// - Borrowed keys ([`&'_ Key::Borrowed`][crate::Key::Borrowed]),
+/// - Slices (`&'_ [u8]`)
+/// - Array references (`&'_ [u8; 5]`)
+/// - For integer keys, owned integers (`u64`)
 #[expect(private_bounds)]
 pub trait Range<R>
 where
