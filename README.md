@@ -78,7 +78,7 @@ Briefly comparing against some alternative data structures:
   have excellent performance, but do not support scan operations.
 - Concurrent B+-trees (e.g., [scc::TreeIndex](https://codeberg.org/wvwwvwwv/scalable-concurrent-containers))
   have good performance, but are typically not lock-free.
-- Concurrent skiplists (e.g., [crossbeam_skiplist](https://docs.rs/crossbeam-skiplist/latest/crossbeam_skiplist/))
+- Concurrent skiplists (e.g., [crossbeam_skiplist](https://github.com/crossbeam-rs/crossbeam/tree/main/crossbeam-skiplist))
   have poor performance on modern hardware (low cache locality),
   although there are lock-free implementations.
 
