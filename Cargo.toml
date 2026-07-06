@@ -1,5 +1,5 @@
 [package]
-name = "arctic"
+name = "arctic-map"
 version = "0.1.0"
 edition = "2024"
 description = "Lock-free adaptive radix tree"
@@ -7,6 +7,10 @@ repository = "https://github.com/nwtnni/arctic"
 license = "MIT OR Apache-2.0"
 keywords = ["lock-free", "concurrent", "radix-tree", "map", "index"]
 categories = ["concurrency", "data-structures"]
+
+[lib]
+name = "arctic"
+path = "src/lib.rs"
 
 [features]
 default = ["smr-seize"]
