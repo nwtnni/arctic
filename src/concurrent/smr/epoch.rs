@@ -29,7 +29,7 @@ use crate::stat;
 #[derive(Default)]
 pub struct Epoch;
 
-impl<K: Key, V: Value> Smr<K, V> for Box<Epoch> {
+impl<K: Key, V: Value> Smr<K, V> for Epoch {
     type Guard<'g>
         = crossbeam_epoch::Guard
     where
