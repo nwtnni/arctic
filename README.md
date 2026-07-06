@@ -1,7 +1,7 @@
 # arctic
 
-![Crates.io Version](https://img.shields.io/crates/v/arctic-map)
-![docs.rs](https://img.shields.io/docsrs/arctic-map)
+[![Crates.io](https://img.shields.io/crates/v/arctic-map.svg)](https://crates.io/crates/arctic-map)
+[![Docs](https://docs.rs/arctic-map/badge.svg)](https://docs.rs/arctic-map/latest/arctic)
 
 This is the original implementation of
 [Arctic: a practical lock-free adaptive radix tree](https://www.usenix.org/conference/osdi26/presentation/ni).

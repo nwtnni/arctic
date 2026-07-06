@@ -1,7 +1,7 @@
 # arctic
 
-![Crates.io Version](https://img.shields.io/crates/v/arctic-map)
-![docs.rs](https://img.shields.io/docsrs/arctic-map)
+[![Crates.io](https://img.shields.io/crates/v/arctic-map.svg)](https://crates.io/crates/arctic-map)
+[![Docs](https://docs.rs/arctic-map/badge.svg)](https://docs.rs/arctic-map/latest/arctic)
 
 {{readme}}
 
