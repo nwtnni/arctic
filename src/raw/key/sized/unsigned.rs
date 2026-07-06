@@ -236,7 +236,7 @@ impl<N: Native> core::fmt::Debug for Writer<N> {
 }
 
 /// Abstraction over unsigned native integer types.
-trait Native:
+pub(crate) trait Native:
     'static
     + Sized
     + Copy

@@ -4,10 +4,10 @@ use crate::key::Invariant;
 use crate::key::Slice;
 use crate::key::Terminate;
 use crate::raw;
-use crate::raw::Int;
 use crate::raw::key;
 use crate::raw::key::Len;
 use crate::raw::key::Read as _;
+use crate::raw::key::unsigned::Native;
 
 /// Extract a hazard key from an operation key.
 pub trait Key: raw::Key {
@@ -56,10 +56,12 @@ impl Key for u64 {
 impl_integer!(u64);
 
 #[inline]
-fn hazard_integer<I: Int>(reader: key::int::Reader<I>) -> ribbit::Packed<hazard::prefix::Be> {
+fn hazard_integer<N: Native>(
+    reader: key::unsigned::Reader<N>,
+) -> ribbit::Packed<hazard::prefix::Be> {
     hazard::prefix::Be::new_hazard(
         reader.buffer.most_significant_u64(),
-        if I::BITS < 64 {
+        if N::BITS < 64 {
             Len::bits(reader.len())
         } else {
             Len::bits(reader.len()).min(56)
