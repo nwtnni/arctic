@@ -5,11 +5,13 @@
 //! atomic operation, and requires more careful reasoning.
 
 use core::fmt::Debug;
+use core::ops::Deref;
 use core::ops::Shr;
 use core::sync::atomic::Ordering;
 
 use ribbit::u6;
 
+use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
 use crate::raw::node::Node;
@@ -22,13 +24,52 @@ use crate::sync::Atomic;
 const CAPACITY: usize = 47;
 
 /// [`Node`] representation that contains at most 47 key-edge pairs.
-pub(super) type Node47 = Node<CAPACITY, Header>;
+#[repr(C, align(1024))]
+#[derive(Default)]
+pub(super) struct Node47(Node<CAPACITY, Header>);
 
-// Note: aligning to 1024 would require a newtype wrapper
-// and more boilerplate. Just assume a
-// reasonable memory allocator will have a dedicated
-// size class for 1KiB.
-const_assert_size_align!(Node47, 1024, 64);
+const_assert_size_align!(Node47, 1024, 1024);
+
+impl Node47 {
+    pub(super) unsafe fn new_unchecked(
+        keys: &[u8],
+        edges: &[ribbit::Packed<edge::Raw>],
+    ) -> Box<Self> {
+        if_validate!(assert!(crate::raw::is_unique(keys)));
+        validate!(keys.len() == edges.len());
+        validate!(keys.len() <= CAPACITY);
+
+        let mut node = Box::new(Self::default());
+
+        for (i, key) in keys.iter().enumerate() {
+            let (row, col) = Header::key_to_row_col(*key);
+            let row = &mut node.0.header.indices[row as usize];
+            let old = row.get();
+            let new = old ^ (0x7F ^ i as u128) << col;
+            row.set(new);
+        }
+
+        *node.0.header.meta.get_mut_packed() = ribbit::Packed::<Meta>::new(
+            keys.last().copied().unwrap(),
+            false,
+            u6::new(keys.len() as u8),
+        );
+
+        for (out, r#in) in node.0.edges.iter_mut().zip(edges) {
+            *out.get_mut_packed() = *r#in;
+        }
+
+        node
+    }
+}
+
+impl Deref for Node47 {
+    type Target = Node<CAPACITY, Header>;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[repr(C, align(16))]
 #[derive(Clone)]
@@ -59,22 +100,6 @@ impl Default for Header {
 unsafe impl header::Header for Header {
     const TYPE: node::Type = node::Type::Node47;
     type KeyIter = KeyIter47;
-
-    unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
-        for (i, key) in keys.iter().enumerate() {
-            let (row, col) = Self::key_to_row_col(*key);
-            let row = &mut self.indices[row as usize];
-            let old = row.get();
-            let new = old ^ (0x7F ^ i as u128) << col;
-            row.set(new);
-        }
-
-        *self.meta.get_mut_packed() = ribbit::Packed::<Meta>::new(
-            keys.last().copied().unwrap(),
-            false,
-            u6::new(keys.len() as u8),
-        );
-    }
 
     fn freeze(&self) -> usize {
         let mut old = self.meta.load_packed(Ordering::Relaxed);

@@ -21,7 +21,7 @@ use crate::sync::Atomic;
 
 const CAPACITY: usize = 3;
 
-/// [`Node`][crate::raw::node::Node] representation that contains at most 3 key-edge pairs.
+/// [`Node`] representation that contains at most 3 key-edge pairs.
 pub(in crate::raw) type Node3 = Node<CAPACITY, Atomic<Header>>;
 
 const_assert_size_align!(Node3, 64, 64);
@@ -50,15 +50,6 @@ impl Default for HeaderPacked {
 unsafe impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node3;
     type KeyIter = KeyIter3;
-
-    unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
-        let mut buffer = 0u64;
-        buffer |= keys.first().copied().unwrap_or(0) as u64;
-        buffer |= (keys.get(1).copied().unwrap_or(0) as u64) << 16;
-        buffer |= (keys.get(2).copied().unwrap_or(0) as u64) << 32;
-        buffer |= (keys.len() as u64) << 56;
-        *self = Self::new_packed(unsafe { ribbit::Packed::<Header>::from_raw_unchecked(buffer) });
-    }
 
     #[inline]
     fn freeze(&self) -> usize {
@@ -153,7 +144,33 @@ impl HeaderPacked {
     }
 }
 
-impl Node<3, Atomic<Header>> {
+impl Node3 {
+    pub(super) unsafe fn new_unchecked(
+        keys: &[u8],
+        edges: &[ribbit::Packed<edge::Raw>],
+    ) -> Box<Self> {
+        if_validate!(assert!(crate::raw::is_unique(keys)));
+        validate!(keys.len() == edges.len());
+        validate!(keys.len() <= CAPACITY);
+
+        let mut node = Box::new(Self::default());
+
+        let mut buffer = 0u64;
+        buffer |= keys.first().copied().unwrap_or(0) as u64;
+        buffer |= (keys.get(1).copied().unwrap_or(0) as u64) << 16;
+        buffer |= (keys.get(2).copied().unwrap_or(0) as u64) << 32;
+        buffer |= (keys.len() as u64) << 56;
+        node.header = Atomic::<Header>::new_packed(unsafe {
+            ribbit::Packed::<Header>::from_raw_unchecked(buffer)
+        });
+
+        for (out, r#in) in node.edges.iter_mut().zip(edges) {
+            *out.get_mut_packed() = *r#in;
+        }
+
+        node
+    }
+
     pub(crate) fn new_expand<M: ribbit::Pack<Packed: edge::Meta>>(
         meta: ribbit::Packed<M>,
         keys: [u8; 2],

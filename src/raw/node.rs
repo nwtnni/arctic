@@ -65,19 +65,6 @@ impl<const CAPACITY: usize, H: Default> Default for Node<CAPACITY, H> {
 }
 
 impl<const CAPACITY: usize, H: Header> Node<CAPACITY, H> {
-    /// Returns a new node populated with `keys` and `edges`.
-    ///
-    /// # Safety
-    ///
-    /// Caller must ensure the following:
-    /// - `keys.len() == edges.len()`
-    /// - `keys.len() <= Self::CAPACITY`
-    /// - Keys are unique
-    /// - Edges are unique
-    unsafe fn new_unchecked(keys: &[u8], edges: &[ribbit::Packed<edge::Raw>]) -> Box<Self> {
-        unsafe { H::new_unchecked(keys, edges) }
-    }
-
     /// Initializes an unsorted iterator over this node's keys.
     #[inline]
     fn keys<L: Lower, U: Upper>(&self, lower: L, upper: U, iter: &mut H::KeyIter) {
@@ -290,23 +277,25 @@ impl Ptr {
         // case where a full node header with some null children
         // is replaced and subsequently appended to.
         if len < 3 {
-            Self::new(unsafe { Node3::new_unchecked(keys, edges) })
+            unsafe { Self::new::<Node3, Atomic<node_3::Header>>(Node3::new_unchecked(keys, edges)) }
         } else if len < 14 {
-            Self::new(unsafe { Node15::new_unchecked(keys, edges) })
+            unsafe {
+                Self::new::<Node15, Atomic<node_15::Header>>(Node15::new_unchecked(keys, edges))
+            }
         } else if len < 47 {
-            Self::new(unsafe { Node47::new_unchecked(keys, edges) })
+            unsafe { Self::new::<Node47, node_47::Header>(Node47::new_unchecked(keys, edges)) }
         } else {
-            Self::new(unsafe { Node256::new_unchecked(keys, edges) })
+            unsafe { Self::new::<Node256, node_256::Header>(Node256::new_unchecked(keys, edges)) }
         }
     }
 
     // The only way a larger node can be created is through node replacement.
     #[inline]
     pub(super) fn new_node_3(node: Box<Node3>) -> ribbit::Packed<Self> {
-        Self::new(node)
+        unsafe { Self::new::<_, Atomic<node_3::Header>>(node) }
     }
 
-    fn new<const CAPACITY: usize, H: Header>(node: Box<Node<CAPACITY, H>>) -> ribbit::Packed<Self> {
+    unsafe fn new<N, H: Header>(node: Box<N>) -> ribbit::Packed<Self> {
         // NOTE: we rely on address (usize) <-> u64 conversions here
         const _: () = assert!(size_of::<usize>() == size_of::<u64>());
 

@@ -5,10 +5,8 @@
 
 use core::fmt::Debug;
 
-use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::KeyIndex;
-use crate::raw::node::Node;
 
 /// # Safety
 ///
@@ -20,26 +18,6 @@ pub(in crate::raw) unsafe trait Header:
     /// A runtime representation of the node type.
     const TYPE: node::Type;
     type KeyIter: Default + Iterator<Item = KeyIndex> + core::fmt::Debug;
-
-    unsafe fn new_unchecked<const CAPACITY: usize>(
-        keys: &[u8],
-        edges: &[ribbit::Packed<edge::Raw>],
-    ) -> Box<Node<CAPACITY, Self>> {
-        if_validate!(assert!(crate::raw::is_unique(keys)));
-        validate!(keys.len() == edges.len());
-        validate!(keys.len() <= CAPACITY);
-
-        let mut node = Box::new(Node::default());
-        unsafe { Self::initialize_unchecked(&mut node.header, keys) };
-
-        for (out, r#in) in node.edges.iter_mut().zip(edges) {
-            *out.get_mut_packed() = *r#in;
-        }
-
-        node
-    }
-
-    unsafe fn initialize_unchecked(&mut self, keys: &[u8]);
 
     fn freeze(&self) -> usize;
 

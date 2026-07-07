@@ -5,6 +5,7 @@ use core::sync::atomic::Ordering;
 use ribbit::u4;
 use ribbit::u120;
 
+use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::KeyIter15;
 use crate::raw::node::Node;
@@ -13,10 +14,38 @@ use crate::sync::Atomic;
 
 const CAPACITY: usize = 15;
 
-/// [`Node`][crate::raw::node::Node] representation that contains at most 15 key-edge pairs.
+/// [`Node`] representation that contains at most 15 key-edge pairs.
 pub(super) type Node15 = Node<CAPACITY, Atomic<Header>>;
 
 const_assert_size_align!(Node15, 256, 64);
+
+impl Node15 {
+    pub(super) unsafe fn new_unchecked(
+        keys: &[u8],
+        edges: &[ribbit::Packed<edge::Raw>],
+    ) -> Box<Self> {
+        if_validate!(assert!(crate::raw::is_unique(keys)));
+        validate!(keys.len() == edges.len());
+        validate!(keys.len() <= CAPACITY);
+
+        let mut node = Box::new(Self::default());
+
+        let mut buffer = [0u8; 16];
+        buffer[..keys.len()].copy_from_slice(keys);
+        // Skip frozen bit
+        buffer[15] = (keys.len() as u8) << 1;
+
+        node.header = Atomic::new_packed(unsafe {
+            ribbit::Packed::<Header>::from_raw_unchecked(u128::from_le_bytes(buffer))
+        });
+
+        for (out, r#in) in node.edges.iter_mut().zip(edges) {
+            *out.get_mut_packed() = *r#in;
+        }
+
+        node
+    }
+}
 
 #[derive(Copy, Clone, Debug, Default, ribbit::Pack)]
 #[ribbit(size = 128, derive(Debug))]
@@ -41,17 +70,6 @@ impl Default for HeaderPacked {
 unsafe impl header::Header for Atomic<Header> {
     const TYPE: node::Type = node::Type::Node15;
     type KeyIter = KeyIter15;
-
-    unsafe fn initialize_unchecked(&mut self, keys: &[u8]) {
-        let mut buffer = [0u8; 16];
-        buffer[..keys.len()].copy_from_slice(keys);
-        // Skip frozen bit
-        buffer[15] = (keys.len() as u8) << 1;
-
-        *self = Self::new_packed(unsafe {
-            ribbit::Packed::<Header>::from_raw_unchecked(u128::from_le_bytes(buffer))
-        })
-    }
 
     #[inline]
     fn freeze(&self) -> usize {
