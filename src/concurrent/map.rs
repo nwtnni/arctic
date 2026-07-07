@@ -759,6 +759,8 @@ where
         }
 
         let upsert = match if cfg!(feature = "opt-no-path") {
+            Err(initial.take().map(V::into_raw))
+        } else {
             unsafe {
                 self.upsert_with_optimistic(
                     &mut guard,
@@ -767,17 +769,10 @@ where
                     upsert!(),
                 )
             }
-        } else {
-            Err(())
         } {
             Ok(upsert) => upsert,
-            Err(()) => unsafe {
-                self.upsert_with_pessimistic(
-                    &mut guard,
-                    reader,
-                    initial.take().map(V::into_raw),
-                    upsert!(),
-                )
+            Err(initial) => unsafe {
+                self.upsert_with_pessimistic(&mut guard, reader, initial, upsert!())
             },
         };
 
@@ -876,6 +871,8 @@ where
         }
 
         let update = match if cfg!(feature = "opt-no-path") {
+            Err(initial.take().map(V::into_raw))
+        } else {
             unsafe {
                 self.update_with_optimistic(
                     &mut guard,
@@ -884,17 +881,10 @@ where
                     update!(),
                 )
             }
-        } else {
-            Err(())
         } {
             Ok(update) => update,
-            Err(()) => unsafe {
-                self.update_with_pessimistic(
-                    &mut guard,
-                    reader,
-                    initial.take().map(V::into_raw),
-                    update!(),
-                )
+            Err(initial) => unsafe {
+                self.update_with_pessimistic(&mut guard, reader, initial, update!())
             },
         };
 
@@ -1015,9 +1005,9 @@ where
         let mut remove = |value: u64| remove(unsafe { V::borrow_from_raw_unchecked(&value) });
 
         let remove = match if cfg!(feature = "opt-no-path") {
-            unsafe { self.remove_non_recursive_with_optimistic(&mut guard, reader, &mut remove) }
-        } else {
             Err(())
+        } else {
+            unsafe { self.remove_non_recursive_with_optimistic(&mut guard, reader, &mut remove) }
         } {
             Ok(remove) => remove,
             Err(()) => unsafe {
@@ -1149,7 +1139,7 @@ where
         reader: K::Read<'k>,
         initial: Option<u64>,
         upsert: F,
-    ) -> Result<UpsertRaw, ()>
+    ) -> Result<UpsertRaw, Option<u64>>
     where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
@@ -1168,9 +1158,8 @@ where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::InsertPessimistic);
-        let Ok(upsert) =
-            unsafe { self.upsert_with_raw::<path::Retain<_>, _>(guard, reader, initial, upsert) };
-        upsert
+        unsafe { self.upsert_with_raw::<path::Retain<_>, _>(guard, reader, initial, upsert) }
+            .expect("path::Retain::PopError is Infallible")
     }
 
     #[inline]
@@ -1180,7 +1169,7 @@ where
         reader: K::Read<'k>,
         mut initial: Option<u64>,
         mut upsert: F,
-    ) -> Result<UpsertRaw, P::PopError>
+    ) -> Result<UpsertRaw, Option<u64>>
     where
         P: Path<K::Read<'k>>,
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
@@ -1267,9 +1256,12 @@ where
                 cursor::Insert::Replace { .. } => (),
             }
 
-            match cursor.freeze()? {
-                None => (),
-                Some(node) => unsafe { guard.retire_node(cursor.len().bits(), node.into_raw()) },
+            match cursor.freeze() {
+                Err(_) => return Err(initial),
+                Ok(None) => (),
+                Ok(Some(node)) => unsafe {
+                    guard.retire_node(cursor.len().bits(), node.into_raw())
+                },
             }
         }
     }
@@ -1281,7 +1273,7 @@ where
         reader: K::Read<'_>,
         initial: Option<u64>,
         update: F,
-    ) -> Result<UpdateRaw, ()>
+    ) -> Result<UpdateRaw, Option<u64>>
     where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
@@ -1300,9 +1292,8 @@ where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::UpdatePessimistic);
-        let Ok(update) =
-            unsafe { self.update_with_raw::<path::Retain<_>, _>(guard, reader, initial, update) };
-        update
+        unsafe { self.update_with_raw::<path::Retain<_>, _>(guard, reader, initial, update) }
+            .expect("path::Retain::PopError is Infallible")
     }
 
     #[inline]
@@ -1312,7 +1303,7 @@ where
         reader: K::Read<'k>,
         mut initial: Option<u64>,
         mut update: F,
-    ) -> Result<UpdateRaw, P::PopError>
+    ) -> Result<UpdateRaw, Option<u64>>
     where
         P: Path<K::Read<'k>>,
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
@@ -1326,9 +1317,10 @@ where
             } = match cursor.traverse_update() {
                 None => return Ok(UpdateRaw::Absent { new: initial }),
                 Some(update) if !update.edge.meta().is_frozen() => update,
-                Some(_) => match cursor.freeze()? {
-                    None => continue,
-                    Some(node) => unsafe {
+                Some(_) => match cursor.freeze() {
+                    Err(_) => return Err(initial),
+                    Ok(None) => continue,
+                    Ok(Some(node)) => unsafe {
                         guard.retire_node(cursor.len().bits(), node.into_raw());
                         continue;
                     },
