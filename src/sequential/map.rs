@@ -457,7 +457,7 @@ where
         value: u64,
     ) -> Result<(u64, NonNull<u64>), u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
-        match cursor.traverse_update() {
+        match cursor.traverse_value() {
             None => Err(value),
             Some(update) => {
                 let edge = unsafe { cursor.edge_mut() };
@@ -475,7 +475,7 @@ where
     ) -> Option<u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Retain<_>>(reader) };
 
-        let update = cursor.traverse_update()?;
+        let update = cursor.traverse_value()?;
 
         unsafe {
             cursor
@@ -483,7 +483,7 @@ where
                 .store_packed(Edge::<K::Edge>::NULL, Ordering::Relaxed);
         }
 
-        while let Ok(Some(target)) = cursor.pop() {
+        while let Ok(Some((_, target))) = cursor.pop() {
             if unsafe { target.len::<K::Edge>() } > 1 {
                 break;
             }

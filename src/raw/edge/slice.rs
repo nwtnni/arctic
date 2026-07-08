@@ -83,7 +83,7 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
     }
 
     #[inline]
-    fn has_terminator(self) -> bool {
+    fn is_terminate(self) -> bool {
         self.terminate().get()
     }
 

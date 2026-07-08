@@ -20,7 +20,6 @@ use crate::raw::Edge;
 use crate::raw::cursor;
 use crate::raw::cursor::Path;
 use crate::raw::cursor::path;
-use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key::Len as _;
 use crate::sequential;
@@ -1256,10 +1255,14 @@ where
                 cursor::Insert::Replace { .. } => (),
             }
 
-            match cursor.freeze() {
-                Err(_) => return Err(initial),
-                Ok(None) => (),
-                Ok(Some(node)) => unsafe {
+            let (old_len, old_node) = cursor
+                .pop()
+                .map_err(|_| initial)?
+                .expect("Root edge cannot be frozen");
+
+            match unsafe { cursor.freeze(old_len, old_node) }.map_err(|_| initial)? {
+                cursor::Freeze::Traverse | cursor::Freeze::Success(None) => (),
+                cursor::Freeze::Success(Some(node)) => unsafe {
                     guard.retire_node(cursor.len().bits(), node.into_raw())
                 },
             }
@@ -1311,20 +1314,27 @@ where
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
         loop {
-            let cursor::Update {
+            let cursor::Value {
                 value: old_value,
                 edge: old_edge,
-            } = match cursor.traverse_update() {
+            } = match cursor.traverse_value() {
                 None => return Ok(UpdateRaw::Absent { new: initial }),
                 Some(update) if !update.edge.meta().is_frozen() => update,
-                Some(_) => match cursor.freeze() {
-                    Err(_) => return Err(initial),
-                    Ok(None) => continue,
-                    Ok(Some(node)) => unsafe {
-                        guard.retire_node(cursor.len().bits(), node.into_raw());
-                        continue;
-                    },
-                },
+                Some(_) => {
+                    let (old_len, old_node) = cursor
+                        .pop()
+                        .map_err(|_| initial)?
+                        .expect("Root edge cannot be frozen");
+
+                    match unsafe { cursor.freeze(old_len, old_node) }.map_err(|_| initial)? {
+                        cursor::Freeze::Traverse | cursor::Freeze::Success(None) => (),
+                        cursor::Freeze::Success(Some(node)) => unsafe {
+                            guard.retire_node(cursor.len().bits(), node.into_raw());
+                        },
+                    }
+
+                    continue;
+                }
             };
 
             let new_value = match update(old_value, initial) {
@@ -1395,16 +1405,19 @@ where
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
 
         let (value, edge) = loop {
-            let cursor::Update { value, edge } = match cursor.traverse_update() {
+            let cursor::Value { value, edge } = match cursor.traverse_value() {
                 None => return Ok(RemoveRaw::Absent),
                 Some(update) if !update.edge.meta().is_frozen() => update,
-                Some(_) => match cursor.freeze()? {
-                    None => continue,
-                    Some(node) => unsafe {
-                        guard.retire_node(cursor.len().bits(), node.into_raw());
-                        continue;
-                    },
-                },
+                Some(_) => {
+                    let (old_len, old_node) = cursor.pop()?.expect("Root edge cannot be frozen");
+                    match unsafe { cursor.freeze(old_len, old_node)? } {
+                        cursor::Freeze::Traverse | cursor::Freeze::Success(None) => continue,
+                        cursor::Freeze::Success(Some(node)) => unsafe {
+                            guard.retire_node(cursor.len().bits(), node.into_raw());
+                            continue;
+                        },
+                    }
+                }
             };
 
             match remove(value) {
@@ -1424,67 +1437,50 @@ where
         };
 
         if RECURSIVE {
-            let mut trim = edge.meta().len();
+            let mut trim = edge.meta().len().into();
 
-            'outer: while let Some(target) = cursor
-                .pop()
-                .unwrap_or_else(|_| panic!("Recursive remove requires path"))
+            'pop: while let Some((mut old_len, old_node)) =
+                cursor.pop().expect("Recursive remove requires path")
             {
-                if unsafe { target.len::<K::Edge>() } > 1 {
-                    break 'outer;
+                if unsafe { old_node.len::<K::Edge>() } > 1 {
+                    break 'pop;
                 }
 
-                cursor.trim(K::Len::BYTE + trim.into());
+                cursor.trim(K::Len::BYTE + trim);
 
-                loop {
-                    let old = match cursor.traverse_prefix() {
-                        None => break 'outer,
-                        Some(old) if !old.meta().is_frozen() => old,
-                        Some(_) => match cursor.freeze() {
-                            Err(_) => unreachable!("Recursive remove requires path"),
-                            Ok(None) => continue,
-                            Ok(Some(node)) => unsafe {
-                                guard.retire_node(cursor.len().bits(), node.into_raw());
-                                continue;
-                            },
-                        },
-                    };
+                'freeze: loop {
+                    let old_edge = cursor.edge();
+                    match unsafe { cursor.freeze(old_len, old_node) }
+                        .expect("Recursive remove requires path")
+                    {
+                        cursor::Freeze::Traverse => (),
+                        cursor::Freeze::Success(node) => {
+                            if let Some(node) = node {
+                                validate!(
+                                    node == old_node || !core::ptr::eq(cursor.edge(), old_edge),
+                                );
 
-                    let (smo, new) = match old.child() {
-                        None => break 'outer,
-                        // NOTE: it is only possible for this to be `Some(edge::Child::Value(_))`
-                        // if the key is unsized and non-null, in which case there must be an
-                        // implicit terminator byte in the edge metadata.
-                        Some(edge::Child::Value(_)) => {
-                            validate!(old.meta().has_terminator());
-                            break 'outer;
-                        }
-                        Some(edge::Child::Node(node)) if node == target => unsafe {
-                            node.freeze::<K::Edge>();
-                            node.replace(old.meta())
-                        },
-                        // Must have been replaced by someone else
-                        Some(edge::Child::Node(_)) => break 'outer,
-                    };
-
-                    match cursor.edge().compare_exchange_packed(
-                        old,
-                        new,
-                        Ordering::AcqRel,
-                        Ordering::Acquire,
-                    ) {
-                        Ok(old) => {
-                            unsafe { guard.retire_node(cursor.len().bits(), target.into_raw()) };
-                            trim = old.meta().len();
-                            continue 'outer;
-                        }
-                        Err(_) => {
-                            if smo.is_allocate()
-                                && let Some(node) = new.as_node()
-                            {
-                                stat::increment(stat::Counter::FreeConflict);
-                                unsafe { node.deallocate() };
+                                unsafe { guard.retire_node(cursor.len().bits(), node.into_raw()) };
                             }
+
+                            // We (or someone else) replaced `old_node`
+                            if core::ptr::eq(cursor.edge(), old_edge) {
+                                trim = old_len.into();
+                                continue 'pop;
+                            }
+                        }
+                    }
+
+                    // Traverse down to `old_node`
+                    match cursor.traverse_node() {
+                        Ok(len) => {
+                            old_len = len;
+                            continue 'freeze;
+                        }
+                        Err(len) => {
+                            // If not found, pop to the closest parent node
+                            trim = len;
+                            continue 'pop;
                         }
                     }
                 }

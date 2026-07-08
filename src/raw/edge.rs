@@ -246,7 +246,7 @@ pub(crate) trait Meta:
 
     /// Whether this edge has an implicit terminator byte.
     #[inline]
-    fn has_terminator(self) -> bool {
+    fn is_terminate(self) -> bool {
         false
     }
 
@@ -271,10 +271,7 @@ pub(crate) trait Meta:
 }
 
 /// Length of compressed bytes along an edge.
-///
-/// Currently only implemented by `u6`, but hoping
-/// to support longer edges for borrowed keys eventually.
-pub(crate) trait Len: Copy + Eq + Add<Output = Self> {
+pub(crate) trait Len: Copy + Eq + Ord + Add<Output = Self> + Debug {
     const MAX: Self;
     const BYTE: Self;
 

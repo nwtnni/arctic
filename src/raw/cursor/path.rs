@@ -1,4 +1,5 @@
 use core::convert::Infallible;
+use core::fmt::Debug;
 use core::ptr::NonNull;
 
 use crate::raw::Edge;
@@ -26,7 +27,7 @@ pub(crate) trait Path<R>: Default
 where
     R: key::Read,
 {
-    type PopError;
+    type PopError: Debug;
 
     fn trim(&mut self, len: R::Len);
 
