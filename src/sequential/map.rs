@@ -161,7 +161,7 @@ where
     /// assert_eq!(map.get(&key), Some(&3));
     /// ```
     pub fn get_mut(&mut self, key: &K::Borrowed) -> Option<&mut V> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(key) };
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(key) };
         cursor.traverse_get()?;
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_mut() })
     }
@@ -320,7 +320,7 @@ where
     /// assert!(map.get(&key).is_none());
     /// ```
     pub fn remove(&mut self, key: &K::Borrowed) -> Option<V> {
-        unsafe { self.remove_raw::<path::Retain<_>>(K::Read::from(key)) }
+        unsafe { self.remove_raw::<path::Full<_>>(K::Read::from(key)) }
             .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
@@ -342,7 +342,7 @@ where
     /// Returns `Some(old_value)` if the remove succeeded, or else `None` if
     /// there was no old value associated with `key`.
     pub fn remove_non_recursive(&mut self, key: &K::Borrowed) -> Option<V> {
-        unsafe { self.remove_raw::<path::Discard>(K::Read::from(key)) }
+        unsafe { self.remove_raw::<path::Discard<_>>(K::Read::from(key)) }
             .map(|value| unsafe { V::from_raw_unchecked(value) })
     }
 
@@ -446,7 +446,7 @@ where
     // NOTE: this method is safe because it does not insert a key or insert/update a value.
     #[inline]
     pub(super) fn get_raw(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
         cursor.traverse_get()?;
         Some(unsafe { cursor.as_value_unchecked() })
     }
@@ -456,7 +456,7 @@ where
         reader: K::Read<'_>,
         value: u64,
     ) -> Result<(u64, NonNull<u64>), u64> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
         match cursor.traverse_value() {
             None => Err(value),
             Some(update) => {
@@ -473,7 +473,7 @@ where
         &mut self,
         reader: K::Read<'k>,
     ) -> Option<u64> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Retain<_>>(reader) };
+        let mut cursor = unsafe { self.raw.cursor::<path::Full<_>>(reader) };
 
         let update = cursor.traverse_value()?;
 
@@ -501,7 +501,7 @@ where
 
     #[inline]
     pub(super) unsafe fn entry_raw<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Discard>(reader) };
+        let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
 
         match cursor.traverse_insert() {
             raw::cursor::Insert::Value {
@@ -660,7 +660,7 @@ impl<'g, 'k, K: Key, V: Value + Default + 'g> Entry<'g, 'k, K, V> {
 
 /// A vacant entry in a [`SequentialMap`].
 pub struct Vacant<'g, 'k, K: Key, V: Value + 'g> {
-    pub(super) cursor: Cursor<'g, K::Read<'k>, path::Discard>,
+    pub(super) cursor: Cursor<'g, K::Read<'k>, path::Discard<K::Read<'k>>>,
     pub(super) replace: bool,
     pub(super) _value: PhantomData<&'g mut V>,
 }

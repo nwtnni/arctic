@@ -961,7 +961,7 @@ where
         let reader = K::Read::from(key);
         let mut guard = self.smr.guard(reader);
         let Ok(remove) = unsafe {
-            self.remove_with_raw::<true, path::Retain<_>, _>(&mut guard, reader, |value| {
+            self.remove_with_raw::<true, path::Full<_>, _>(&mut guard, reader, |value| {
                 remove(V::borrow_from_raw_unchecked(&value))
             })
         };
@@ -1128,7 +1128,12 @@ where
 {
     #[inline]
     unsafe fn get_raw<'g>(&'g self, _guard: &mut S::Guard<'g>, reader: K::Read<'_>) -> Option<u64> {
-        unsafe { self.seq.raw.cursor::<path::Discard>(reader).traverse_get() }
+        unsafe {
+            self.seq
+                .raw
+                .cursor::<path::Discard<_>>(reader)
+                .traverse_get()
+        }
     }
 
     #[inline]
@@ -1142,7 +1147,7 @@ where
     where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
-        unsafe { self.upsert_with_raw::<path::Discard, _>(guard, reader, initial, upsert) }
+        unsafe { self.upsert_with_raw::<path::Point<_>, _>(guard, reader, initial, upsert) }
     }
 
     #[cold]
@@ -1157,7 +1162,7 @@ where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::InsertPessimistic);
-        unsafe { self.upsert_with_raw::<path::Retain<_>, _>(guard, reader, initial, upsert) }
+        unsafe { self.upsert_with_raw::<path::Full<_>, _>(guard, reader, initial, upsert) }
             .expect("path::Retain::PopError is Infallible")
     }
 
@@ -1280,7 +1285,7 @@ where
     where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
-        unsafe { self.update_with_raw::<path::Discard, _>(guard, reader, initial, update) }
+        unsafe { self.update_with_raw::<path::Point<_>, _>(guard, reader, initial, update) }
     }
 
     #[cold]
@@ -1295,7 +1300,7 @@ where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
         stat::increment(stat::Counter::UpdatePessimistic);
-        unsafe { self.update_with_raw::<path::Retain<_>, _>(guard, reader, initial, update) }
+        unsafe { self.update_with_raw::<path::Full<_>, _>(guard, reader, initial, update) }
             .expect("path::Retain::PopError is Infallible")
     }
 
@@ -1373,7 +1378,7 @@ where
     where
         F: FnMut(u64) -> ControlFlow<(), ()>,
     {
-        unsafe { self.remove_with_raw::<false, path::Discard, _>(guard, reader, remove) }
+        unsafe { self.remove_with_raw::<false, path::Point<_>, _>(guard, reader, remove) }
     }
 
     #[cold]
@@ -1387,7 +1392,7 @@ where
         F: FnMut(u64) -> ControlFlow<(), ()>,
     {
         let Ok(remove) =
-            unsafe { self.remove_with_raw::<false, path::Retain<_>, _>(guard, reader, remove) };
+            unsafe { self.remove_with_raw::<false, path::Full<_>, _>(guard, reader, remove) };
         remove
     }
 

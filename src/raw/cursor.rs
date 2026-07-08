@@ -17,8 +17,6 @@ use crate::sync::Atomic;
 
 /// Tree traversal state.
 pub(crate) struct Cursor<'g, R: key::Read, P> {
-    len: R::Len,
-
     /// Current key reader
     reader: R,
 
@@ -77,7 +75,7 @@ pub(crate) enum Freeze {
     Traverse,
 }
 
-impl<'g, R> Cursor<'g, R, path::Discard>
+impl<'g, R> Cursor<'g, R, path::Discard<R>>
 where
     R: key::Read,
 {
@@ -92,10 +90,8 @@ where
                 edge::Child::Node(node) => {
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
-
-                    // Skip `self.push` call since `get` never back-tracks
-                    self.edge = unsafe { node.get(byte) }.map(NonNull::from)?.cast();
-                    self.reader = self.reader.suffix(R::Len::BYTE + len.into());
+                    let next = unsafe { node.get(byte) }?;
+                    self.push(len, node, next);
                 }
                 edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
@@ -119,7 +115,6 @@ where
     #[inline]
     pub(crate) unsafe fn new(root: &'g Atomic<Edge<R::Edge>>, reader: R) -> Self {
         Self {
-            len: R::Len::ZERO,
             edge: NonNull::from(root),
             reader,
             path: P::default(),
@@ -144,7 +139,7 @@ where
 
     #[inline]
     pub(crate) fn len(&self) -> R::Len {
-        self.len
+        self.path.len()
     }
 
     /// Traverse to the root of the subtree prefixed by the key, if it exists.
@@ -534,20 +529,17 @@ where
         node: ribbit::Packed<node::Ptr>,
         edge: &'g Atomic<edge::Raw>,
     ) {
-        self.path.push(path::Segment {
+        let edge = core::mem::replace(&mut self.edge, NonNull::from(edge).cast());
+        self.reader = self.path.push(path::Segment {
             reader: self.reader,
             len,
-            edge: core::mem::replace(&mut self.edge, NonNull::from(edge).cast()),
+            edge,
             node,
         });
-
-        // 1 extra byte for node
-        let delta = R::Len::BYTE + len.into();
-        self.len += delta;
-        self.reader = self.reader.suffix(delta);
     }
 
     #[inline]
+    #[expect(clippy::type_complexity)]
     pub(crate) fn pop(
         &mut self,
     ) -> Result<
@@ -560,7 +552,6 @@ where
         let Some(segment) = self.path.pop()? else {
             return Ok(None);
         };
-        self.len -= R::Len::BYTE + segment.len.into();
         self.reader = segment.reader;
         self.edge = segment.edge;
         Ok(Some((segment.len, segment.node)))

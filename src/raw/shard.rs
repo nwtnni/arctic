@@ -41,7 +41,7 @@ where
         root: &'g Atomic<Edge<K::Edge>>,
         prefix: K::Read<'k>,
     ) -> Shard<'g, 'k, K, RangeFull> {
-        let mut cursor = unsafe { Cursor::<_, path::Discard>::new(root, prefix) };
+        let mut cursor = unsafe { Cursor::<_, path::Len<_>>::new(root, prefix) };
         let Some(edge) = cursor.traverse_prefix() else {
             return unsafe { Shard::new(core::ptr::null_mut(), Edge::NULL, prefix, ..) };
         };
@@ -59,7 +59,7 @@ where
         R: Range<K::Read<'k>>,
     {
         validate_eq!(prefix, range.common_prefix());
-        let mut cursor = unsafe { Cursor::<_, path::Discard>::new(root, prefix) };
+        let mut cursor = unsafe { Cursor::<_, path::Len<_>>::new(root, prefix) };
         let Some(edge) = cursor.traverse_prefix() else {
             return unsafe { Shard::new(core::ptr::null_mut(), Edge::NULL, prefix, range) };
         };
