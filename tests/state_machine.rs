@@ -291,11 +291,38 @@ where
     }
 }
 
-struct Concurrent<K: arctic::Key, V: arctic::concurrent::Value>(arctic::concurrent::Map<K, V>);
+// Can't cfg trait bound in where clause
+#[cfg(feature = "smr-hazard")]
+trait Hazard: arctic::concurrent::smr::hazard::Key {}
+#[cfg(feature = "smr-hazard")]
+impl<K: arctic::concurrent::smr::hazard::Key> Hazard for K {}
+#[cfg(not(feature = "smr-hazard"))]
+trait Hazard {}
+#[cfg(not(feature = "smr-hazard"))]
+impl<K> Hazard for K {}
+
+struct Concurrent<
+    K: arctic::Key + Hazard,
+    V: arctic::concurrent::Value,
+    S = cfg_select! {
+            feature = "smr-hazard" => {
+                ::arctic::concurrent::smr::Hazard::<K, V>
+            }
+            feature = "smr-epoch" => {
+                ::arctic::concurrent::smr::Epoch
+            }
+            feature = "smr-seize" => {
+                ::arctic::concurrent::smr::Seize
+            }
+            _ => {
+                ::arctic::concurrent::smr::NoOp
+            }
+        },
+>(arctic::concurrent::Map<K, V, S>);
 
 impl<K, V> StateMachineTest for Concurrent<K, V>
 where
-    K: arctic::Key + Arbitrary + Clone + Debug + Default + Ord + 'static,
+    K: arctic::Key + Hazard + Arbitrary + Clone + Debug + Default + Ord + 'static,
     K::Borrowed: Ord + core::fmt::Debug,
     V: arctic::concurrent::Value + Arbitrary + Clone + Debug + Eq + Send + Sync + 'static,
     V::Borrowed: Debug + PartialEq + PartialEq<V> + Clone,

@@ -73,13 +73,42 @@ fn orthogonal_boxed_str_non_null_u64() {
     orthogonal::<BoxedStr<NonNull>>();
 }
 
+// Can't cfg trait bound in where clause
+#[cfg(feature = "smr-hazard")]
+trait Hazard: arctic::concurrent::smr::hazard::Key {}
+#[cfg(feature = "smr-hazard")]
+impl<K: arctic::concurrent::smr::hazard::Key> Hazard for K {}
+#[cfg(not(feature = "smr-hazard"))]
+trait Hazard {}
+#[cfg(not(feature = "smr-hazard"))]
+impl<K> Hazard for K {}
+
 fn orthogonal<K>()
 where
-    K: ::arctic::Key + Orthogonal + Debug + Ord + Clone,
+    K: ::arctic::Key + Orthogonal + Debug + Ord + Clone + Hazard,
     K::Borrowed: Debug + Eq + Ord,
     rand::distr::StandardUniform: rand::distr::Distribution<K>,
 {
-    let map = &Map::<K, u64>::new();
+    let map = &Map::<
+        K,
+        u64,
+        // Can't define type alias with unused type parameters or that uses outside types
+        cfg_select! {
+            feature = "smr-hazard" => {
+                ::arctic::concurrent::smr::Hazard::<K, u64>
+            }
+            feature = "smr-epoch" => {
+                ::arctic::concurrent::smr::Epoch
+            }
+            feature = "smr-seize" => {
+                ::arctic::concurrent::smr::Seize
+            }
+            _ => {
+                ::arctic::concurrent::smr::NoOp
+            }
+        },
+    >::new();
+
     let ops = &rand::distr::slice::Choose::new(OPS).unwrap();
 
     thread::scope(|scope| {

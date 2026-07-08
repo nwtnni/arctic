@@ -380,11 +380,22 @@ trait Workload: Sized + Sync {
     );
 }
 
+// Can't cfg trait bound in where clause
+#[cfg(feature = "smr-hazard")]
+trait Hazard: arctic::concurrent::smr::hazard::Key {}
+#[cfg(feature = "smr-hazard")]
+impl<K: arctic::concurrent::smr::hazard::Key> Hazard for K {}
+#[cfg(not(feature = "smr-hazard"))]
+trait Hazard {}
+#[cfg(not(feature = "smr-hazard"))]
+impl<K> Hazard for K {}
+
 fn test_map<'k, K: Workload>(key_set: &'k K, thread_count: usize, key_count: usize, shuffle: bool)
 where
     for<'a> &'a <K::Key<'k> as Key>::Borrowed: Sync + core::fmt::Debug,
     <K::Value as arctic::concurrent::Value>::Borrowed: core::fmt::Debug,
     K::Key<'k>: Clone + Ord + core::fmt::Debug,
+    K::Key<'k>: Hazard,
 {
     let barrier = &Barrier::new(thread_count);
 
@@ -401,7 +412,25 @@ where
         items.sort_unstable_by_key(|(index, _)| *index);
     }
 
-    let map = &arctic::concurrent::Map::<K::Key<'_>, _>::default();
+    let map = &arctic::concurrent::Map::<
+        K::Key<'_>,
+        _,
+        // Can't define type alias with unused type parameters or that uses outside types
+        cfg_select! {
+            feature = "smr-hazard" => {
+                ::arctic::concurrent::smr::Hazard::<K::Key<'_>, K::Value>
+            }
+            feature = "smr-epoch" => {
+                ::arctic::concurrent::smr::Epoch
+            }
+            feature = "smr-seize" => {
+                ::arctic::concurrent::smr::Seize
+            }
+            _ => {
+                ::arctic::concurrent::smr::NoOp
+            }
+        },
+    >::default();
 
     std::thread::scope(|scope| {
         for chunk in items.chunks(key_count / thread_count) {
