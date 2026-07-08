@@ -1,7 +1,9 @@
 #![cfg(feature = "rand")]
 
 use core::borrow::Borrow as _;
-use std::sync::Barrier;
+use core::time::Duration;
+use std::sync::Condvar;
+use std::sync::Mutex;
 
 use arctic::Key;
 use rand::SeedableRng;
@@ -275,7 +277,7 @@ mod slice_non_null {
             let mut rng = rand::rngs::Xoshiro256PlusPlus::seed_from_u64(key_count as u64);
             let dist_char =
                 rand::distr::uniform::Uniform::<char>::new_inclusive(1 as char, char::MAX).unwrap();
-            let dist_len = rand::distr::Uniform::new_inclusive(1usize, 8usize).unwrap();
+            let dist_len = rand::distr::Uniform::new_inclusive(1usize, 32usize).unwrap();
             for _ in 0..key_count {
                 let len = dist_len.sample(&mut rng);
                 let inner = dist_char.sample_string(&mut rng, len);
@@ -384,8 +386,6 @@ where
     <K::Value as arctic::concurrent::Value>::Borrowed: core::fmt::Debug,
     K::Key<'k>: Clone + Ord + core::fmt::Debug,
 {
-    assert_eq!(key_count % thread_count, 0);
-
     let barrier = &Barrier::new(thread_count);
 
     let mut items = (0..key_count)
@@ -438,4 +438,53 @@ where
             });
         }
     });
+}
+
+/// Identical to [`std::sync::Barrier`], but panics if the mutex is poisoned
+/// or if the barrier times out.
+///
+/// Otherwise a panic within [`std::thread::scope`] causes other
+/// threads to block indefinitely on the barrier.
+struct Barrier {
+    mutex: Mutex<BarrierState>,
+    condition: Condvar,
+    thread_count: usize,
+}
+
+impl Barrier {
+    fn new(thread_count: usize) -> Self {
+        Self {
+            mutex: Mutex::new(BarrierState::default()),
+            condition: Condvar::new(),
+            thread_count,
+        }
+    }
+
+    fn wait(&self) {
+        let mut state = self.mutex.lock().expect("Poisoned mutex");
+        let generation = state.generation;
+        if state.count + 1 < self.thread_count {
+            state.count += 1;
+            let (_state, info) = self
+                .condition
+                .wait_timeout_while(state, Duration::from_secs(5), |state| {
+                    state.generation == generation
+                })
+                .expect("Poisoned mutex");
+
+            if info.timed_out() {
+                panic!("Timed out on barrier")
+            }
+        } else {
+            state.count = 0;
+            state.generation = generation.wrapping_add(1);
+            self.condition.notify_all();
+        }
+    }
+}
+
+#[derive(Default)]
+struct BarrierState {
+    count: usize,
+    generation: usize,
 }

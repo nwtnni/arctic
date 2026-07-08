@@ -1452,7 +1452,13 @@ where
 
                     let (smo, new) = match old.child() {
                         None => break 'outer,
-                        Some(edge::Child::Value(_)) => unreachable!("Prefix precondition"),
+                        // NOTE: it is only possible for this to be `Some(edge::Child::Value(_))`
+                        // if the key is unsized and non-null, in which case there must be an
+                        // implicit terminator byte in the edge metadata.
+                        Some(edge::Child::Value(_)) => {
+                            validate!(old.meta().has_terminator());
+                            break 'outer;
+                        }
                         Some(edge::Child::Node(node)) if node == target => unsafe {
                             node.freeze::<K::Edge>();
                             node.replace(old.meta())
