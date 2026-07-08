@@ -117,21 +117,37 @@ fn common_prefix(left: &[u8], right: &[u8]) -> usize {
         .unwrap_or_else(|| left.len().min(right.len()))
 }
 
-// TODO: optimize?
 #[inline]
 fn read_u64(slice: &[u8]) -> u64 {
     if slice.len() >= 8 {
-        return unsafe { slice.as_ptr().cast::<u64>().read_unaligned() };
+        cfg_select! {
+            // Avoid memcpy (just x86 for now):
+            any(target_arch = "x86", target_arch = "x86_64") => {
+                // - https://rust-lang.github.io/rfcs/1725-unaligned-access.html#detailed-design
+                // - https://github.com/llvm/llvm-project/issues/87440
+                // - https://github.com/rust-lang/rust/issues/92993
+                // - https://github.com/rust-lang/rust/pull/37573
+                // - https://lemire.me/blog/2012/05/31/data-alignment-for-speed-myth-or-reality/
+                let buffer: u64;
+                unsafe {
+                    core::arch::asm! {
+                        "mov {}, [{}]",
+                        out(reg) buffer,
+                        in(reg) slice.as_ptr().cast::<u64>(),
+                        options(pure, readonly, preserves_flags, nostack)
+                    }
+                }
+                buffer
+            }
+            _ => unsafe {
+                slice.as_ptr().cast::<u64>().read_unaligned()
+            }
+        }
+    } else {
+        let mut buffer = [0u8; 8];
+        buffer[..slice.len()].copy_from_slice(slice);
+        u64::from_le_bytes(buffer)
     }
-
-    // FIXME: try to avoid memcpy?
-    // https://github.com/llvm/llvm-project/issues/87440
-    // https://github.com/rust-lang/rust/issues/92993
-    // https://github.com/rust-lang/rust/pull/37573
-    let mut buffer = [0u8; 8];
-    buffer[..slice.len()].copy_from_slice(slice);
-
-    u64::from_le_bytes(buffer)
 }
 
 mod seal {
