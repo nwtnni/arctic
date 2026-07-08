@@ -1438,6 +1438,7 @@ where
 
         if RECURSIVE {
             let mut trim = edge.meta().len().into();
+            let mut pop = 0;
 
             'pop: while let Some((mut old_len, old_node)) =
                 cursor.pop().expect("Recursive remove requires path")
@@ -1447,6 +1448,7 @@ where
                 }
 
                 cursor.trim(K::Len::BYTE + trim);
+                pop += 1;
 
                 'freeze: loop {
                     let old_edge = cursor.edge();
@@ -1485,6 +1487,8 @@ where
                     }
                 }
             }
+
+            stat::record(stat::Record::RemovePop, pop);
         }
 
         Ok(RemoveRaw::Success { old: value })

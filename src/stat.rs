@@ -175,6 +175,8 @@ pub(crate) enum Record {
     ReclaimAge2,
     #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
     ReclaimAge3,
+
+    RemovePop,
 }
 
 /// Thread-level statistics for a [`ConcurrentMap`][concurrent::Map].
@@ -211,6 +213,8 @@ pub struct Thread {
     reclaim_age_1: Histogram,
     reclaim_age_2: Histogram,
     reclaim_age_3: Histogram,
+
+    remove_pop: Histogram,
 }
 
 /// Thread-level statistics for a [`ConcurrentMap`][concurrent::Map].
@@ -273,6 +277,7 @@ pub(crate) fn record(_record: Record, _value: u64) {
                 Record::ReclaimAge1 => &mut thread.reclaim_age_1,
                 Record::ReclaimAge2 => &mut thread.reclaim_age_2,
                 Record::ReclaimAge3 => &mut thread.reclaim_age_3,
+                Record::RemovePop => &mut thread.remove_pop,
             };
             old.record(_value);
         })
