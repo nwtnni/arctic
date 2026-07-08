@@ -162,7 +162,7 @@ where
     /// ```
     pub fn get_mut(&mut self, key: &K::Borrowed) -> Option<&mut V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(key) };
-        cursor.traverse_get()?;
+        cursor.traverse_value()?;
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_mut() })
     }
 
@@ -447,7 +447,7 @@ where
     #[inline]
     pub(super) fn get_raw(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-        cursor.traverse_get()?;
+        cursor.traverse_value()?;
         Some(unsafe { cursor.as_value_unchecked() })
     }
 

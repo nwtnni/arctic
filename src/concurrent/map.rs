@@ -1132,7 +1132,8 @@ where
             self.seq
                 .raw
                 .cursor::<path::Discard<_>>(reader)
-                .traverse_get()
+                .traverse_value()
+                .map(|cursor::Value { value, edge: _ }| value)
         }
     }
 

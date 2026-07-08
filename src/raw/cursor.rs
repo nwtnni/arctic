@@ -75,34 +75,6 @@ pub(crate) enum Freeze {
     Traverse,
 }
 
-impl<'g, R> Cursor<'g, R, path::Discard<R>>
-where
-    R: key::Read,
-{
-    /// Traverse to the value associated with the key, if it exists.
-    #[inline]
-    pub(crate) fn traverse_get(&mut self) -> Option<u64> {
-        loop {
-            let edge = self.edge().load_packed(Ordering::Acquire);
-            let len = self.reader.match_exact(edge.meta())?;
-
-            match edge.child()? {
-                edge::Child::Node(node) => {
-                    // SAFETY: prefix precondition implies search key cannot equal node prefix
-                    let byte = unsafe { self.reader.get_byte_unchecked(len) };
-                    let next = unsafe { node.get(byte) }?;
-                    self.push(len, node, next);
-                }
-                edge::Child::Value(value) => {
-                    // Prefix precondition implies search key must match
-                    validate!(self.reader.len() == len.into());
-                    return Some(value);
-                }
-            }
-        }
-    }
-}
-
 impl<'g, R, P> Cursor<'g, R, P>
 where
     R: key::Read,
@@ -173,6 +145,7 @@ where
     ///
     /// Returns `None` if there is no such edge,
     /// or `Some(value)` otherwise.
+    #[inline]
     pub(crate) fn traverse_value(&mut self) -> Option<Value<R::Edge>> {
         loop {
             let edge = self.edge().load_packed(Ordering::Acquire);
