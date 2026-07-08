@@ -452,7 +452,7 @@ fn compress_16(mask: u128, lo: u128, hi: u128) -> (__m256i, u8) {
     cfg_select! {
         all(target_feature = "avx512vbmi2", target_feature = "avx512vl") => unsafe {
             let out = core::arch::x86_64::_mm256_mask_compress_epi16(
-                core::arch::x86_64::_mm256_set1_epi16(0xFFFFu16 as i16),
+                core::arch::x86_64::_mm256_set1_epi8(0),
                 mask_bit,
                 interleave(lo, hi),
             );
