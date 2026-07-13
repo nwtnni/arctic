@@ -16,6 +16,7 @@ use crate::concurrent::iter;
 use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
 use crate::concurrent::value;
+use crate::raw::Cursor;
 use crate::raw::Edge;
 use crate::raw::cursor;
 use crate::raw::cursor::Path;
@@ -1129,10 +1130,10 @@ where
     #[inline]
     unsafe fn get_raw<'g>(&'g self, _guard: &mut S::Guard<'g>, reader: K::Read<'_>) -> Option<u64> {
         unsafe {
-            self.seq
-                .raw
-                .cursor::<path::Discard<_>>(reader)
-                .traverse_value()
+            let mut cursor = self.seq.raw.cursor::<path::Discard<_>>(reader);
+            let walk = cursor.edge().load_packed(Ordering::Relaxed);
+            cursor
+                .traverse_value(walk)
                 .map(|cursor::Value { value, edge: _ }| value)
         }
     }
@@ -1180,13 +1181,21 @@ where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+        let mut walk = cursor.edge().load_packed(Ordering::Relaxed);
 
         loop {
-            match cursor.traverse_insert() {
+            match unsafe { cursor.traverse_insert(walk) } {
                 cursor::Insert::Value {
                     value: old_value,
                     edge: old_edge,
                 } => {
+                    // Synchronizes with either:
+                    // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+                    // - `V::Release` compare_exchange in `update_with_raw`
+                    if let Some(acquire) = V::ACQUIRE {
+                        crate::sync::atomic::fence(acquire);
+                    }
+
                     let new_value = match upsert(old_value, initial) {
                         ControlFlow::Continue(new_value) => new_value,
                         ControlFlow::Break(()) => {
@@ -1202,8 +1211,11 @@ where
                         match cursor.edge().compare_exchange_packed(
                             old_edge,
                             new_edge,
-                            Ordering::AcqRel,
-                            Ordering::Acquire,
+                            // Technically, if `new_edge` is a value, this could be `V::RELEASE`.
+                            // Since it's likely to be a node, conservatively default to `Release`.
+                            // Synchronizes with `Acquire` fences in `Cursor`.
+                            Ordering::Release,
+                            Ordering::Relaxed,
                         ) {
                             Ok(_) => {
                                 return Ok(UpsertRaw::Success {
@@ -1211,7 +1223,7 @@ where
                                     new: new_value,
                                 });
                             }
-                            Err(_) => {
+                            Err(conflict) => {
                                 if let Some(node) = new_edge.as_node() {
                                     unsafe {
                                         stat::increment(stat::Counter::FreeConflict);
@@ -1220,6 +1232,7 @@ where
                                 }
 
                                 initial = Some(new_value);
+                                walk = conflict;
                                 continue;
                             }
                         }
@@ -1236,13 +1249,15 @@ where
                     match cursor.edge().compare_exchange_packed(
                         old_edge,
                         new_edge,
-                        Ordering::AcqRel,
-                        Ordering::Acquire,
+                        // Synchronizes with `Acquire` fences in `Cursor`.
+                        Ordering::Release,
+                        Ordering::Relaxed,
                     ) {
                         Ok(_) => {
                             unsafe { guard.retire_node(cursor.len().bits(), old_node.into_raw()) };
+                            walk = new_edge;
                         }
-                        Err(_) => {
+                        Err(conflict) => {
                             // Does not go through SMR because `new` is still thread-local
                             if smo.is_allocate() {
                                 let node = new_edge.as_node().expect("Allocating SMO creates node");
@@ -1251,6 +1266,7 @@ where
                                     node.deallocate();
                                 }
                             }
+                            walk = conflict;
                         }
                     }
 
@@ -1261,17 +1277,7 @@ where
                 cursor::Insert::Replace { .. } => (),
             }
 
-            let (old_len, old_node) = cursor
-                .pop()
-                .map_err(|_| initial)?
-                .expect("Root edge cannot be frozen");
-
-            match unsafe { cursor.freeze(old_len, old_node) }.map_err(|_| initial)? {
-                cursor::Freeze::Traverse | cursor::Freeze::Success(None) => (),
-                cursor::Freeze::Success(Some(node)) => unsafe {
-                    guard.retire_node(cursor.len().bits(), node.into_raw())
-                },
-            }
+            walk = self.freeze(guard, &mut cursor).map_err(|_| initial)?;
         }
     }
 
@@ -1318,30 +1324,27 @@ where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+        let mut walk = cursor.edge().load_packed(Ordering::Relaxed);
 
         loop {
             let cursor::Value {
                 value: old_value,
                 edge: old_edge,
-            } = match cursor.traverse_value() {
+            } = match unsafe { cursor.traverse_value(walk) } {
                 None => return Ok(UpdateRaw::Absent { new: initial }),
                 Some(update) if !update.edge.meta().is_frozen() => update,
                 Some(_) => {
-                    let (old_len, old_node) = cursor
-                        .pop()
-                        .map_err(|_| initial)?
-                        .expect("Root edge cannot be frozen");
-
-                    match unsafe { cursor.freeze(old_len, old_node) }.map_err(|_| initial)? {
-                        cursor::Freeze::Traverse | cursor::Freeze::Success(None) => (),
-                        cursor::Freeze::Success(Some(node)) => unsafe {
-                            guard.retire_node(cursor.len().bits(), node.into_raw());
-                        },
-                    }
-
+                    walk = self.freeze(guard, &mut cursor).map_err(|_| initial)?;
                     continue;
                 }
             };
+
+            // Synchronizes with either:
+            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+            // - `V::Release` compare_exchange in `update_with_raw`
+            if let Some(acquire) = V::ACQUIRE {
+                crate::sync::atomic::fence(acquire);
+            }
 
             let new_value = match update(old_value, initial) {
                 ControlFlow::Continue(new_value) => new_value,
@@ -1353,8 +1356,8 @@ where
             match cursor.edge().compare_exchange_packed(
                 old_edge,
                 Edge::new_value(old_edge.meta(), new_value),
-                Ordering::AcqRel,
-                Ordering::Acquire,
+                V::RELEASE,
+                Ordering::Relaxed,
             ) {
                 Ok(_) => {
                     return Ok(UpdateRaw::Success {
@@ -1362,8 +1365,9 @@ where
                         new: new_value,
                     });
                 }
-                Err(_) => {
+                Err(conflict) => {
                     initial = Some(new_value);
+                    walk = conflict;
                 }
             }
         }
@@ -1409,22 +1413,24 @@ where
         F: FnMut(u64) -> ControlFlow<(), ()>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
+        let mut walk = cursor.edge().load_packed(Ordering::Relaxed);
 
         let (value, edge) = loop {
-            let cursor::Value { value, edge } = match cursor.traverse_value() {
+            let cursor::Value { value, edge } = match unsafe { cursor.traverse_value(walk) } {
                 None => return Ok(RemoveRaw::Absent),
                 Some(update) if !update.edge.meta().is_frozen() => update,
                 Some(_) => {
-                    let (old_len, old_node) = cursor.pop()?.expect("Root edge cannot be frozen");
-                    match unsafe { cursor.freeze(old_len, old_node)? } {
-                        cursor::Freeze::Traverse | cursor::Freeze::Success(None) => continue,
-                        cursor::Freeze::Success(Some(node)) => unsafe {
-                            guard.retire_node(cursor.len().bits(), node.into_raw());
-                            continue;
-                        },
-                    }
+                    walk = self.freeze(guard, &mut cursor)?;
+                    continue;
                 }
             };
+
+            // Synchronizes with either:
+            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+            // - `V::Release` compare_exchange in `update_with_raw`
+            if let Some(acquire) = V::ACQUIRE {
+                crate::sync::atomic::fence(acquire);
+            }
 
             match remove(value) {
                 ControlFlow::Continue(()) => (),
@@ -1433,12 +1439,15 @@ where
                 }
             }
 
-            if cursor
-                .edge()
-                .compare_exchange_packed(edge, Edge::NULL, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                break (value, edge);
+            match cursor.edge().compare_exchange_packed(
+                edge,
+                Edge::NULL,
+                // Relaxed because publishing `Edge::NULL`
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break (value, edge),
+                Err(conflict) => walk = conflict,
             }
         };
 
@@ -1456,33 +1465,41 @@ where
                 cursor.trim(K::Len::BYTE + trim);
                 pop += 1;
 
+                let mut old_edge = cursor.edge().load_packed(Ordering::Relaxed);
+
                 'freeze: loop {
-                    let old_edge = cursor.edge();
-                    match unsafe { cursor.freeze(old_len, old_node) }
+                    let addr = cursor.edge();
+
+                    match unsafe { cursor.freeze(old_len, old_node, old_edge) }
                         .expect("Recursive remove requires path")
                     {
-                        cursor::Freeze::Traverse => (),
-                        cursor::Freeze::Success(node) => {
+                        // Fall through to `traverse_node`
+                        cursor::Freeze::Traverse { edge } => {
+                            old_edge = edge;
+                        }
+                        cursor::Freeze::Success {
+                            old_node: node,
+                            new_edge,
+                        } => {
                             if let Some(node) = node {
-                                validate!(
-                                    node == old_node || !core::ptr::eq(cursor.edge(), old_edge),
-                                );
-
                                 unsafe { guard.retire_node(cursor.len().bits(), node.into_raw()) };
                             }
 
-                            // We (or someone else) replaced `old_node`
-                            if core::ptr::eq(cursor.edge(), old_edge) {
+                            // `freeze` did not pop, so we (or someone else) replaced `old_node`
+                            if core::ptr::eq(cursor.edge(), addr) {
                                 trim = old_len.into();
                                 continue 'pop;
                             }
+
+                            old_edge = new_edge;
                         }
                     }
 
                     // Traverse down to `old_node`
-                    match cursor.traverse_node() {
-                        Ok(len) => {
-                            old_len = len;
+                    match cursor.traverse_node(old_edge) {
+                        Ok(edge) => {
+                            old_len = edge.meta().len();
+                            old_edge = edge;
                             continue 'freeze;
                         }
                         Err(len) => {
@@ -1498,6 +1515,39 @@ where
         }
 
         Ok(RemoveRaw::Success { old: value })
+    }
+
+    fn freeze<'g, 'k, P>(
+        &'g self,
+        guard: &mut S::Guard<'g>,
+        cursor: &mut Cursor<K::Read<'k>, P>,
+    ) -> Result<ribbit::Packed<Edge<K::Edge>>, P::PopError>
+    where
+        P: Path<K::Read<'k>>,
+    {
+        let (old_len, old_node) = cursor.pop()?.expect("Root edge cannot be frozen");
+
+        match unsafe {
+            cursor.freeze(
+                old_len,
+                old_node,
+                // Need to load here since we just popped
+                cursor.edge().load_packed(Ordering::Relaxed),
+            )
+        }? {
+            cursor::Freeze::Traverse { edge }
+            | cursor::Freeze::Success {
+                old_node: None,
+                new_edge: edge,
+            } => Ok(edge),
+            cursor::Freeze::Success {
+                old_node: Some(node),
+                new_edge,
+            } => {
+                unsafe { guard.retire_node(cursor.len().bits(), node.into_raw()) };
+                Ok(new_edge)
+            }
+        }
     }
 }
 

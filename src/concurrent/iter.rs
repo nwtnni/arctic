@@ -81,6 +81,14 @@ where
     pub fn lend(&mut self) -> Option<(K::Insert<'_>, &V::Borrowed)> {
         self.inner.lend().map(|(key, value, _)| {
             self.value = value;
+
+            // Synchronizes with either:
+            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+            // - `V::Release` compare_exchange in `update_with_raw`
+            if let Some(acquire) = V::ACQUIRE {
+                crate::sync::atomic::fence(acquire);
+            }
+
             (key, unsafe { V::borrow_from_raw_unchecked(&self.value) })
         })
     }
@@ -93,6 +101,14 @@ where
     {
         self.inner.try_fold(init, |acc, (key, value, _)| {
             self.value = value;
+
+            // Synchronizes with either:
+            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+            // - `V::Release` compare_exchange in `update_with_raw`
+            if let Some(acquire) = V::ACQUIRE {
+                crate::sync::atomic::fence(acquire);
+            }
+
             apply(
                 acc,
                 (key, unsafe { V::borrow_from_raw_unchecked(&self.value) }),
@@ -135,6 +151,14 @@ where
     pub fn lend(&mut self) -> Option<&V::Borrowed> {
         self.inner.lend().map(|(value, _)| {
             self.value = value;
+
+            // Synchronizes with either:
+            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+            // - `V::Release` compare_exchange in `update_with_raw`
+            if let Some(acquire) = V::ACQUIRE {
+                crate::sync::atomic::fence(acquire);
+            }
+
             unsafe { V::borrow_from_raw_unchecked(&self.value) }
         })
     }
@@ -148,6 +172,14 @@ where
     ) -> ControlFlow<B, C> {
         self.inner.try_fold(init, |acc, (value, _)| {
             self.value = value;
+
+            // Synchronizes with either:
+            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+            // - `V::Release` compare_exchange in `update_with_raw`
+            if let Some(acquire) = V::ACQUIRE {
+                crate::sync::atomic::fence(acquire);
+            }
+
             apply(acc, unsafe { V::borrow_from_raw_unchecked(&self.value) })
         })
     }

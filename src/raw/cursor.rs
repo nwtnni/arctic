@@ -63,16 +63,19 @@ pub(crate) struct Value<M: ribbit::Pack<Packed: edge::Meta>> {
 }
 
 /// Outcome of [`Cursor::freeze`].
-pub(crate) enum Freeze {
+pub(crate) enum Freeze<M: ribbit::Pack<Packed: edge::Meta>> {
     /// Freeze suceeded, either due to successfully replacing
     /// the node ourselves, in which case we need to retire
     /// `Some(node)`, or due to another thread concurrently
     /// replacing the node, in which case this will contain `None`.
-    Success(Option<ribbit::Packed<node::Ptr>>),
+    Success {
+        old_node: Option<ribbit::Packed<node::Ptr>>,
+        new_edge: ribbit::Packed<Edge<M>>,
+    },
 
     /// Detected a concurrent edge expansion, so caller
     /// must re-traverse to frozen node.
-    Traverse,
+    Traverse { edge: ribbit::Packed<Edge<M>> },
 }
 
 impl<'g, R, P> Cursor<'g, R, P>
@@ -117,7 +120,7 @@ where
     /// Traverse to the root of the subtree prefixed by the key, if it exists.
     pub(crate) fn traverse_prefix(&mut self) -> Option<ribbit::Packed<Edge<R::Edge>>> {
         loop {
-            let edge = self.edge().load_packed(Ordering::Acquire);
+            let edge = self.edge().load_packed(Ordering::Relaxed);
             let child = edge.child()?;
             let meta = edge.meta();
 
@@ -128,6 +131,10 @@ where
                 && let edge::Child::Node(node) = child
                 && let Some(byte) = self.reader.get_byte(len_edge)
             {
+                // Synchronizes with `Ordering::Release` compare_exchange
+                // in `concurrent::Map::upsert_with_raw`.
+                crate::sync::atomic::fence(Ordering::Acquire);
+
                 let next = unsafe { node.get(byte) }?;
                 self.push(len_edge, node, next);
                 continue;
@@ -145,10 +152,16 @@ where
     ///
     /// Returns `None` if there is no such edge,
     /// or `Some(value)` otherwise.
+    ///
+    /// # SAFETY
+    ///
+    /// Caller must guarantee `edge` was loaded from `self.edge()`.
     #[inline]
-    pub(crate) fn traverse_value(&mut self) -> Option<Value<R::Edge>> {
+    pub(crate) unsafe fn traverse_value(
+        &mut self,
+        mut edge: ribbit::Packed<Edge<R::Edge>>,
+    ) -> Option<Value<R::Edge>> {
         loop {
-            let edge = self.edge().load_packed(Ordering::Acquire);
             let len = self.reader.match_exact(edge.meta())?;
 
             match edge.child()? {
@@ -156,8 +169,13 @@ where
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
+                    // Synchronizes with `Ordering::Release` compare_exchange
+                    // in `concurrent::Map::upsert_with_raw`.
+                    crate::sync::atomic::fence(Ordering::Acquire);
+
                     let next = unsafe { node.get(byte) }?;
                     self.push(len, node, next);
+                    edge = self.edge().load_packed(Ordering::Relaxed);
                     continue;
                 }
                 edge::Child::Value(value) => {
@@ -176,9 +194,9 @@ where
     /// or else returns the remaining key length.
     pub(crate) fn traverse_node(
         &mut self,
-    ) -> Result<<ribbit::Packed<R::Edge> as edge::Meta>::Len, R::Len> {
+        mut edge: ribbit::Packed<Edge<R::Edge>>,
+    ) -> Result<ribbit::Packed<Edge<R::Edge>>, R::Len> {
         loop {
-            let edge = self.edge().load_packed(Ordering::Acquire);
             let Some(len) = self.reader.match_exact(edge.meta()) else {
                 return Err(self.reader.len());
             };
@@ -189,14 +207,19 @@ where
                 Some(edge::Child::Node(node)) => {
                     let Some(byte) = self.reader.get_byte(len) else {
                         // Found target node
-                        return Ok(len);
+                        return Ok(edge);
                     };
+
+                    // Synchronizes with `Ordering::Release` compare_exchange
+                    // in `concurrent::Map::upsert_with_raw`.
+                    crate::sync::atomic::fence(Ordering::Acquire);
 
                     let Some(next) = (unsafe { node.get(byte) }) else {
                         return Err(self.reader.len());
                     };
 
                     self.push(len, node, next);
+                    edge = self.edge().load_packed(Ordering::Relaxed);
                     continue;
                 }
             }
@@ -206,10 +229,15 @@ where
     /// Traverse to the edge associated with the key, or to
     /// the first edge where an SMO would be necessary to
     /// insert the key.
-    pub(crate) fn traverse_insert(&mut self) -> Insert<R::Edge> {
+    ///
+    /// # SAFETY
+    ///
+    /// Caller must guarantee `edge` was loaded from `self.edge()`.
+    pub(crate) unsafe fn traverse_insert(
+        &mut self,
+        mut edge: ribbit::Packed<Edge<R::Edge>>,
+    ) -> Insert<R::Edge> {
         loop {
-            let edge = self.edge().load_packed(Ordering::Acquire);
-
             let Some(child) = edge.child() else {
                 // Case: no child, create path
                 return Insert::Value { value: None, edge };
@@ -225,12 +253,17 @@ where
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
+                    // Synchronizes with `Ordering::Release` compare_exchange
+                    // in `concurrent::Map::upsert_with_raw`.
+                    crate::sync::atomic::fence(Ordering::Acquire);
+
                     let Some(next) = (unsafe { node.get_or_insert(byte) }) else {
                         // Case: node replacement
                         return Insert::Replace { node, edge };
                     };
 
                     self.push(len, node, next);
+                    edge = self.edge().load_packed(Ordering::Relaxed);
                 }
                 edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
@@ -324,8 +357,8 @@ where
         &mut self,
         mut old_len: <ribbit::Packed<R::Edge> as edge::Meta>::Len,
         mut old_node: ribbit::Packed<node::Ptr>,
-    ) -> Result<Freeze, P::PopError> {
-        let mut old_edge = self.edge().load_packed(Ordering::Acquire);
+        mut old_edge: ribbit::Packed<Edge<R::Edge>>,
+    ) -> Result<Freeze<R::Edge>, P::PopError> {
         let mut pop = 1;
 
         let old_node = loop {
@@ -358,7 +391,7 @@ where
                 let (next_len, next_node) = self.pop()?.expect("Root edge cannot be frozen");
                 old_len = next_len;
                 old_node = next_node;
-                old_edge = self.edge().load_packed(Ordering::Acquire);
+                old_edge = self.edge().load_packed(Ordering::Relaxed);
                 pop += 1;
             }
 
@@ -401,7 +434,9 @@ where
                     //                     v
                     //                     3
                     // ```
-                    core::cmp::Ordering::Less => break Freeze::Traverse,
+                    core::cmp::Ordering::Less => break Freeze::Traverse {
+                        edge: old_edge
+                    },
 
                     // Node must have been replaced...
                     //
@@ -452,7 +487,10 @@ where
                     //                     v
                     //                     3
                     // ```
-                    | core::cmp::Ordering::Greater => break Freeze::Success(None),
+                    | core::cmp::Ordering::Greater => break Freeze::Success {
+                        old_node: None,
+                        new_edge: old_edge
+                    },
                 },
 
                 // Node must have been removed.
@@ -462,9 +500,16 @@ where
                     // non-null keys, however, `old_node` can be concurrently replaced
                     // with a value, with an implicit terminator byte in `edge::Slice`.
                     validate!(child.is_none_or(|_| old_edge.meta().is_terminate()));
-                    break Freeze::Success(None);
+                    break Freeze::Success {
+                        old_node: None,
+                        new_edge: old_edge,
+                    };
                 }
             };
+
+            // Synchronizes with `Ordering::Release` compare_exchange
+            // in `concurrent::Map::upsert_with_raw`.
+            crate::sync::atomic::fence(Ordering::Acquire);
 
             let (smo, new_edge) = unsafe {
                 old_node.freeze::<R::Edge>();
@@ -475,9 +520,14 @@ where
                 old_edge,
                 new_edge,
                 Ordering::AcqRel,
-                Ordering::Acquire,
+                Ordering::Relaxed,
             ) {
-                Ok(_) => break Freeze::Success(Some(old_node)),
+                Ok(_) => {
+                    break Freeze::Success {
+                        old_node: Some(old_node),
+                        new_edge,
+                    };
+                }
                 Err(conflict) => {
                     if smo.is_allocate() {
                         let new_node = new_edge.as_node().expect("Allocating SMO creates node");

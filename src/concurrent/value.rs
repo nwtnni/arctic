@@ -5,6 +5,7 @@ use core::borrow::Borrow;
 use core::fmt::Debug;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
+use core::sync::atomic::Ordering;
 
 use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
@@ -41,6 +42,20 @@ pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
     where
         G: smr::Guard<Self>;
 
+    /// Memory ordering necessary to observe modifications to [`Self::Borrowed`]
+    /// after loading [`sequential::Value::into_raw`].
+    ///
+    /// Should be [`None`] for inline values,
+    /// or [`Some(Ordering::Acquire)`][Ordering::Acquire] for indirect values.
+    const ACQUIRE: Option<Ordering>;
+
+    /// Memory ordering necessary to publish modifications to [`Self::Borrowed`]
+    /// after storing [`sequential::Value::into_raw`].
+    ///
+    /// Should be [`Ordering::Relaxed`] for inline values,
+    /// or [`Ordering::Release`] for indirect values.
+    const RELEASE: Ordering;
+
     /// # Safety
     ///
     /// Caller must guarantee the following:
@@ -60,6 +75,9 @@ macro_rules! impl_integer {
                     = smr::no_op::Guard<G, Self>
                 where
                     G: smr::Guard<Self>;
+
+                const ACQUIRE: Option<Ordering> = None;
+                const RELEASE: Ordering = Ordering::Relaxed;
 
                 #[inline]
                 unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
@@ -83,6 +101,9 @@ impl<'v, T: 'v + Sized> Value for &'v T {
     where
         G: smr::Guard<Self>;
 
+    const ACQUIRE: Option<Ordering> = None;
+    const RELEASE: Ordering = Ordering::Relaxed;
+
     #[inline]
     unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
         unsafe { core::mem::transmute::<&u64, &Self>(raw) }
@@ -96,6 +117,9 @@ impl<T: Sized> Value for Box<T> {
         = G
     where
         G: smr::Guard<Self>;
+
+    const ACQUIRE: Option<Ordering> = Some(Ordering::Acquire);
+    const RELEASE: Ordering = Ordering::Release;
 
     #[inline]
     unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
@@ -111,6 +135,9 @@ impl<T: Sized> Value for Arc<T> {
         = G
     where
         G: smr::Guard<Self>;
+
+    const ACQUIRE: Option<Ordering> = Some(Ordering::Acquire);
+    const RELEASE: Ordering = Ordering::Release;
 
     #[inline]
     unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {

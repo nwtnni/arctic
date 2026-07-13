@@ -7,14 +7,19 @@ use core::sync::atomic::Ordering;
 
 cfg_select! {
     feature = "shuttle" => {
-        use shuttle::sync::atomic;
+        pub use shuttle::sync::atomic;
         pub use shuttle::thread;
         pub use shuttle::sync::Arc;
     }
     _ => {
         pub use std::sync::Arc;
         pub use std::thread;
-        use ribbit::atomic;
+        pub mod atomic {
+            pub use core::sync::atomic::AtomicU16;
+            pub use core::sync::atomic::AtomicU64;
+            pub use core::sync::atomic::fence;
+            pub use ribbit::atomic::AtomicU128;
+        }
     }
 }
 

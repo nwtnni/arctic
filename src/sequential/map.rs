@@ -5,7 +5,6 @@ use core::marker::PhantomData;
 use core::ops::ControlFlow;
 use core::ops::RangeFull;
 use core::ptr::NonNull;
-use core::sync::atomic::Ordering;
 #[cfg_attr(not(doc), expect(unused))]
 use std::collections::btree_map;
 
@@ -162,7 +161,8 @@ where
     /// ```
     pub fn get_mut(&mut self, key: &K::Borrowed) -> Option<&mut V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(key) };
-        cursor.traverse_value()?;
+        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        unsafe { cursor.traverse_value(walk) }?;
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_mut() })
     }
 
@@ -447,7 +447,8 @@ where
     #[inline]
     pub(super) fn get_raw(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-        cursor.traverse_value()?;
+        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        unsafe { cursor.traverse_value(walk) }?;
         Some(unsafe { cursor.as_value_unchecked() })
     }
 
@@ -457,7 +458,8 @@ where
         value: u64,
     ) -> Result<(u64, NonNull<u64>), u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-        match cursor.traverse_value() {
+        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        match unsafe { cursor.traverse_value(walk) } {
             None => Err(value),
             Some(update) => {
                 let edge = unsafe { cursor.edge_mut() };
@@ -474,13 +476,12 @@ where
         reader: K::Read<'k>,
     ) -> Option<u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Full<_>>(reader) };
+        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
 
-        let update = cursor.traverse_value()?;
+        let update = unsafe { cursor.traverse_value(walk) }?;
 
         unsafe {
-            cursor
-                .edge_mut()
-                .store_packed(Edge::<K::Edge>::NULL, Ordering::Relaxed);
+            *cursor.edge_mut().get_mut_packed() = Edge::<K::Edge>::NULL;
         }
 
         while let Ok(Some((_, target))) = cursor.pop() {
@@ -502,8 +503,8 @@ where
     #[inline]
     pub(super) unsafe fn entry_raw<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-
-        match cursor.traverse_insert() {
+        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        match unsafe { cursor.traverse_insert(walk) } {
             raw::cursor::Insert::Value {
                 value: Some(_),
                 edge: _,
@@ -679,17 +680,18 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
     /// See: [`btree_map::VacantEntry::insert_entry`].
     pub fn insert_entry(mut self, value: V) -> Occupied<'g, V> {
         let new_value = V::into_raw(value);
+        let mut old_edge = unsafe { *self.cursor.edge_mut().get_mut_packed() };
 
         if self.replace {
-            let old = unsafe { *self.cursor.edge_mut().get_mut_packed() };
-            let old_node = old.as_node().expect("Replace implies node");
-            let (_smo, new) = unsafe { old_node.replace(old.meta()) };
-            *unsafe { self.cursor.edge_mut() }.get_mut_packed() = new;
+            let old_node = old_edge.as_node().expect("Replace implies node");
+            let (_smo, new_edge) = unsafe { old_node.replace(old_edge.meta()) };
+            *unsafe { self.cursor.edge_mut() }.get_mut_packed() = new_edge;
+            old_edge = new_edge;
             stat::increment(stat::Counter::FreeRetire);
             unsafe { old_node.deallocate() };
         }
 
-        match self.cursor.traverse_insert() {
+        match unsafe { self.cursor.traverse_insert(old_edge) } {
             crate::raw::cursor::Insert::Value {
                 value: Some(_),
                 edge: _,
