@@ -132,27 +132,31 @@ rather than the [original](https://github.com/kohler/masstree-beta)).
 
 ### YCSB-Load (100% insert)
 
-![Plot of YCSB-Load results](img/load.png)
+![Plot of YCSB-Load throughput vs. thread count](img/load.png)
 
 ### YCSB-A (50% read, 50% update)
 
-![Plot of YCSB-A results](img/a.png)
+![Plot of YCSB-A throughput vs. thread count](img/a.png)
 
 ### YCSB-B (95% read, 5% update)
 
-![Plot of YCSB-B results](img/b.png)
+![Plot of YCSB-B throughput vs. thread count](img/b.png)
 
 ### YCSB-C (100% read)
 
-![Plot of YCSB-C results](img/c.png)
+![Plot of YCSB-C throughput vs. thread count](img/c.png)
 
 ### YCSB-D (95% read, 5% insert, skewed toward latest)
 
-![Plot of YCSB-D results](img/d.png)
+![Plot of YCSB-D throughput vs. thread count](img/d.png)
 
 ### YCSB-E (95% scan, 5% insert)
 
-![Plot of YCSB-E results](img/e.png)
+![Plot of YCSB-E throughput vs. thread count](img/e.png)
+
+### YCSB-Load (100% insert) peak memory usage
+
+![Plot of YCSB-Load peak memory usage vs. thread count](img/memory.png)
 
 ## Feature flags
 
