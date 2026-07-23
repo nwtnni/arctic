@@ -5,7 +5,6 @@ use core::borrow::Borrow;
 use core::fmt::Debug;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
-use core::sync::atomic::Ordering;
 
 use crate::concurrent::smr;
 use crate::concurrent::smr::Guard as _;
@@ -23,6 +22,9 @@ pub use crate::sequential::value::Arc;
 /// It's fine to create a concurrent map with non-Sync
 /// values; the map instance just won't implement Sync.
 pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
+    /// Whether this is an indirect value (otherwise it is inline).
+    const INDIRECT: bool;
+
     /// We need this extra layer of indirection relative to [`SequentialMap`][crate::sequential::Map]
     /// because edges can be concurrently modified.
     ///
@@ -42,20 +44,6 @@ pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
     where
         G: smr::Guard<Self>;
 
-    /// Memory ordering necessary to observe modifications to [`Self::Borrowed`]
-    /// after loading [`sequential::Value::into_raw`].
-    ///
-    /// Should be [`None`] for inline values,
-    /// or [`Some(Ordering::Acquire)`][Ordering::Acquire] for indirect values.
-    const ACQUIRE: Option<Ordering>;
-
-    /// Memory ordering necessary to publish modifications to [`Self::Borrowed`]
-    /// after storing [`sequential::Value::into_raw`].
-    ///
-    /// Should be [`Ordering::Relaxed`] for inline values,
-    /// or [`Ordering::Release`] for indirect values.
-    const RELEASE: Ordering;
-
     /// # Safety
     ///
     /// Caller must guarantee the following:
@@ -69,15 +57,14 @@ macro_rules! impl_integer {
     ($($ty:ty),*) => {
         $(
             impl Value for $ty {
+                const INDIRECT: bool = false;
+
                 type Borrowed = Self;
 
                 type Guard<G>
                     = smr::no_op::Guard<G, Self>
                 where
                     G: smr::Guard<Self>;
-
-                const ACQUIRE: Option<Ordering> = None;
-                const RELEASE: Ordering = Ordering::Relaxed;
 
                 #[inline]
                 unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
@@ -94,15 +81,14 @@ impl_integer!(u64, i64);
 // `&T` itself can be freely copied, even if
 // `T` is not `Copy`.
 impl<'v, T: 'v + Sized> Value for &'v T {
+    const INDIRECT: bool = false;
+
     type Borrowed = Self;
 
     type Guard<G>
         = smr::no_op::Guard<G, Self>
     where
         G: smr::Guard<Self>;
-
-    const ACQUIRE: Option<Ordering> = None;
-    const RELEASE: Ordering = Ordering::Relaxed;
 
     #[inline]
     unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
@@ -111,15 +97,14 @@ impl<'v, T: 'v + Sized> Value for &'v T {
 }
 
 impl<T: Sized> Value for Box<T> {
+    const INDIRECT: bool = true;
+
     type Borrowed = T;
 
     type Guard<G>
         = G
     where
         G: smr::Guard<Self>;
-
-    const ACQUIRE: Option<Ordering> = Some(Ordering::Acquire);
-    const RELEASE: Ordering = Ordering::Release;
 
     #[inline]
     unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {
@@ -129,15 +114,14 @@ impl<T: Sized> Value for Box<T> {
 }
 
 impl<T: Sized> Value for Arc<T> {
+    const INDIRECT: bool = true;
+
     type Borrowed = ArcRef<T>;
 
     type Guard<G>
         = G
     where
         G: smr::Guard<Self>;
-
-    const ACQUIRE: Option<Ordering> = Some(Ordering::Acquire);
-    const RELEASE: Ordering = Ordering::Release;
 
     #[inline]
     unsafe fn borrow_from_raw_unchecked(raw: &u64) -> &Self::Borrowed {

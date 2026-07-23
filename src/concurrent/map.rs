@@ -1192,8 +1192,8 @@ where
                     // Synchronizes with either:
                     // - `Ordering::Release` compare_exchange in `upsert_with_raw`
                     // - `V::Release` compare_exchange in `update_with_raw`
-                    if let Some(acquire) = V::ACQUIRE {
-                        crate::sync::atomic::fence(acquire);
+                    if V::INDIRECT {
+                        crate::sync::atomic::fence(Ordering::Acquire);
                     }
 
                     let new_value = match upsert(old_value, initial) {
@@ -1342,8 +1342,8 @@ where
             // Synchronizes with either:
             // - `Ordering::Release` compare_exchange in `upsert_with_raw`
             // - `V::Release` compare_exchange in `update_with_raw`
-            if let Some(acquire) = V::ACQUIRE {
-                crate::sync::atomic::fence(acquire);
+            if V::INDIRECT {
+                crate::sync::atomic::fence(Ordering::Acquire);
             }
 
             let new_value = match update(old_value, initial) {
@@ -1356,7 +1356,11 @@ where
             match cursor.edge().compare_exchange_packed(
                 old_edge,
                 Edge::new_value(old_edge.meta(), new_value),
-                V::RELEASE,
+                if V::INDIRECT {
+                    Ordering::Release
+                } else {
+                    Ordering::Relaxed
+                },
                 Ordering::Relaxed,
             ) {
                 Ok(_) => {
@@ -1428,8 +1432,8 @@ where
             // Synchronizes with either:
             // - `Ordering::Release` compare_exchange in `upsert_with_raw`
             // - `V::Release` compare_exchange in `update_with_raw`
-            if let Some(acquire) = V::ACQUIRE {
-                crate::sync::atomic::fence(acquire);
+            if V::INDIRECT {
+                crate::sync::atomic::fence(Ordering::Acquire);
             }
 
             match remove(value) {

@@ -1,5 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::ControlFlow;
+use core::sync::atomic::Ordering;
 
 use crate::Key;
 use crate::concurrent::Value;
@@ -85,8 +86,8 @@ where
             // Synchronizes with either:
             // - `Ordering::Release` compare_exchange in `upsert_with_raw`
             // - `V::Release` compare_exchange in `update_with_raw`
-            if let Some(acquire) = V::ACQUIRE {
-                crate::sync::atomic::fence(acquire);
+            if V::INDIRECT {
+                crate::sync::atomic::fence(Ordering::Acquire);
             }
 
             (key, unsafe { V::borrow_from_raw_unchecked(&self.value) })
@@ -105,8 +106,8 @@ where
             // Synchronizes with either:
             // - `Ordering::Release` compare_exchange in `upsert_with_raw`
             // - `V::Release` compare_exchange in `update_with_raw`
-            if let Some(acquire) = V::ACQUIRE {
-                crate::sync::atomic::fence(acquire);
+            if V::INDIRECT {
+                crate::sync::atomic::fence(Ordering::Acquire);
             }
 
             apply(
@@ -155,8 +156,8 @@ where
             // Synchronizes with either:
             // - `Ordering::Release` compare_exchange in `upsert_with_raw`
             // - `V::Release` compare_exchange in `update_with_raw`
-            if let Some(acquire) = V::ACQUIRE {
-                crate::sync::atomic::fence(acquire);
+            if V::INDIRECT {
+                crate::sync::atomic::fence(Ordering::Acquire);
             }
 
             unsafe { V::borrow_from_raw_unchecked(&self.value) }
@@ -176,8 +177,8 @@ where
             // Synchronizes with either:
             // - `Ordering::Release` compare_exchange in `upsert_with_raw`
             // - `V::Release` compare_exchange in `update_with_raw`
-            if let Some(acquire) = V::ACQUIRE {
-                crate::sync::atomic::fence(acquire);
+            if V::INDIRECT {
+                crate::sync::atomic::fence(Ordering::Acquire);
             }
 
             apply(acc, unsafe { V::borrow_from_raw_unchecked(&self.value) })
