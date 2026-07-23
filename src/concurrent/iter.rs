@@ -83,10 +83,9 @@ where
         self.inner.lend().map(|(key, value, _)| {
             self.value = value;
 
-            // Synchronizes with either:
-            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-            // - `V::Release` compare_exchange in `update_with_raw`
             if V::INDIRECT {
+                // Synchronizes with release compare_exchanges in
+                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
                 crate::sync::atomic::fence(Ordering::Acquire);
             }
 
@@ -103,10 +102,9 @@ where
         self.inner.try_fold(init, |acc, (key, value, _)| {
             self.value = value;
 
-            // Synchronizes with either:
-            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-            // - `V::Release` compare_exchange in `update_with_raw`
             if V::INDIRECT {
+                // Synchronizes with release compare_exchanges in
+                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
                 crate::sync::atomic::fence(Ordering::Acquire);
             }
 
@@ -153,10 +151,9 @@ where
         self.inner.lend().map(|(value, _)| {
             self.value = value;
 
-            // Synchronizes with either:
-            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-            // - `V::Release` compare_exchange in `update_with_raw`
             if V::INDIRECT {
+                // Synchronizes with release compare_exchanges in
+                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
                 crate::sync::atomic::fence(Ordering::Acquire);
             }
 
@@ -174,10 +171,9 @@ where
         self.inner.try_fold(init, |acc, (value, _)| {
             self.value = value;
 
-            // Synchronizes with either:
-            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-            // - `V::Release` compare_exchange in `update_with_raw`
             if V::INDIRECT {
+                // Synchronizes with release compare_exchanges in
+                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
                 crate::sync::atomic::fence(Ordering::Acquire);
             }
 

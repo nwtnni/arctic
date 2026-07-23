@@ -66,8 +66,8 @@ where
                     match child {
                         // Visit children before node
                         edge::Child::Node(node) if first => {
-                            // Synchronizes with `Ordering::Release` compare_exchange
-                            // in `concurrent::Map::upsert_with_raw`.
+                            // Synchronizes with release compare_exchanges in
+                            // `concurrent::Map::upsert_with_raw` and `raw::Cursor::freeze`.
                             crate::sync::atomic::fence(Ordering::Acquire);
 
                             match unsafe {

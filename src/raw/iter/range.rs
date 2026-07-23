@@ -266,8 +266,8 @@ where
                             continue 'horizontal;
                         }
                         edge::Child::Node(node) => {
-                            // Synchronizes with `Ordering::Release` compare_exchange
-                            // in `concurrent::Map::upsert_with_raw`.
+                            // Synchronizes with release compare_exchanges in
+                            // `concurrent::Map::upsert_with_raw` and `raw::Cursor::freeze`.
                             crate::sync::atomic::fence(Ordering::Acquire);
 
                             // Avoid pushing and popping node iterators with only one child

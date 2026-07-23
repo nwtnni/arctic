@@ -1135,10 +1135,9 @@ where
             cursor
                 .traverse_value(walk)
                 .map(|cursor::Value { value, edge: _ }| {
-                    // Synchronizes with either:
-                    // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-                    // - `V::Release` compare_exchange in `update_with_raw`
                     if V::INDIRECT {
+                        // Synchronizes with release compare_exchanges in
+                        // `upsert_with_raw` and `update_with_raw`.
                         crate::sync::atomic::fence(Ordering::Acquire);
                     }
 
@@ -1198,10 +1197,9 @@ where
                     value: old_value,
                     edge: old_edge,
                 } => {
-                    // Synchronizes with either:
-                    // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-                    // - `V::Release` compare_exchange in `update_with_raw`
                     if V::INDIRECT {
+                        // Synchronizes with release compare_exchanges in
+                        // `upsert_with_raw` and `update_with_raw`.
                         crate::sync::atomic::fence(Ordering::Acquire);
                     }
 
@@ -1220,9 +1218,8 @@ where
                         match cursor.edge().compare_exchange_packed(
                             old_edge,
                             new_edge,
-                            // Technically, if `new_edge` is a value, this could be `V::RELEASE`.
-                            // Since it's likely to be a node, conservatively default to `Release`.
-                            // Synchronizes with `Acquire` fences in `Cursor`.
+                            // Technically, if `new_edge` is an inline value, this could be relaxed.
+                            // Since it's likely to be a node, conservatively default to release.
                             Ordering::Release,
                             Ordering::Relaxed,
                         ) {
@@ -1258,7 +1255,6 @@ where
                     match cursor.edge().compare_exchange_packed(
                         old_edge,
                         new_edge,
-                        // Synchronizes with `Acquire` fences in `Cursor`.
                         Ordering::Release,
                         Ordering::Relaxed,
                     ) {
@@ -1348,10 +1344,9 @@ where
                 }
             };
 
-            // Synchronizes with either:
-            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-            // - `V::Release` compare_exchange in `update_with_raw`
             if V::INDIRECT {
+                // Synchronizes with release compare_exchanges in
+                // `upsert_with_raw` and `update_with_raw`.
                 crate::sync::atomic::fence(Ordering::Acquire);
             }
 
@@ -1438,10 +1433,9 @@ where
                 }
             };
 
-            // Synchronizes with either:
-            // - `Ordering::Release` compare_exchange in `upsert_with_raw`
-            // - `V::Release` compare_exchange in `update_with_raw`
             if V::INDIRECT {
+                // Synchronizes with release compare_exchanges in
+                // `upsert_with_raw` and `update_with_raw`.
                 crate::sync::atomic::fence(Ordering::Acquire);
             }
 

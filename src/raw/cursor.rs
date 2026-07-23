@@ -131,8 +131,8 @@ where
                 && let edge::Child::Node(node) = child
                 && let Some(byte) = self.reader.get_byte(len_edge)
             {
-                // Synchronizes with `Ordering::Release` compare_exchange
-                // in `concurrent::Map::upsert_with_raw`.
+                // Synchronizes with release compare_exchanges in
+                // `concurrent::Map::upsert_with_raw` and `freeze`.
                 crate::sync::atomic::fence(Ordering::Acquire);
 
                 let next = unsafe { node.get(byte) }?;
@@ -169,8 +169,8 @@ where
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
-                    // Synchronizes with `Ordering::Release` compare_exchange
-                    // in `concurrent::Map::upsert_with_raw`.
+                    // Synchronizes with release compare_exchanges in
+                    // `concurrent::Map::upsert_with_raw` and `freeze`.
                     crate::sync::atomic::fence(Ordering::Acquire);
 
                     let next = unsafe { node.get(byte) }?;
@@ -210,8 +210,8 @@ where
                         return Ok(edge);
                     };
 
-                    // Synchronizes with `Ordering::Release` compare_exchange
-                    // in `concurrent::Map::upsert_with_raw`.
+                    // Synchronizes with release compare_exchanges in
+                    // `concurrent::Map::upsert_with_raw` and `freeze`.
                     crate::sync::atomic::fence(Ordering::Acquire);
 
                     let Some(next) = (unsafe { node.get(byte) }) else {
@@ -253,8 +253,8 @@ where
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
-                    // Synchronizes with `Ordering::Release` compare_exchange
-                    // in `concurrent::Map::upsert_with_raw`.
+                    // Synchronizes with release compare_exchanges in
+                    // `concurrent::Map::upsert_with_raw` and `freeze`.
                     crate::sync::atomic::fence(Ordering::Acquire);
 
                     let Some(next) = (unsafe { node.get_or_insert(byte) }) else {
@@ -507,8 +507,8 @@ where
                 }
             };
 
-            // Synchronizes with `Ordering::Release` compare_exchange
-            // in `concurrent::Map::upsert_with_raw`.
+            // Synchronizes with release compare_exchanges in
+            // `concurrent::Map::upsert_with_raw` and `freeze`.
             crate::sync::atomic::fence(Ordering::Acquire);
 
             let (smo, new_edge) = unsafe {
@@ -519,7 +519,7 @@ where
             match self.edge().compare_exchange_packed(
                 old_edge,
                 new_edge,
-                Ordering::AcqRel,
+                Ordering::Release,
                 Ordering::Relaxed,
             ) {
                 Ok(_) => {
