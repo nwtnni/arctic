@@ -1134,7 +1134,16 @@ where
             let walk = cursor.edge().load_packed(Ordering::Relaxed);
             cursor
                 .traverse_value(walk)
-                .map(|cursor::Value { value, edge: _ }| value)
+                .map(|cursor::Value { value, edge: _ }| {
+                    // Synchronizes with either:
+                    // - `Ordering::Release` compare_exchange in `upsert_with_raw`
+                    // - `V::Release` compare_exchange in `update_with_raw`
+                    if V::INDIRECT {
+                        crate::sync::atomic::fence(Ordering::Acquire);
+                    }
+
+                    value
+                })
         }
     }
 
