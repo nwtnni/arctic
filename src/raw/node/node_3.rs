@@ -142,31 +142,20 @@ impl HeaderPacked {
         Err(Some(unsafe { Self::from_raw_unchecked(value) }))
     }
 
-    /// https://richardstartin.github.io/posts/finding-bytes
-    /// https://orlp.net/blog/extracting-depositing-bits/
-    /// https://lemire.me/blog/2022/01/21/swar-explained-parsing-eight-digits/
-    /// https://lamport.azurewebsites.net/pubs/multiple-byte.pdf
     #[inline]
     fn get(self, key: u8) -> u8 {
-        const LOWER: u64 = 0x0000_00FF_00FF_00FF;
-        const UPPER: u64 = 0x0000_0100_0100_0100;
-
         let key = key as u64;
 
-        // LLVM is smart enough to turn this into an `imul`
-        let broadcast_key = key | (key << 16) | (key << 32);
+        // LLVM is smart enough to turn this into an imul
+        let broadcast = key | (key << 16) | (key << 32);
 
-        // Set lower byte to zero if equal to key byte
-        let lower_zero_if_key = self.into_raw() ^ broadcast_key;
-
-        // Set upper byte to 1 if not equal to key byte
-        let upper_zero_if_key = lower_zero_if_key + LOWER;
-
-        // Flip and isolate upper byte
-        let upper_one_if_key = !upper_zero_if_key & UPPER;
-
-        // Convert to index
-        (upper_one_if_key.trailing_zeros() >> 4) as u8
+        crate::raw::find_zero(
+            (self.into_raw() ^ broadcast)
+                // Ensure we don't match non-key bytes
+                | (0x0000_FF00_FF00_FF00),
+        )
+        // Convert from u8 index to u16 index
+        >> 1
     }
 }
 

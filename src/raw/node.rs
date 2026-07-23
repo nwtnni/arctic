@@ -22,7 +22,7 @@ mod node_15;
 mod node_256;
 mod node_3;
 mod node_47;
-pub(super) mod simd;
+mod simd;
 
 pub(crate) use iter::EntryIter;
 pub(crate) use iter::KeyIndex;

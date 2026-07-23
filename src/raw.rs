@@ -59,3 +59,43 @@ fn is_unique(keys: &[u8]) -> bool {
     }
     true
 }
+
+/// Compute the lowest byte index at which byte 0 appears in `array`.
+/// If there is no zero, return 8.
+///
+/// https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
+/// https://richardstartin.github.io/posts/finding-bytes
+/// https://orlp.net/blog/extracting-depositing-bits/
+/// https://lemire.me/blog/2022/01/21/swar-explained-parsing-eight-digits/
+/// https://lamport.azurewebsites.net/pubs/multiple-byte.pdf
+#[inline]
+fn find_zero(array: u64) -> u8 {
+    let high_if_zero_or_ge_0x80 = array.wrapping_sub(0x0101_0101_0101_0101);
+    let high_if_lt_0x80 = !array;
+    let high_if_zero = high_if_zero_or_ge_0x80 & high_if_lt_0x80 & 0x8080_8080_8080_8080;
+    (high_if_zero.trailing_zeros() >> 3) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "proptest")]
+    proptest::proptest! {
+        #[test]
+        fn find_zero_correct(array: u64) {
+            let expected = array
+                .to_le_bytes()
+                .into_iter()
+                .position(|byte| byte == 0)
+                .unwrap_or(8)
+                as u8;
+
+            let actual = super::find_zero(array);
+
+            assert_eq!(
+                actual,
+                expected,
+                "find_zero mismatch for array = {array:#x}",
+            );
+        }
+    }
+}

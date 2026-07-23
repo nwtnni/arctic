@@ -6,7 +6,6 @@ use ribbit::u6;
 use ribbit::u56;
 
 use crate::raw::edge::Len as _;
-use crate::raw::node;
 use crate::sequential;
 
 type AtomicU64 = <u64 as crate::sync::Loose>::Atomic;
@@ -132,8 +131,21 @@ impl Set8 {
 }
 
 impl Set8Packed {
+    // https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
+    #[inline]
     fn contains(&self, byte: u8) -> bool {
-        node::simd::get_15(self.into_raw() as u128, byte) < self.len().bytes() as u8
+        let byte = byte as u64;
+
+        // LLVM is smart enough to turn this into an imul
+        let broadcast = byte
+            | (byte << 8)
+            | (byte << 16)
+            | (byte << 24)
+            | (byte << 32)
+            | (byte << 40)
+            | (byte << 48);
+
+        (crate::raw::find_zero(self.into_raw() ^ broadcast) << 3) < self.len().bits() as u8
     }
 
     fn try_insert_mut(&mut self, byte: u8) -> Result<bool, ()> {
