@@ -31,6 +31,9 @@ pub(crate) use map::Map;
 pub(crate) use set::Set;
 pub(crate) use shard::Shard;
 
+pub(crate) static SIMD: std::sync::LazyLock<fearless_simd::Level> =
+    std::sync::LazyLock::new(fearless_simd::Level::new);
+
 /// Structural modification operation.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Smo {

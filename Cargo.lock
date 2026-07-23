@@ -57,6 +57,7 @@ dependencies = [
  "base64 0.22.1",
  "criterion",
  "crossbeam-epoch",
+ "fearless_simd",
  "hdrhistogram",
  "libc",
  "mimalloc",
@@ -370,6 +371,12 @@ name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+
+[[package]]
+name = "fearless_simd"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0f5f895dac0865bc235f1364793899569a7db538137f1024dccea56bf41c78d"
 
 [[package]]
 name = "find-msvc-tools"

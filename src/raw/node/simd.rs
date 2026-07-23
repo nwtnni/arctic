@@ -13,25 +13,6 @@ use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
 #[inline]
-pub(crate) fn get_15(array: u128, key: u8) -> u8 {
-    simd!(
-        "opt-no-node15-get",
-        avx2::get_15(array, key),
-        get_15_fallback(array, key)
-    )
-}
-
-#[inline]
-fn get_15_fallback(array: u128, key: u8) -> u8 {
-    array
-        .to_le_bytes()
-        .into_iter()
-        .position(|byte| byte == key)
-        .map(|index| index as u8)
-        .unwrap_or(32)
-}
-
-#[inline]
 pub(super) fn min_3<L: node::Lower>(keys: u64, len: u2, lower: L) -> Option<KeyIndex> {
     simd!(
         "opt-no-node3-keys",
@@ -258,21 +239,6 @@ mod tests {
         use crate::raw::node::node_47;
         use crate::raw::node::simd;
 
-        /// `get_15` matches output of fallback.
-        #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn get_15_correct<F: Fn(u128, u8) -> u8>(header: node_15::Header, get_15: F) {
-            let raw = ribbit::Pack::pack(header).into_raw();
-            for key in u8::MIN..=u8::MAX {
-                let simd = get_15(raw, key);
-                let fallback = simd::get_15_fallback(raw, key);
-
-                assert_eq!(
-                    simd, fallback,
-                    "SIMD does not match fallback for header {header:#x?} and key {key:#x?}",
-                );
-            }
-        }
-
         /// `keys_3` matches output of fallback.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
         pub(crate) fn keys_3_correct<F: Fn(u64, u2, Option<u8>, Option<u8>, &mut KeyIter3)>(
@@ -356,20 +322,15 @@ mod tests {
                 use ribbit::u2;
                 use ribbit::u4;
 
-                use crate::raw::node::simd::tests::sequential;
                 use crate::raw::node::iter::bound;
                 use crate::raw::node::node_3;
                 use crate::raw::node::node_15;
                 use crate::raw::node::node_47;
+                use crate::raw::node::simd::tests::sequential;
                 use crate::raw::node::simd::$mod;
 
                 proptest::proptest! {
                     #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
-
-                    #[test]
-                    fn get_15_correct(header in any_with::<node_15::Header>((u4::new(0), u4::MAX))) {
-                        sequential::get_15_correct(header, $mod::get_15)
-                    }
 
                     #[test]
                     fn keys_3_correct(

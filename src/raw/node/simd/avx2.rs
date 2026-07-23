@@ -39,14 +39,6 @@ use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
 #[inline]
-pub(super) fn get_15(array: u128, key: u8) -> u8 {
-    let array = u128_to_avx(array);
-    let key = unsafe { _mm_set1_epi8(key as i8) };
-    let mask = unsafe { _mm_cmpeq_epi8(array, key) };
-    unsafe { _mm_movemask_epi8(mask) }.trailing_zeros() as u8
-}
-
-#[inline]
 pub(super) fn min_3<L: crate::raw::node::Lower>(
     _keys: u64,
     _len: u2,

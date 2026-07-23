@@ -2,6 +2,13 @@
 
 use core::sync::atomic::Ordering;
 
+use fearless_simd::Simd;
+use fearless_simd::SimdBase as _;
+use fearless_simd::SimdFrom as _;
+use fearless_simd::SimdInt;
+use fearless_simd::SimdMask as _;
+use fearless_simd::dispatch;
+use fearless_simd::u8x16;
 use ribbit::u4;
 use ribbit::u120;
 
@@ -93,7 +100,7 @@ unsafe impl header::Header for Atomic<Header> {
     #[inline]
     fn get(&self, key: u8) -> Option<u8> {
         let header = self.load_packed(Ordering::Relaxed);
-        let index = node::simd::get_15(header.into_raw(), key);
+        let index = dispatch!(*crate::raw::SIMD, simd => header.get(simd, key));
         (index < header.len().value()).then_some(index)
     }
 
@@ -144,7 +151,7 @@ unsafe impl header::Header for Atomic<Header> {
 impl HeaderPacked {
     #[inline]
     fn get_or_insert(&self, key: u8) -> Result<u8, Option<Self>> {
-        let index = node::simd::get_15(self.into_raw(), key);
+        let index = dispatch!(*crate::raw::SIMD, simd => self.get(simd, key));
         let len = self.len().value();
 
         if index < len {
@@ -160,6 +167,13 @@ impl HeaderPacked {
 
         // SAFETY: `len < Self::LEN`
         Err(Some(unsafe { Self::from_raw_unchecked(value) }))
+    }
+
+    #[inline(always)]
+    fn get<S: Simd>(&self, simd: S, key: u8) -> u8 {
+        let array = u8x16::simd_from(simd, self.into_raw().to_le_bytes());
+        let key = u8x16::splat(simd, key);
+        array.simd_eq(key).to_bitmask().trailing_zeros() as u8
     }
 }
 
