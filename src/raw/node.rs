@@ -560,40 +560,41 @@ impl PtrPacked {
         )
     }
 
-    /// Deallocate recursive `Node3`s created by [`crate::raw::Edge::new_path`].
+    /// Deallocate recursive `Node3`s created by [`crate::raw::Cursor::create_path`].
     /// Does not deallocate the final value.
     ///
     /// # Safety
     ///
     /// Caller must ensure:
     /// - There are no other references to this node.
-    /// - This is a Node3 created by [`crate::raw::Edge::new_path`].
+    /// - This is a `Node3` created by [`crate::raw::Cursor::create_path`].
     pub(crate) unsafe fn deallocate_recursive<M>(self)
     where
         M: ribbit::Pack<Packed: edge::Meta>,
     {
-        let mut prev: Option<NonNull<Node3>> = None;
         let mut next = self;
         let mut done = false;
 
         while !done {
             next.dispatch(
-                |mut node_3| match unsafe {
-                    Edge::<M>::from_raw_mut(&mut node_3.as_mut().edges_mut()[0])
-                }
-                .get_mut_packed()
-                .child()
-                {
-                    None => unreachable!(),
-                    Some(edge::Child::Value(_)) => {
-                        if let Some(node_3) = prev {
-                            drop(unsafe { Box::from_raw(node_3.as_ptr()) });
+                |mut node_3| {
+                    // NOTE: relies on `crate::raw::Cursor::create_path` creating new nodes
+                    // at the first edge, especially during edge expansion.
+                    let child =
+                        unsafe { Edge::<M>::from_raw_mut(&mut node_3.as_mut().edges_mut()[0]) }
+                            .get_mut_packed()
+                            .child();
+
+                    drop(unsafe { Box::from_raw(node_3.as_ptr()) });
+
+                    match child {
+                        None => unreachable!(),
+                        Some(edge::Child::Value(_)) => {
+                            done = true;
                         }
-                        done = true;
-                    }
-                    Some(edge::Child::Node(node)) => {
-                        prev = Some(node_3);
-                        next = node;
+                        Some(edge::Child::Node(node)) => {
+                            next = node;
+                        }
                     }
                 },
                 |_| unreachable!(),
