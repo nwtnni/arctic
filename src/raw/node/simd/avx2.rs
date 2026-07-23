@@ -41,29 +41,6 @@ use crate::raw::node::KeyIter15;
 use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
-/// https://richardstartin.github.io/posts/finding-bytes
-/// https://orlp.net/blog/extracting-depositing-bits/
-/// https://lemire.me/blog/2022/01/21/swar-explained-parsing-eight-digits/
-/// https://lamport.azurewebsites.net/pubs/multiple-byte.pdf
-#[inline]
-pub(super) fn get_3(array: u64, key: u8) -> u8 {
-    const LOWER: u64 = 0x0000_00FF_00FF_00FF;
-    const OVERFLOW: u64 = 0x0000_0100_0100_0100;
-
-    let key = key as u64;
-    // LLVM is smart enough to turn this into an `imul`
-    let key = key | (key << 16) | (key << 32);
-
-    // Convert key bytes to zero
-    let key_to_zero = array ^ key;
-
-    // Set overflow bit for byte if byte is non-zero
-    let equal_zero = key_to_zero + LOWER;
-
-    // Extract overflow bits
-    unsafe { core::arch::x86_64::_pext_u64(equal_zero, OVERFLOW) }.trailing_ones() as u8
-}
-
 #[inline]
 pub(super) fn get_15(array: u128, key: u8) -> u8 {
     let array = u128_to_avx(array);

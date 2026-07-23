@@ -16,7 +16,6 @@ use crate::raw::node;
 use crate::raw::node::Node;
 use crate::raw::node::header;
 use crate::raw::node::iter::KeyIter3;
-use crate::raw::node::simd;
 use crate::sync::Atomic;
 
 const CAPACITY: usize = 3;
@@ -73,7 +72,7 @@ unsafe impl header::Header for Atomic<Header> {
     #[inline]
     fn get(&self, key: u8) -> Option<u8> {
         let header = self.load_packed(Ordering::Relaxed);
-        let index = simd::get_3(header.into_raw(), key);
+        let index = header.get(key);
         (index < header.len().value()).then_some(index)
     }
 
@@ -124,7 +123,7 @@ unsafe impl header::Header for Atomic<Header> {
 impl HeaderPacked {
     #[inline]
     fn get_or_insert(self, key: u8) -> Result<u8, Option<Self>> {
-        let index = simd::get_3(self.into_raw(), key);
+        let index = self.get(key);
         let len = self.len().value();
 
         if index < len {
@@ -141,6 +140,33 @@ impl HeaderPacked {
 
         // SAFETY: `len < Self::LEN`
         Err(Some(unsafe { Self::from_raw_unchecked(value) }))
+    }
+
+    /// https://richardstartin.github.io/posts/finding-bytes
+    /// https://orlp.net/blog/extracting-depositing-bits/
+    /// https://lemire.me/blog/2022/01/21/swar-explained-parsing-eight-digits/
+    /// https://lamport.azurewebsites.net/pubs/multiple-byte.pdf
+    #[inline]
+    fn get(self, key: u8) -> u8 {
+        const LOWER: u64 = 0x0000_00FF_00FF_00FF;
+        const UPPER: u64 = 0x0000_0100_0100_0100;
+
+        let key = key as u64;
+
+        // LLVM is smart enough to turn this into an `imul`
+        let broadcast_key = key | (key << 16) | (key << 32);
+
+        // Set lower byte to zero if equal to key byte
+        let lower_zero_if_key = self.into_raw() ^ broadcast_key;
+
+        // Set upper byte to 1 if not equal to key byte
+        let upper_zero_if_key = lower_zero_if_key + LOWER;
+
+        // Flip and isolate upper byte
+        let upper_one_if_key = !upper_zero_if_key & UPPER;
+
+        // Convert to index
+        (upper_one_if_key.trailing_zeros() >> 4) as u8
     }
 }
 

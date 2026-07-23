@@ -17,7 +17,6 @@ default = ["smr-seize"]
 
 stat = ["dep:serde", "dep:base64", "dep:hdrhistogram"]
 stat-garbage = []
-opt-no-node3-get = []
 opt-no-node3-keys = []
 opt-no-node3-iter = []
 opt-no-node15-get = []
