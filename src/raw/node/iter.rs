@@ -96,21 +96,17 @@ impl<'g> ExactSizeIterator for EntryIter<'g> {
 
 /// Byte lower bound for range scans.
 pub(crate) trait Lower: Copy + Default + Debug {
-    const UNBOUND: bool = false;
     fn get(self) -> u8;
     fn check(self, byte: u8) -> bool;
 }
 
 /// Byte upper bound for range scans.
 pub(crate) trait Upper: Copy + Default + Debug {
-    const UNBOUND: bool = false;
     fn get(self) -> u8;
     fn check(self, byte: u8) -> bool;
 }
 
 impl<T> Lower for Unbound<T> {
-    const UNBOUND: bool = true;
-
     #[inline]
     fn get(self) -> u8 {
         0
@@ -122,8 +118,6 @@ impl<T> Lower for Unbound<T> {
 }
 
 impl<T> Upper for Unbound<T> {
-    const UNBOUND: bool = true;
-
     #[inline]
     fn get(self) -> u8 {
         255

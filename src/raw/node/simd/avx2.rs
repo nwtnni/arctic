@@ -439,10 +439,6 @@ fn mask_range<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     lower: L,
     upper: U,
 ) -> u128 {
-    if L::UNBOUND && U::UNBOUND {
-        return u128::MAX;
-    }
-
     let array = u128_to_avx(array);
 
     let min = unsafe { _mm_set1_epi8(lower.get() as i8) };
