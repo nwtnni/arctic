@@ -1,8 +1,5 @@
 //! SIMD acceleration for node operations.
 
-#[cfg(target_feature = "avx2")]
-mod avx2;
-
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{__m128i, __m256i, __mmask16};
 
@@ -21,16 +18,11 @@ use ribbit::u2;
 use ribbit::u4;
 
 use crate::raw::node;
-use crate::raw::node::KeyIter3;
 use crate::raw::node::iter::KeyIndex;
 
 #[inline]
 pub(super) fn min_3<L: node::Lower>(keys: u64, len: u2, lower: L) -> Option<KeyIndex> {
-    simd!(
-        "opt-no-node3-keys",
-        avx2::min_3(keys, len, lower),
-        min_3_fallback(keys, len, lower),
-    )
+    min_3_fallback(keys, len, lower)
 }
 
 #[inline]
@@ -40,11 +32,7 @@ fn min_3_fallback<L: node::Lower>(keys: u64, len: u2, lower: L) -> Option<KeyInd
 
 #[inline]
 pub(super) fn max_3<U: node::Upper>(keys: u64, len: u2, upper: U) -> Option<KeyIndex> {
-    simd!(
-        "opt-no-node3-keys",
-        avx2::max_3(keys, len, upper),
-        max_3_fallback(keys, len, upper),
-    )
+    max_3_fallback(keys, len, upper)
 }
 
 #[inline]
@@ -54,11 +42,7 @@ fn max_3_fallback<U: node::Upper>(keys: u64, len: u2, upper: U) -> Option<KeyInd
 
 #[inline]
 pub(super) fn min_15<L: node::Lower>(keys: u128, len: u4, lower: L) -> Option<KeyIndex> {
-    simd!(
-        "opt-no-node15-keys",
-        avx2::min_15(keys, len, lower),
-        min_15_fallback(keys, len, lower),
-    )
+    min_15_fallback(keys, len, lower)
 }
 
 #[inline]
@@ -68,46 +52,12 @@ fn min_15_fallback<L: node::Lower>(keys: u128, len: u4, lower: L) -> Option<KeyI
 
 #[inline]
 pub(super) fn max_15<U: node::Upper>(keys: u128, len: u4, upper: U) -> Option<KeyIndex> {
-    simd!(
-        "opt-no-node15-keys",
-        avx2::max_15(keys, len, upper),
-        max_15_fallback(keys, len, upper),
-    )
+    max_15_fallback(keys, len, upper)
 }
 
 #[inline]
 fn max_15_fallback<U: node::Upper>(keys: u128, len: u4, upper: U) -> Option<KeyIndex> {
     iter_15(keys, len, node::Unbound::<()>::default(), upper).max()
-}
-
-#[inline]
-pub(super) fn keys_3<L: node::Lower, U: node::Upper>(
-    keys: u64,
-    len: u2,
-    lower: L,
-    upper: U,
-    iter: &mut KeyIter3,
-) {
-    simd!(
-        "opt-no-node3-keys",
-        avx2::keys_3(keys, len, lower, upper, iter),
-        keys_3_fallback(keys, len, lower, upper, iter),
-    )
-}
-
-#[inline]
-fn keys_3_fallback<L: node::Lower, U: node::Upper>(
-    keys: u64,
-    len: u2,
-    lower: L,
-    upper: U,
-    iter: &mut KeyIter3,
-) {
-    let len = core::iter::zip(&mut iter.0.entries, iter_3(keys, len, lower, upper))
-        .map(|(out, r#in)| *out = r#in)
-        .count();
-    iter.0.head = 0;
-    iter.0.tail = len as u8;
 }
 
 /// https://en.wikipedia.org/wiki/Bitonic_sorter
@@ -278,7 +228,7 @@ pub(super) fn mask_range<S: Simd>(simd: S, array: u8x16<S>, lower: u8, upper: u8
         .simd_eq(array)
 }
 
-fn iter_3<L: node::Lower, U: node::Upper>(
+pub(super) fn iter_3<L: node::Lower, U: node::Upper>(
     keys: u64,
     len: u2,
     lower: L,
@@ -317,109 +267,49 @@ fn iter_15<L: node::Lower, U: node::Upper>(
 
 #[cfg(test)]
 mod tests {
-    /// Correctness properties that hold for sequential executions.
-    pub(crate) mod sequential {
-        use fearless_simd::Simd;
-        use fearless_simd::SimdFrom as _;
-        use fearless_simd::u16x16;
-        use ribbit::u2;
+    use fearless_simd::Simd;
+    use fearless_simd::SimdFrom as _;
+    use fearless_simd::u16x16;
 
-        use crate::raw::node::iter::KeyIter3;
-        use crate::raw::node::node_3;
-        use crate::raw::node::simd;
-        use crate::raw::node::simd::sort_u16x16;
+    use crate::raw::node::simd::sort_u16x16;
 
-        #[cfg(feature = "proptest")]
-        proptest::proptest! {
-            #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
+    #[cfg(feature = "proptest")]
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
 
-            #[test]
-            fn sort_u16x16_correct(input in proptest::collection::vec(u16::MIN..=u16::MAX, 0..=16)) {
-                use fearless_simd::SimdBase as _;
-
-                let actual = fearless_simd::dispatch!(*crate::raw::SIMD, simd => {
-                    let len = input.len() as u8;
-                    let input = u16x16::from_fn(simd, |index| input.get(index).copied().unwrap_or(0));
-                    let output = sort_u16x16(simd, input, len);
-                    simd.as_array_u16x16(output)
-                });
-
-                let mut expected = input.clone();
-                expected.sort_unstable();
-
-                assert_eq!(&actual[..expected.len()], expected);
-            }
-        }
-
-        // https://en.wikipedia.org/wiki/Sorting_network#Zero-one_principle
         #[test]
-        fn sort_u16x16_zero_one() {
-            fearless_simd::dispatch!(*crate::raw::SIMD, simd =>{
-                let mut buffer = [0u16; 16];
+        fn sort_u16x16_correct(input in proptest::collection::vec(u16::MIN..=u16::MAX, 0..=16)) {
+            use fearless_simd::SimdBase as _;
 
-                for i in 0..=u16::MAX {
-                    for (j, value) in buffer.iter_mut().enumerate() {
-                        *value = (i >> j) & 1;
-                    }
-
-                    let actual = simd.as_array_u16x16(sort_u16x16(simd, u16x16::simd_from(simd, buffer), 16));
-                    buffer.sort_unstable();
-                    assert_eq!(actual, buffer)
-                }
+            let actual = fearless_simd::dispatch!(*crate::raw::SIMD, simd => {
+                let len = input.len() as u8;
+                let input = u16x16::from_fn(simd, |index| input.get(index).copied().unwrap_or(0));
+                let output = sort_u16x16(simd, input, len);
+                simd.as_array_u16x16(output)
             });
-        }
 
-        /// `keys_3` matches output of fallback.
-        #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn keys_3_correct<F: Fn(u64, u2, Option<u8>, Option<u8>, &mut KeyIter3)>(
-            header: node_3::Header,
-            lower: u8,
-            upper: u8,
-            keys_3: F,
-        ) {
-            let header = ribbit::Pack::pack(header);
-            let raw = header.into_raw();
-            let len = header.len();
+            let mut expected = input.clone();
+            expected.sort_unstable();
 
-            let mut simd = KeyIter3::default();
-            keys_3(raw, len, Some(lower), Some(upper), &mut simd);
-
-            let mut fallback = KeyIter3::default();
-            simd::keys_3_fallback(raw, len, Some(lower), Some(upper), &mut fallback);
-
-            assert_eq!(
-                simd, fallback,
-                "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
-            );
+            assert_eq!(&actual[..expected.len()], expected);
         }
     }
 
-    macro_rules! impl_suite {
-        ($mod:ident) => {
-            #[cfg(feature = "proptest")]
-            mod sequential {
-                use proptest::arbitrary::any_with;
-                use ribbit::Integer as _;
-                use ribbit::u2;
+    // https://en.wikipedia.org/wiki/Sorting_network#Zero-one_principle
+    #[test]
+    fn sort_u16x16_zero_one() {
+        fearless_simd::dispatch!(*crate::raw::SIMD, simd =>{
+            let mut buffer = [0u16; 16];
 
-                use crate::raw::node::iter::bound;
-                use crate::raw::node::node_3;
-                use crate::raw::node::simd::tests::sequential;
-                use crate::raw::node::simd::$mod;
-
-                proptest::proptest! {
-                    #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
-
-                    #[test]
-                    fn keys_3_correct(
-                        header in any_with::<node_3::Header>((u2::new(0), u2::MAX)),
-                        (lower, upper) in bound()
-                    ) {
-                        sequential::keys_3_correct(header, lower, upper, $mod::keys_3)
-                    }
+            for i in 0..=u16::MAX {
+                for (j, value) in buffer.iter_mut().enumerate() {
+                    *value = (i >> j) & 1;
                 }
+
+                let actual = simd.as_array_u16x16(sort_u16x16(simd, u16x16::simd_from(simd, buffer), 16));
+                buffer.sort_unstable();
+                assert_eq!(actual, buffer)
             }
-        };
+        });
     }
-    pub(crate) use impl_suite;
 }

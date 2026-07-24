@@ -94,9 +94,36 @@ unsafe impl header::Header for Atomic<Header> {
         }
     }
 
-    fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U, iter: &mut Self::KeyIter) {
+    fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U, out: &mut Self::KeyIter) {
         let header = self.load_packed(Ordering::Relaxed);
-        node::simd::keys_3(header.into_raw(), header.len(), lower, upper, iter)
+        let keys = header.into_raw();
+        let len = header.len();
+
+        let len = if lower.get() > u8::MIN || upper.get() < u8::MAX {
+            // TODO: SIMD/SWAR?
+            core::iter::zip(
+                &mut out.0.entries,
+                node::simd::iter_3(keys, len, lower, upper),
+            )
+            .map(|(out, r#in)| *out = r#in)
+            .count() as u8
+        } else {
+            let iter = (keys << 8) | 0x0002_0001_0000;
+            let ptr = NonNull::from(&mut *out).cast::<u64>();
+            unsafe { ptr.write(iter) };
+            len.value()
+        };
+
+        out.0.head = 0;
+        out.0.tail = len;
+
+        // HACK: make it easier to test against fallback
+        if_validate! {
+            out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
+                entry.key = 0;
+                entry.index = 0;
+            })
+        }
     }
 
     fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {

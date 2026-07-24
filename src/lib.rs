@@ -157,20 +157,6 @@ macro_rules! validate_eq {
     };
 }
 
-macro_rules! simd {
-    ($flag:expr, $avx2:expr, $fallback:expr $(, $fmt:expr)* $(,)?) => {{
-        #[cfg(all(not(feature = $flag), target_feature = "avx2"))]
-        {
-            let avx2 = $avx2;
-            validate_eq!(avx2, $fallback $(, $fmt)*);
-            return $avx2;
-        }
-
-        #[allow(unreachable_code)]
-        $fallback
-    }};
-}
-
 pub mod concurrent;
 pub(crate) mod raw;
 pub mod sequential;
