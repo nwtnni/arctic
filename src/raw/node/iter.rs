@@ -5,6 +5,7 @@ use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
+use fearless_simd::u16x16;
 use ribbit::Pack as _;
 use ribbit::u2;
 
@@ -519,7 +520,17 @@ impl KeyIter3 {
 impl KeyIter15 {
     #[inline]
     pub(super) fn sort(&mut self) {
-        node::simd::sort_15(self)
+        let len = self.0.tail;
+
+        fearless_simd::dispatch!(*crate::raw::SIMD, simd => {
+            let ptr = NonNull::from(&mut *self).cast::<u16x16<_>>();
+            let unsorted = unsafe { ptr.read() };
+            let sorted = node::simd::sort_u16x16(simd, unsorted, len);
+            unsafe { ptr.write(sorted) };
+        });
+
+        self.0.head = 0;
+        self.0.tail = len;
     }
 }
 

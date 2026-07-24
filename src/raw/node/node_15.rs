@@ -5,7 +5,7 @@ use core::sync::atomic::Ordering;
 use fearless_simd::Simd;
 use fearless_simd::SimdBase as _;
 use fearless_simd::SimdFrom as _;
-use fearless_simd::SimdInt;
+use fearless_simd::SimdInt as _;
 use fearless_simd::SimdMask as _;
 use fearless_simd::dispatch;
 use fearless_simd::u8x16;

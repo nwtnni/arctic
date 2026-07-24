@@ -3,6 +3,14 @@
 #[cfg(target_feature = "avx2")]
 mod avx2;
 
+use fearless_simd::Select;
+use fearless_simd::Simd;
+use fearless_simd::SimdBase as _;
+use fearless_simd::SimdInt;
+use fearless_simd::SimdMask;
+use fearless_simd::mask16x16;
+use fearless_simd::u8x32;
+use fearless_simd::u16x16;
 use ribbit::u2;
 use ribbit::u4;
 
@@ -98,6 +106,81 @@ fn keys_3_fallback<L: node::Lower, U: node::Upper>(
     iter.0.tail = len as u8;
 }
 
+/// https://en.wikipedia.org/wiki/Bitonic_sorter
+/// https://github.com/Geolm/simd_bitonic
+/// https://hal.inria.fr/hal-01512970v1/document
+#[inline(always)]
+pub(super) fn sort_u16x16<S: Simd>(simd: S, mut input: u16x16<S>, len: u8) -> u16x16<S> {
+    const RECOMBINE_1: u64 = 0x6745_2301;
+    const SORT_1: u64 = RECOMBINE_1;
+    const SELECT_1: u64 = 0b1010_1010_1010_1010;
+
+    const RECOMBINE_2: u64 = 0x4567_0123;
+    const SORT_2: u64 = 0x5476_1032;
+    const SELECT_2: u64 = 0b1100_1100_1100_1100;
+
+    const RECOMBINE_4: u64 = 0x0123_4567;
+    const SORT_4: u64 = 0x3210_7654;
+    const SELECT_4: u64 = 0b1111_0000_1111_0000;
+
+    const RECOMBINE_8: u64 = 0x0123_4567;
+    const SELECT_8: u64 = 0b1111_1111_0000_0000;
+
+    const fn decode(pattern: u64, index: u8) -> u8 {
+        // `% 16` to repeat across lanes, `/ 2` for u16 granularity, `* 4` for bit width
+        let shift = (index % 16 / 2) * 4;
+        let select = (pattern >> shift) & 0b1111;
+        // Mix bit from top/bottom u16 back in
+        ((select << 1) | (index as u64 & 1)) as u8
+    }
+
+    #[inline(always)]
+    fn bitonic_step<const SWIZZLE: u64, const SELECT: u64, S: Simd>(
+        simd: S,
+        input: u16x16<S>,
+    ) -> u16x16<S> {
+        // Lane-crossing comparison requires different code path
+        let swap = if SELECT == SELECT_8 {
+            // NOTE: didn't see a lane swap method
+            let (lower, upper) = simd.split_u16x16(input);
+            simd.combine_u16x8(upper, lower)
+        } else {
+            input
+        };
+
+        let swizzle = simd.swizzle_dyn_within_blocks_u16x16(
+            swap,
+            u8x32::from_fn(simd, |index| decode(SWIZZLE, index as u8)),
+        );
+        let min = input.min(swizzle);
+        let max = input.max(swizzle);
+        mask16x16::from_bitmask(simd, SELECT).select(max, min)
+    }
+
+    // NOTE: is there a better way to go from bitmask to u16x16?
+    let fill = simd.as_array_mask16x16(mask16x16::from_bitmask(simd, !((1 << (len as u64)) - 1)));
+    let fill = core::array::from_fn(|index| fill[index] as u16);
+    input |= simd.load_array_u16x16(fill);
+
+    input = bitonic_step::<RECOMBINE_1, SELECT_1, _>(simd, input);
+
+    input = bitonic_step::<RECOMBINE_2, SELECT_2, _>(simd, input);
+    input = bitonic_step::<SORT_1, SELECT_1, _>(simd, input);
+
+    input = bitonic_step::<RECOMBINE_4, SELECT_4, _>(simd, input);
+    input = bitonic_step::<SORT_2, SELECT_2, _>(simd, input);
+    input = bitonic_step::<SORT_1, SELECT_1, _>(simd, input);
+
+    if len <= 8 {
+        return input;
+    }
+
+    input = bitonic_step::<RECOMBINE_8, SELECT_8, _>(simd, input);
+    input = bitonic_step::<SORT_4, SELECT_4, _>(simd, input);
+    input = bitonic_step::<SORT_2, SELECT_2, _>(simd, input);
+    bitonic_step::<SORT_1, SELECT_1, _>(simd, input)
+}
+
 #[inline]
 pub(super) fn keys_15<L: node::Lower, U: node::Upper>(
     keys: u128,
@@ -126,20 +209,6 @@ pub(super) fn keys_15_fallback<L: node::Lower, U: node::Upper>(
         .count();
     out.0.head = 0;
     out.0.tail = len as u8;
-}
-
-#[inline]
-pub(super) fn sort_15(iter: &mut KeyIter15) {
-    simd!(
-        "opt-no-node15-keys",
-        avx2::sort_15(iter),
-        sort_15_fallback(iter),
-    )
-}
-
-#[inline]
-fn sort_15_fallback(iter: &mut KeyIter15) {
-    iter.0.entries[..iter.0.tail as usize].sort_unstable();
 }
 
 #[inline]
@@ -228,6 +297,9 @@ fn iter_15<L: node::Lower, U: node::Upper>(
 mod tests {
     /// Correctness properties that hold for sequential executions.
     pub(crate) mod sequential {
+        use fearless_simd::Simd;
+        use fearless_simd::SimdFrom as _;
+        use fearless_simd::u16x16;
         use ribbit::u2;
         use ribbit::u4;
 
@@ -238,6 +310,47 @@ mod tests {
         use crate::raw::node::node_15;
         use crate::raw::node::node_47;
         use crate::raw::node::simd;
+        use crate::raw::node::simd::sort_u16x16;
+
+        #[cfg(feature = "proptest")]
+        proptest::proptest! {
+            #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
+
+            #[test]
+            fn sort_u16x16_correct(input in proptest::collection::vec(u16::MIN..=u16::MAX, 0..=16)) {
+                use fearless_simd::SimdBase as _;
+
+                let actual = fearless_simd::dispatch!(*crate::raw::SIMD, simd => {
+                    let len = input.len() as u8;
+                    let input = u16x16::from_fn(simd, |index| input.get(index).copied().unwrap_or(0));
+                    let output = sort_u16x16(simd, input, len);
+                    simd.as_array_u16x16(output)
+                });
+
+                let mut expected = input.clone();
+                expected.sort_unstable();
+
+                assert_eq!(&actual[..expected.len()], expected);
+            }
+        }
+
+        // https://en.wikipedia.org/wiki/Sorting_network#Zero-one_principle
+        #[test]
+        fn sort_u16x16_zero_one() {
+            fearless_simd::dispatch!(*crate::raw::SIMD, simd =>{
+                let mut buffer = [0u16; 16];
+
+                for i in 0..=u16::MAX {
+                    for (j, value) in buffer.iter_mut().enumerate() {
+                        *value = (i >> j) & 1;
+                    }
+
+                    let actual = simd.as_array_u16x16(sort_u16x16(simd, u16x16::simd_from(simd, buffer), 16));
+                    buffer.sort_unstable();
+                    assert_eq!(actual, buffer)
+                }
+            });
+        }
 
         /// `keys_3` matches output of fallback.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
