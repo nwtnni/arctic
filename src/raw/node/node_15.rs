@@ -1,5 +1,6 @@
 //! [`Node15`] is linear and can contain at most 15 key-edge pairs.
 
+use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use fearless_simd::Simd;
@@ -8,7 +9,9 @@ use fearless_simd::SimdFrom as _;
 use fearless_simd::SimdInt as _;
 use fearless_simd::SimdMask as _;
 use fearless_simd::dispatch;
+use fearless_simd::mask8x16;
 use fearless_simd::u8x16;
+use fearless_simd::u16x16;
 use ribbit::u4;
 use ribbit::u120;
 
@@ -124,7 +127,9 @@ unsafe impl header::Header for Atomic<Header> {
 
     fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U, iter: &mut KeyIter15) {
         let header = self.load_packed(Ordering::Relaxed);
-        node::simd::keys_15(header.into_raw(), header.len(), lower, upper, iter);
+        fearless_simd::dispatch!(*crate::raw::SIMD, simd => {
+            header.keys_simd(simd, header.len(), lower, upper, iter);
+        })
     }
 
     fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {
@@ -174,6 +179,47 @@ impl HeaderPacked {
         let array = u8x16::simd_from(simd, self.into_raw().to_le_bytes());
         let key = u8x16::splat(simd, key);
         array.simd_eq(key).to_bitmask().trailing_zeros() as u8
+    }
+
+    #[inline(always)]
+    fn keys_simd<S: Simd, L: node::Lower, U: node::Upper>(
+        &self,
+        simd: S,
+        len: u4,
+        lower: L,
+        upper: U,
+        out: &mut KeyIter15,
+    ) {
+        let keys = u8x16::simd_from(simd, self.into_raw().to_le_bytes());
+        let indices = u8x16::from_fn(simd, |index| index as u8);
+
+        let (iter, len) = if lower.get() > u8::MIN || upper.get() < u8::MAX {
+            let mask_len = mask8x16::from_bitmask(simd, (1u64 << len.value()) - 1);
+            let mask_range = keys
+                .max(simd.splat_u8x16(lower.get()))
+                .min(simd.splat_u8x16(upper.get()))
+                .simd_eq(keys);
+
+            let mask = mask_len & mask_range;
+            let len = mask.to_bitmask().count_ones() as u8;
+            (node::simd::compress_u8x16(simd, mask, indices, keys), len)
+        } else {
+            (node::simd::interleave(simd, indices, keys), len.value())
+        };
+
+        let ptr = NonNull::from(&mut *out).cast::<u16x16<S>>();
+        unsafe { ptr.write(iter) };
+
+        out.0.head = 0;
+        out.0.tail = len;
+
+        // HACK: make it easier to test against fallback
+        if_validate! {
+            out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
+                entry.key = 0;
+                entry.index = 0;
+            })
+        }
     }
 }
 

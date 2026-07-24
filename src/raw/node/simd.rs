@@ -3,12 +3,18 @@
 #[cfg(target_feature = "avx2")]
 mod avx2;
 
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::{__m128i, __m256i, __mmask16};
+
 use fearless_simd::Select;
 use fearless_simd::Simd;
 use fearless_simd::SimdBase as _;
 use fearless_simd::SimdInt;
+use fearless_simd::SimdInto as _;
 use fearless_simd::SimdMask;
+use fearless_simd::mask8x16;
 use fearless_simd::mask16x16;
+use fearless_simd::u8x16;
 use fearless_simd::u8x32;
 use fearless_simd::u16x16;
 use ribbit::u2;
@@ -16,7 +22,6 @@ use ribbit::u4;
 
 use crate::raw::node;
 use crate::raw::node::KeyIter3;
-use crate::raw::node::KeyIter15;
 use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
@@ -181,34 +186,89 @@ pub(super) fn sort_u16x16<S: Simd>(simd: S, mut input: u16x16<S>, len: u8) -> u1
     bitonic_step::<SORT_1, SELECT_1, _>(simd, input)
 }
 
-#[inline]
-pub(super) fn keys_15<L: node::Lower, U: node::Upper>(
-    keys: u128,
-    len: u4,
-    lower: L,
-    upper: U,
-    out: &mut KeyIter15,
-) {
-    simd!(
-        "opt-no-node15-keys",
-        avx2::keys_15(keys, len, lower, upper, out),
-        keys_15_fallback(keys, len, lower, upper, out),
-    )
+/// Compress and interleave bytes from `lo` and `hi` specified by `mask` into
+/// the lowest positions in the output register. The value of higher positions
+/// is arbitrary.
+#[inline(always)]
+pub(super) fn compress_u8x16<S: Simd>(
+    simd: S,
+    mask: mask8x16<S>,
+    lower: u8x16<S>,
+    upper: u8x16<S>,
+) -> u16x16<S> {
+    #[cfg(target_arch = "x86_64")]
+    if let Some(avx512) = simd.level().as_avx512() {
+        return compress_u8x16_avx512(avx512, mask.into(), lower.into(), upper.into())
+            .simd_into(simd);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    if let Some(avx2) = simd.level().as_avx2() {
+        return compress_u8x16_avx2(avx2, mask.into(), lower.into(), upper.into()).simd_into(simd);
+    }
+
+    todo!()
 }
 
-#[inline]
-pub(super) fn keys_15_fallback<L: node::Lower, U: node::Upper>(
-    keys: u128,
-    len: u4,
-    lower: L,
-    upper: U,
-    out: &mut KeyIter15,
-) {
-    let len = core::iter::zip(&mut out.0.entries, iter_15(keys, len, lower, upper))
-        .map(|(out, r#in)| *out = r#in)
-        .count();
-    out.0.head = 0;
-    out.0.tail = len as u8;
+fearless_simd::kernel! {
+    fn compress_u8x16_avx512(
+        avx512: Avx512,
+        mask: __mmask16,
+        lower: __m128i,
+        upper: __m128i,
+    ) -> __m256i {
+        core::arch::x86_64::_mm256_mask_compress_epi16(
+            avx512.splat_u8x32(0).into(),
+            mask,
+            interleave(
+                avx512,
+                lower.simd_into(avx512),
+                upper.simd_into(avx512),
+            ).into()
+        )
+    }
+}
+
+fearless_simd::kernel! {
+    // https://stackoverflow.com/a/36951611
+    // https://stackoverflow.com/a/61431303
+    fn compress_u8x16_avx2(
+        avx2: Avx2,
+        mask: __mmask16,
+        lower: __m128i,
+        upper: __m128i,
+    ) -> __m256i {
+        use core::arch::x86_64::_pdep_u64;
+        use core::arch::x86_64::_pext_u64;
+        use core::arch::x86_64::_mm_cvtepu8_epi16;
+        use core::arch::x86_64::_mm_cvtsi64_si128;
+
+        let mask: mask8x16<_> = mask.simd_into(avx2);
+
+        // Expand each bit to a nibble
+        let mask = _pdep_u64(mask.to_bitmask(), 0x1111_1111_1111_1111)  * 0xF;
+
+        // Select and compress masked nibbles
+        let swizzle = _pext_u64(0xFEDC_BA98_7654_3210, mask);
+
+        // Expand swizzle to low u8 of each u16 lane
+        let swizzle: u8x16<_> = _mm_cvtepu8_epi16(_mm_cvtsi64_si128(swizzle as i64)).simd_into(avx2);
+
+        // Shift high nibble of low u8 to low nibble of high u8
+        let swizzle = (swizzle | avx2.cvt_to_bytes_u16x8(avx2.cvt_from_bytes_u16x8(swizzle) << 4))
+            & avx2.splat_u8x16(0x0F);
+
+        let lower = avx2.swizzle_dyn_within_blocks_u8x16(lower.simd_into(avx2), swizzle);
+        let upper = avx2.swizzle_dyn_within_blocks_u8x16(upper.simd_into(avx2), swizzle);
+        interleave(avx2, lower, upper).into()
+    }
+}
+
+#[inline(always)]
+pub(super) fn interleave<S: Simd>(simd: S, lower: u8x16<S>, upper: u8x16<S>) -> u16x16<S> {
+    let (lower, upper) = simd.interleave_u8x16(lower, upper);
+    let combined = simd.combine_u8x16(lower, upper);
+    simd.cvt_from_bytes_u16x16(combined)
 }
 
 #[inline]
@@ -301,13 +361,10 @@ mod tests {
         use fearless_simd::SimdFrom as _;
         use fearless_simd::u16x16;
         use ribbit::u2;
-        use ribbit::u4;
 
-        use crate::raw::node::KeyIter15;
         use crate::raw::node::KeyIter47;
         use crate::raw::node::iter::KeyIter3;
         use crate::raw::node::node_3;
-        use crate::raw::node::node_15;
         use crate::raw::node::node_47;
         use crate::raw::node::simd;
         use crate::raw::node::simd::sort_u16x16;
@@ -376,30 +433,6 @@ mod tests {
             );
         }
 
-        /// `keys_15` matches output of fallback.
-        #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn keys_15_correct<F: Fn(u128, u4, Option<u8>, Option<u8>, &mut KeyIter15)>(
-            header: node_15::Header,
-            lower: u8,
-            upper: u8,
-            keys_15: F,
-        ) {
-            let header = ribbit::Pack::pack(header);
-            let raw = header.into_raw();
-            let len = header.len();
-
-            let mut simd = KeyIter15::default();
-            keys_15(raw, len, Some(lower), Some(upper), &mut simd);
-
-            let mut fallback = KeyIter15::default();
-            simd::keys_15_fallback(raw, len, Some(lower), Some(upper), &mut fallback);
-
-            assert_eq!(
-                simd, fallback,
-                "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
-            );
-        }
-
         /// `keys_47` matches output of fallback.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
         pub(crate) fn keys_47_correct<
@@ -433,11 +466,9 @@ mod tests {
                 use proptest::arbitrary::any_with;
                 use ribbit::Integer as _;
                 use ribbit::u2;
-                use ribbit::u4;
 
                 use crate::raw::node::iter::bound;
                 use crate::raw::node::node_3;
-                use crate::raw::node::node_15;
                 use crate::raw::node::node_47;
                 use crate::raw::node::simd::tests::sequential;
                 use crate::raw::node::simd::$mod;
@@ -451,14 +482,6 @@ mod tests {
                         (lower, upper) in bound()
                     ) {
                         sequential::keys_3_correct(header, lower, upper, $mod::keys_3)
-                    }
-
-                    #[test]
-                    fn keys_15(
-                        header in any_with::<node_15::Header>((u4::new(0), u4::MAX)),
-                        (lower, upper) in bound()
-                    ) {
-                        sequential::keys_15_correct(header, lower, upper, $mod::keys_15)
                     }
 
                     #[test]

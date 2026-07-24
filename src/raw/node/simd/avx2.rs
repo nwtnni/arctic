@@ -16,7 +16,6 @@ use core::arch::x86_64::_mm_shuffle_epi8;
 use core::arch::x86_64::_mm_unpackhi_epi8;
 use core::arch::x86_64::_mm_unpacklo_epi8;
 use core::arch::x86_64::_mm256_setr_m128i;
-use core::arch::x86_64::_mm256_store_si256;
 use core::arch::x86_64::_pext_u64;
 use core::ptr::NonNull;
 
@@ -24,7 +23,6 @@ use ribbit::u2;
 use ribbit::u4;
 
 use crate::raw::node::KeyIter3;
-use crate::raw::node::KeyIter15;
 use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
@@ -87,41 +85,6 @@ pub(super) fn keys_3<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
     unsafe { NonNull::from(&mut *out).cast::<u64>().write(iter) };
     out.0.head = 0;
     out.0.tail = bits >> 4;
-
-    // HACK: make it easier to test against fallback
-    if_validate! {
-        out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
-            entry.key = 0;
-            entry.index = 0;
-        })
-    }
-}
-
-// https://talkchess.com/viewtopic.php?t=78804
-// https://stackoverflow.com/questions/72098296/how-to-create-a-left-packed-vector-of-indices-of-the-0s-in-one-simd-vector
-// http://const.me/articles/simd/simd.pdf
-#[inline]
-pub(super) fn keys_15<L: crate::raw::node::Lower, U: crate::raw::node::Upper>(
-    keys: u128,
-    len: u4,
-    lower: L,
-    upper: U,
-    out: &mut KeyIter15,
-) {
-    let (iter, len) = if lower.get() > u8::MIN || upper.get() < u8::MAX {
-        let mask_len = mask_len(len.value());
-        let mask_range = mask_range(keys, lower, upper);
-        let mask_valid = mask_len & mask_range;
-        compress_16(mask_valid, U8_SEQ, keys)
-    } else {
-        (interleave(U8_SEQ, keys), len.value())
-    };
-
-    unsafe {
-        _mm256_store_si256(out as *mut _ as _, iter);
-    }
-    out.0.head = 0;
-    out.0.tail = len;
 
     // HACK: make it easier to test against fallback
     if_validate! {
@@ -314,12 +277,6 @@ fn mask_range_4(array: u64, min: u8, max: u8) -> u64 {
     let valid = unsafe { _mm_cmpeq_epi16(array, clamp) };
 
     (unsafe { _mm_cvtsi128_si64x(valid) } as u64)
-}
-
-/// Output has 8 bits set for each byte in `array` below `len`
-#[inline]
-fn mask_len(len: u8) -> u128 {
-    avx_to_u128(unsafe { _mm_cmplt_epi8(u128_to_avx(U8_SEQ), _mm_set1_epi8(len as i8)) })
 }
 
 /// Convert byte mask to bit mask
