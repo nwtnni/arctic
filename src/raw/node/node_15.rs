@@ -8,7 +8,6 @@ use fearless_simd::SimdBase as _;
 use fearless_simd::SimdFrom as _;
 use fearless_simd::SimdInt as _;
 use fearless_simd::SimdMask as _;
-use fearless_simd::dispatch;
 use fearless_simd::mask8x16;
 use fearless_simd::u8x16;
 use fearless_simd::u16x16;
@@ -103,7 +102,7 @@ unsafe impl header::Header for Atomic<Header> {
     #[inline]
     fn get(&self, key: u8) -> Option<u8> {
         let header = self.load_packed(Ordering::Relaxed);
-        let index = dispatch!(*crate::raw::SIMD, simd => header.get(simd, key));
+        let index = fearless_simd::dispatch!(*crate::raw::SIMD, simd => header.get(simd, key));
         (index < header.len().value()).then_some(index)
     }
 
@@ -156,7 +155,7 @@ unsafe impl header::Header for Atomic<Header> {
 impl HeaderPacked {
     #[inline]
     fn get_or_insert(&self, key: u8) -> Result<u8, Option<Self>> {
-        let index = dispatch!(*crate::raw::SIMD, simd => self.get(simd, key));
+        let index = fearless_simd::dispatch!(*crate::raw::SIMD, simd => self.get(simd, key));
         let len = self.len().value();
 
         if index < len {
