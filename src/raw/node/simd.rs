@@ -118,20 +118,6 @@ fn keys_3_fallback<L: node::Lower, U: node::Upper>(
 }
 
 #[inline]
-pub(super) fn sort_3(iter: &mut KeyIter3) {
-    simd!(
-        "opt-no-node3-keys",
-        avx2::sort_3(iter),
-        sort_3_fallback(iter),
-    )
-}
-
-#[inline]
-fn sort_3_fallback(iter: &mut KeyIter3) {
-    iter.0.entries[..iter.0.tail as usize].sort_unstable();
-}
-
-#[inline]
 pub(super) fn keys_15<L: node::Lower, U: node::Upper>(
     keys: u128,
     len: u4,

@@ -489,7 +489,36 @@ impl KeyIter3 {
 
     #[inline]
     pub(super) fn sort(&mut self) {
-        node::simd::sort_3(self)
+        if self.0.tail <= 1 {
+            return;
+        }
+
+        let mut a = self.0.entries[0];
+        let mut b = self.0.entries[1];
+
+        if self.0.tail == 2 {
+            self.0.entries[0] = a.min(b);
+            self.0.entries[1] = a.max(b);
+            return;
+        }
+
+        let mut c = self.0.entries[2];
+
+        if a > b {
+            core::mem::swap(&mut a, &mut b);
+        }
+
+        if a > c {
+            core::mem::swap(&mut a, &mut c);
+        }
+
+        if b > c {
+            core::mem::swap(&mut b, &mut c);
+        }
+
+        self.0.entries[0] = a;
+        self.0.entries[1] = b;
+        self.0.entries[2] = c;
     }
 }
 
