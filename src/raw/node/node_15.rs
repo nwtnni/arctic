@@ -195,10 +195,7 @@ impl HeaderPacked {
 
         let (iter, len) = if lower.get() > u8::MIN || upper.get() < u8::MAX {
             let mask_len = mask8x16::from_bitmask(simd, (1u64 << len.value()) - 1);
-            let mask_range = keys
-                .max(simd.splat_u8x16(lower.get()))
-                .min(simd.splat_u8x16(upper.get()))
-                .simd_eq(keys);
+            let mask_range = node::simd::mask_range(simd, keys, lower.get(), upper.get());
 
             let mask = mask_len & mask_range;
             let len = mask.to_bitmask().count_ones() as u8;

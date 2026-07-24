@@ -9,6 +9,12 @@ use core::ops::Deref;
 use core::ops::Shr;
 use core::sync::atomic::Ordering;
 
+use fearless_simd::Simd;
+use fearless_simd::SimdBase as _;
+use fearless_simd::SimdFrom as _;
+use fearless_simd::SimdInt as _;
+use fearless_simd::SimdMask as _;
+use fearless_simd::u8x16;
 use ribbit::u6;
 
 use crate::raw::edge;
@@ -197,7 +203,9 @@ unsafe impl header::Header for Header {
         // NOTE: only writers need to ensure meta consistency
         let len = self.len();
         let indices = self.indices();
-        node::simd::keys_47(indices, len, lower, upper, iter);
+        fearless_simd::dispatch!(*crate::raw::SIMD, simd => {
+            Header::keys_simd(simd, indices, len, lower, upper, iter);
+        })
     }
 
     fn min<L: node::Lower>(&self, _lower: L) -> Option<KeyIndex> {
@@ -263,6 +271,84 @@ impl Header {
 
     pub(super) fn indices(&self) -> [u128; 16] {
         core::array::from_fn(|i| self.indices[i].load(Ordering::Relaxed))
+    }
+
+    #[inline(always)]
+    fn keys_simd<S: Simd, L: node::Lower, U: node::Upper>(
+        simd: S,
+        indices: [u128; 16],
+        len: u8,
+        lower: L,
+        upper: U,
+        out: &mut KeyIter47,
+    ) {
+        validate!(len <= 0x7F, "AVX2 only supports signed byte comparison");
+
+        let len_i8x16 = simd.splat_i8x16(len as i8);
+        let mut len = 0;
+
+        if lower.get() > u8::MIN || upper.get() < u8::MAX {
+            let i = lower.get() / 16;
+            let j = upper.get() / 16;
+
+            let mut keys = u8x16::from_fn(simd, |index| index as u8 + 16 * i);
+
+            for chunk in indices[i as usize..=j as usize].iter().copied() {
+                let chunk = simd.cvt_from_bytes_i8x16(u8x16::simd_from(simd, chunk.to_le_bytes()));
+
+                let mask_len = chunk.simd_lt(len_i8x16);
+                let mask_range = node::simd::mask_range(simd, keys, lower.get(), upper.get());
+                let mask = mask_len & mask_range;
+
+                let compressed =
+                    node::simd::compress_u8x16(simd, mask, simd.cvt_to_bytes_i8x16(chunk), keys);
+
+                let slice = unsafe {
+                    core::mem::transmute::<&mut [KeyIndex], &mut [u16]>(
+                        &mut out.0.entries[len as usize..][..16],
+                    )
+                };
+
+                compressed.store_slice(slice);
+                keys += simd.splat_u8x16(16);
+                len += mask.to_bitmask().count_ones() as u8;
+            }
+        } else {
+            let mut keys = u8x16::from_fn(simd, |index| index as u8);
+
+            for chunk in indices.iter().copied() {
+                let chunk = simd.cvt_from_bytes_i8x16(u8x16::simd_from(simd, chunk.to_le_bytes()));
+
+                let mask_len = chunk.simd_lt(len_i8x16);
+                let compressed = node::simd::compress_u8x16(
+                    simd,
+                    mask_len,
+                    simd.cvt_to_bytes_i8x16(chunk),
+                    keys,
+                );
+
+                let slice = unsafe {
+                    core::mem::transmute::<&mut [KeyIndex], &mut [u16]>(
+                        &mut out.0.entries[len as usize..][..16],
+                    )
+                };
+
+                compressed.store_slice(slice);
+                keys += simd.splat_u8x16(16);
+                len += mask_len.to_bitmask().count_ones() as u8;
+            }
+        }
+
+        out.0.head = 0;
+        out.0.tail = len;
+
+        // HACK: make it easier to test against fallback
+        if_validate! {
+            out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
+                entry.key = 0;
+                entry.index = 0;
+            })
+        }
     }
 }
 

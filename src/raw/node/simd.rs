@@ -22,7 +22,6 @@ use ribbit::u4;
 
 use crate::raw::node;
 use crate::raw::node::KeyIter3;
-use crate::raw::node::KeyIter47;
 use crate::raw::node::iter::KeyIndex;
 
 #[inline]
@@ -271,49 +270,12 @@ pub(super) fn interleave<S: Simd>(simd: S, lower: u8x16<S>, upper: u8x16<S>) -> 
     simd.cvt_from_bytes_u16x16(combined)
 }
 
-#[inline]
-pub(super) fn keys_47<L: node::Lower, U: node::Upper>(
-    indices: [u128; 16],
-    len: u8,
-    lower: L,
-    upper: U,
-    out: &mut KeyIter47,
-) {
-    simd!(
-        "opt-no-node47-keys",
-        avx2::keys_47(indices, len, lower, upper, out),
-        keys_47_fallback(indices, len, lower, upper, out),
-    )
-}
-
-#[inline]
-pub(super) fn keys_47_fallback<L: node::Lower, U: node::Upper>(
-    indices: [u128; 16],
-    len: u8,
-    lower: L,
-    upper: U,
-    out: &mut KeyIter47,
-) {
-    let i = lower.get() / 16;
-    let j = upper.get() / 16;
-
-    let len = indices[i as usize..=j as usize]
-        .iter()
-        .flat_map(|chunk| chunk.to_le_bytes())
-        // HACK: using `i: u8` here causes integer overflow in debug mode
-        // when all 256 bytes are loaded
-        .zip((i as u16 * 16)..)
-        .map(|(index, key)| (index, key as u8))
-        .filter(|(index, key)| *index < len && *key >= lower.get() && *key <= upper.get())
-        .zip(&mut out.0.entries)
-        .map(|((index, key), out)| {
-            out.index = index;
-            out.key = key;
-        })
-        .count();
-
-    out.0.head = 0;
-    out.0.tail = len as u8;
+#[inline(always)]
+pub(super) fn mask_range<S: Simd>(simd: S, array: u8x16<S>, lower: u8, upper: u8) -> mask8x16<S> {
+    array
+        .max(simd.splat_u8x16(lower))
+        .min(simd.splat_u8x16(upper))
+        .simd_eq(array)
 }
 
 fn iter_3<L: node::Lower, U: node::Upper>(
@@ -362,10 +324,8 @@ mod tests {
         use fearless_simd::u16x16;
         use ribbit::u2;
 
-        use crate::raw::node::KeyIter47;
         use crate::raw::node::iter::KeyIter3;
         use crate::raw::node::node_3;
-        use crate::raw::node::node_47;
         use crate::raw::node::simd;
         use crate::raw::node::simd::sort_u16x16;
 
@@ -432,31 +392,6 @@ mod tests {
                 "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
             );
         }
-
-        /// `keys_47` matches output of fallback.
-        #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn keys_47_correct<
-            F: Fn([u128; 16], u8, Option<u8>, Option<u8>, &mut KeyIter47),
-        >(
-            header: node_47::Header,
-            lower: u8,
-            upper: u8,
-            keys_47: F,
-        ) {
-            let indices = header.indices();
-            let len = header.len();
-
-            let mut simd = KeyIter47::default();
-            keys_47(indices, len, Some(lower), Some(upper), &mut simd);
-
-            let mut fallback = KeyIter47::default();
-            simd::keys_47_fallback(indices, len, Some(lower), Some(upper), &mut fallback);
-
-            assert_eq!(
-                simd, fallback,
-                "SIMD does not match fallback for keys {header:#x?}, lower {lower:#x?}, upper {upper:#x?}",
-            );
-        }
     }
 
     macro_rules! impl_suite {
@@ -469,7 +404,6 @@ mod tests {
 
                 use crate::raw::node::iter::bound;
                 use crate::raw::node::node_3;
-                use crate::raw::node::node_47;
                 use crate::raw::node::simd::tests::sequential;
                 use crate::raw::node::simd::$mod;
 
@@ -482,14 +416,6 @@ mod tests {
                         (lower, upper) in bound()
                     ) {
                         sequential::keys_3_correct(header, lower, upper, $mod::keys_3)
-                    }
-
-                    #[test]
-                    fn keys_47(
-                        header in any_with::<node_47::Header>((1, 47)),
-                        (lower, upper) in bound()
-                    ) {
-                        sequential::keys_47_correct(header, lower, upper, $mod::keys_47)
                     }
                 }
             }
