@@ -341,14 +341,6 @@ impl Header {
 
         out.0.head = 0;
         out.0.tail = len;
-
-        // HACK: make it easier to test against fallback
-        if_validate! {
-            out.0.entries[out.0.tail as usize..].iter_mut().for_each(|entry| {
-                entry.key = 0;
-                entry.index = 0;
-            })
-        }
     }
 }
 
