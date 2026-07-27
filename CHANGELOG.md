@@ -1,3 +1,9 @@
+# v0.1.4
+
+- Port SIMD code to `fearless_simd`.
+- Fix memory leak during recursive deallocation (https://github.com/nwtnni/arctic/issues/17).
+- Add missing `Acquire` fence for a `get` on indirect values (https://github.com/nwtnni/arctic/issues/18).
+
 # v0.1.3
 
 - Fix performance regression for sequential keys.
