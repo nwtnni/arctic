@@ -121,14 +121,13 @@ impl Prefix for BePacked {
 
     #[inline]
     fn is_conflict(self, hazards: &[Self; 4]) -> bool {
-        simd!(
-            "opt-no-prefix",
-            self.is_conflict_avx2(hazards),
-            hazards.iter().any(|hazard| self.is_conflict(*hazard)),
-            "mismatch at {:x?} {:x?}",
-            self,
-            hazards,
-        )
+        #[cfg(target_feature = "avx2")]
+        {
+            return self.is_conflict_avx2(hazards);
+        }
+
+        #[allow(unreachable_code)]
+        hazards.iter().any(|hazard| self.is_conflict(*hazard))
     }
 
     #[inline]
@@ -260,14 +259,13 @@ impl Prefix for LePacked {
 
     #[inline]
     fn is_conflict(self, hazards: &[Self; 4]) -> bool {
-        simd!(
-            "opt-no-prefix",
-            self.is_conflict_avx2(hazards),
-            hazards.iter().any(|hazard| self.is_conflict(*hazard)),
-            "mismatch at {:x?} {:x?}",
-            self,
-            hazards,
-        )
+        #[cfg(target_feature = "avx2")]
+        {
+            return self.is_conflict_avx2(hazards);
+        }
+
+        #[allow(unreachable_code)]
+        hazards.iter().any(|hazard| self.is_conflict(*hazard))
     }
 
     #[inline]
