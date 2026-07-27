@@ -388,9 +388,7 @@ where
             //                 1
             // ```
             while old_edge.meta().is_frozen() {
-                let (next_len, next_node) = self.pop()?.expect("Root edge cannot be frozen");
-                old_len = next_len;
-                old_node = next_node;
+                (old_len, old_node) = self.pop()?.expect("Root edge cannot be frozen");
                 old_edge = self.edge().load_packed(Ordering::Relaxed);
                 pop += 1;
             }
