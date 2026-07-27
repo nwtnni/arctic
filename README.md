@@ -84,9 +84,8 @@ Briefly comparing against some alternative data structures:
 
 ## Limitations
 
-- 128-bit atomic support required for good performance (currently using [portable-atomic](https://github.com/taiki-e/portable-atomic) crate)
-- SIMD acceleration is hand-written and currently restricted to AVX2
-- Theoretically supports big-endian targets, but untested
+- 128-bit atomic support required for good performance (currently using [portable-atomic](https://github.com/taiki-e/portable-atomic) crate), and atomic 128-bit compare-and-swap required for lock-freedom.
+- Currently tested only on x86-64, but should work on other architectures in theory.
 
 ## Correctness
 
