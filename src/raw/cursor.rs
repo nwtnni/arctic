@@ -190,7 +190,7 @@ where
 
     /// Traverse to the node associated with the key.
     ///
-    /// Returns the edge length to the node if successful,
+    /// Returns the parent edge if successful,
     /// or else returns the remaining key length.
     pub(crate) fn traverse_node(
         &mut self,
@@ -581,6 +581,7 @@ where
     #[inline]
     pub(crate) fn trim(&mut self, len: R::Len) {
         self.path.trim(len);
+        validate!(self.reader.len() >= len);
         self.reader = self.reader.prefix(self.reader.len() - len);
     }
 }

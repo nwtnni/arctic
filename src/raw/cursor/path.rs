@@ -130,9 +130,10 @@ where
 
     #[inline]
     fn trim(&mut self, len: R::Len) {
-        self.path
-            .iter_mut()
-            .for_each(|segment| segment.reader = segment.reader.prefix(segment.reader.len() - len))
+        self.path.iter_mut().for_each(|segment| {
+            validate!(segment.reader.len() >= len);
+            segment.reader = segment.reader.prefix(segment.reader.len() - len)
+        })
     }
 
     #[inline]
