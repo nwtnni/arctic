@@ -33,7 +33,7 @@ impl Node15 {
         keys: &[u8],
         edges: &[ribbit::Packed<edge::Raw>],
     ) -> Box<Self> {
-        if_validate!(assert!(crate::raw::is_unique(keys)));
+        validate!(crate::raw::is_unique(keys));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= CAPACITY);
 
