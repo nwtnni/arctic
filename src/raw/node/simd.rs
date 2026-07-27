@@ -156,7 +156,24 @@ pub(super) fn compress_u8x16<S: Simd>(
         return compress_u8x16_avx2(avx2, mask.into(), lower.into(), upper.into()).simd_into(simd);
     }
 
-    todo!()
+    // FIXME: aarch64 kernel using compact, expand
+    // https://dougallj.github.io/asil/
+
+    // FIXME: optimize?
+    // https://stackoverflow.com/questions/77834169/what-is-a-fast-fallback-algorithm-which-emulates-pdep-and-pext-in-software
+    let mask = mask.to_bitmask();
+    let mut swizzle = simd.splat_u8x16(0);
+    let mut j = 0;
+    for i in 0..16 {
+        if (mask & (1u64 << i)) > 0 {
+            simd.as_array_mut_u8x16(&mut swizzle)[j] = i;
+            j += 1;
+        }
+    }
+
+    let lower = simd.swizzle_dyn_within_blocks_u8x16(lower, swizzle);
+    let upper = simd.swizzle_dyn_within_blocks_u8x16(upper, swizzle);
+    interleave(simd, lower, upper)
 }
 
 fearless_simd::kernel! {
