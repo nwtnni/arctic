@@ -142,7 +142,7 @@ impl<'k, const N: usize> key::Write<Reader<'k, N>> for Writer<N> {
     fn new(prefix: Reader<'k, N>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         let mut buffer = [0u8; N];
-        buffer[..prefix.0.len().bytes()].copy_from_slice(prefix.0.slice);
+        buffer[..prefix.0.len().bytes()].copy_from_slice(prefix.0.as_slice());
         buffer[prefix.0.len().bytes()..]
             .iter_mut()
             .zip(key)

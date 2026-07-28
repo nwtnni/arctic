@@ -97,11 +97,11 @@ where
 
 #[inline]
 fn hazard_unsized<T: Terminate>(reader: key::boxed_slice::Reader<'_, T>) -> ribbit::Packed<Le> {
-    let prefix = if reader.slice.len() >= 16 {
-        unsafe { reader.slice.as_ptr().cast::<u128>().read_unaligned() }
+    let prefix = if reader.len >= 16 {
+        unsafe { reader.as_slice().as_ptr().cast::<u128>().read_unaligned() }
     } else {
         let mut buffer = [0u8; 16];
-        buffer[..reader.slice.len()].copy_from_slice(reader.slice);
+        buffer[..reader.len].copy_from_slice(reader.as_slice());
         u128::from_le_bytes(buffer)
     };
 

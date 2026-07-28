@@ -210,10 +210,9 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
         &self,
         len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
     ) -> ribbit::Packed<Self::Edge> {
-        let min = len.bytes().min(self.0.slice.len());
-        edge::Slice::new(&self.0.slice[..min]).with_terminate(T::new(
-            self.0.terminate.get() && len.bytes() > self.0.slice.len(),
-        ))
+        let min = len.bytes().min(self.0.len);
+        edge::Slice::new(self.0.as_non_null(), min)
+            .with_terminate(T::new(self.0.terminate.get() && len.bytes() > self.0.len))
     }
 
     fn get_byte(&self, index: u13) -> Option<u8> {
@@ -223,9 +222,9 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     fn match_prefix(&self, meta: ribbit::Packed<edge::Slice<T>>) -> Self::Len {
         let other = unsafe { meta.as_slice() };
 
-        let index = r#unsized::common_prefix(self.0.slice, other);
+        let index = r#unsized::common_prefix(self.0.as_slice(), other);
         let terminate = self.0.terminate.get()
-            && index == self.0.slice.len()
+            && index == self.0.len
             && index == other.len()
             && meta.terminate().get();
 
@@ -265,6 +264,7 @@ impl<I: r#unsized::Invariant> Writer<I> {
 
         let raw = I::Terminate::trim(unsafe {
             core::slice::from_raw_parts(
+                // NOTE: requires provenance of original slice
                 self.last.as_ptr().byte_sub(len_total - len_suffix),
                 len_total,
             )

@@ -1,4 +1,5 @@
 use core::fmt::Debug;
+use core::ptr::NonNull;
 
 use ribbit::u13;
 use ribbit::u48;
@@ -22,10 +23,10 @@ pub struct Slice<T> {
 
 impl<T: ribbit::Pack<Packed: Default>> Slice<T> {
     #[inline]
-    pub(crate) fn new(slice: &[u8]) -> ribbit::Packed<Self> {
-        validate!(slice.len() < u16::MAX as usize);
-        let len = u13::new(slice.len() as u16);
-        let ptr = slice.as_ptr().expose_provenance() as u64;
+    pub(crate) fn new(ptr: NonNull<u8>, len: usize) -> ribbit::Packed<Self> {
+        validate!(len < u16::MAX as usize);
+        let len = u13::new(len as u16);
+        let ptr = ptr.as_ptr().expose_provenance() as u64;
         validate!(ptr > 1 && ptr < (1 << 48));
         ribbit::Packed::<Self>::new(
             u48::new(ptr),
@@ -51,6 +52,11 @@ impl<T: ribbit::Pack> SlicePacked<T> {
     #[inline]
     pub(crate) fn as_ptr(&self) -> *const u8 {
         core::ptr::with_exposed_provenance(self.ptr().value() as usize)
+    }
+
+    #[inline]
+    pub(crate) fn as_non_null(&self) -> NonNull<u8> {
+        NonNull::new(self.as_ptr().cast_mut()).expect("Null slice edge")
     }
 }
 
@@ -113,19 +119,22 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
         let len_parent = self.len().value();
         let len_byte = T::try_compress(byte) as u16;
         let len_child = child.len().value();
-        let len = u13::try_new(len_parent + len_byte + len_child).ok()?;
+        let len_total = u13::try_new(len_parent + len_byte + len_child).ok()?;
 
         // If we're compressing a terminator byte, then
         // the child must be an empty edge without a terminator
         validate!(len_byte == 1 || !child.terminate().get() && len_child == 0 && child.value());
 
         Some(
-            Slice::new(unsafe {
-                core::slice::from_raw_parts(
-                    child.as_ptr().byte_sub((len_parent + len_byte) as usize),
-                    len.bytes(),
-                )
-            })
+            Slice::new(
+                unsafe {
+                    child
+                        .as_non_null()
+                        // NOTE: requires provenance of original slice
+                        .byte_sub((len_parent + len_byte) as usize)
+                },
+                len_total.bytes(),
+            )
             .with_value(child.value())
             .with_frozen(child.frozen())
             .with_terminate(T::new(len_byte == 0 || child.terminate().get())),
@@ -134,23 +143,23 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
 
     #[inline]
     fn try_expand(self, index: Self::Len) -> Option<(Self, u8, Self)> {
-        let len = edge::Meta::len(self);
-        if index >= len {
+        if index >= edge::Meta::len(self) {
             return None;
         }
 
-        let slice = unsafe { self.as_slice() };
-        validate!(index.bytes() <= slice.len());
+        validate!(index <= self.len());
 
-        let parent = Slice::new(&slice[..index.bytes()]);
-        let byte = slice.get(index.bytes()).copied().unwrap_or(0);
-        let index_child = (index + Self::Len::BYTE).bytes().min(slice.len());
-        let child = Slice::new(&slice[index_child..])
+        let index = index.bytes();
+        let ptr = self.as_non_null();
+        let len_total = SlicePacked::len(self).bytes();
+        let len_middle = (index + Self::Len::BYTE.bytes()).min(len_total);
+
+        let parent = Slice::new(ptr, index);
+        let byte = unsafe { self.as_slice() }.get(index).copied().unwrap_or(0);
+        let child = Slice::new(unsafe { ptr.byte_add(len_middle) }, len_total - len_middle)
             .with_value(self.value())
             .with_frozen(self.frozen())
-            .with_terminate(T::new(
-                self.terminate().get() && index.bytes() < slice.len(),
-            ));
+            .with_terminate(T::new(self.terminate().get() && index < len_total));
 
         Some((parent, byte, child))
     }

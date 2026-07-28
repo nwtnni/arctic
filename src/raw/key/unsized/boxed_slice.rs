@@ -4,6 +4,7 @@ use core::borrow::Borrow;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ops::Deref;
+use core::ptr::NonNull;
 use std::ffi::CString;
 
 #[cfg(feature = "proptest")]
@@ -212,9 +213,10 @@ where
 {
     #[inline]
     fn from(slice: &'k Slice<I, R>) -> Self {
+        let slice = slice.as_raw().as_ref();
         Self {
-            slice: slice.as_raw().as_ref(),
             terminate: I::Terminate::TRUE,
+            ..Self::new_prefix(slice)
         }
     }
 }
@@ -242,16 +244,23 @@ impl<'k, const N: usize, T: Terminate> From<&'k [u8; N]> for Reader<'k, T> {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Reader<'k, T> {
-    pub(crate) slice: &'k [u8],
+    // Not using slices in order to preserve the
+    // pointer provenance of the original slice for
+    // `crate::raw::key::slice::Writer` and `crate::raw::edge::Slice`.
+    ptr: NonNull<u8>,
+    pub(crate) len: usize,
     pub(super) terminate: T,
+    slice: PhantomData<&'k [u8]>,
 }
 
 impl<'k, T: Default> Reader<'k, T> {
     #[inline]
     pub(crate) fn new_prefix(prefix: &'k [u8]) -> Self {
         Self {
-            slice: prefix,
+            ptr: NonNull::from(prefix).cast::<u8>(),
+            len: prefix.len(),
             terminate: T::default(),
+            slice: PhantomData,
         }
     }
 }
@@ -260,11 +269,22 @@ impl<'k, T: Default> Reader<'k, T> {
 impl<'k, T: Terminate> Reader<'k, T> {
     #[inline]
     pub(crate) fn get_byte(&self, index: usize) -> Option<u8> {
-        if let Some(byte) = self.slice.get(index) {
+        if let Some(byte) = self.as_slice().get(index) {
             return Some(*byte);
         }
 
-        (self.terminate.get() && index == self.slice.len()).then_some(0)
+        (self.terminate.get() && index == self.len).then_some(0)
+    }
+
+    #[inline]
+    pub(crate) fn as_slice(&self) -> &'k [u8] {
+        // SAFETY: `self.ptr` and `self.len` form a valid slice for lifetime 'k
+        unsafe { &*core::ptr::slice_from_raw_parts(self.ptr.as_ptr().cast_const(), self.len) }
+    }
+
+    #[inline]
+    pub(super) fn as_non_null(&self) -> NonNull<u8> {
+        self.ptr
     }
 }
 
@@ -282,7 +302,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
 
     #[inline]
     fn len(&self) -> Self::Len {
-        Byte(self.slice.len() + self.terminate.get() as usize)
+        Byte(self.len + self.terminate.get() as usize)
     }
 
     #[inline]
@@ -291,7 +311,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
         len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
     ) -> ribbit::Packed<Self::Edge> {
         let len = u6::new((self.len().bits()).min(len.bits()) as u8);
-        edge::Le::new(r#unsized::read_u64(self.slice), len)
+        edge::Le::new(r#unsized::read_u64(self.as_slice()), len)
     }
 
     #[inline]
@@ -306,13 +326,13 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     ) -> Option<<ribbit::Packed<Self::Edge> as edge::Meta>::Len> {
         // Avoid bit <-> byte conversion
         let len_edge = edge.len();
-        let len_match = (edge.raw() ^ r#unsized::read_u64(self.slice)).trailing_zeros() as u8;
+        let len_match = (edge.raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as u8;
         (len_match >= len_edge.value()).then_some(len_edge)
     }
 
     #[inline]
     fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        Byte(((edge.raw() ^ r#unsized::read_u64(self.slice)).trailing_zeros() as usize) >> 3)
+        Byte(((edge.raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as usize) >> 3)
     }
 
     #[inline]
@@ -321,8 +341,10 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
         let end = end.bytes();
 
         Self {
-            slice: self.slice.get(..end).unwrap_or(self.slice),
-            terminate: T::new(self.terminate.get() && (end > self.slice.len())),
+            ptr: self.ptr,
+            len: self.len.min(end),
+            terminate: T::new(self.terminate.get() && (end > self.len)),
+            slice: PhantomData,
         }
     }
 
@@ -330,30 +352,32 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     fn suffix(self, start: Self::Len) -> Self {
         validate!(start <= self.len());
         let start = start.bytes();
+        let offset = self.len.min(start);
 
         Self {
+            len: self.len - offset,
             // NOTE: slice key implementation requires us to preserve the
             // `self.slice` pointer, even if the slice is empty.
-            slice: self
-                .slice
-                .get(start..)
-                .unwrap_or(&self.slice[self.slice.len()..]),
-            terminate: T::new(self.terminate.get() && (start <= self.slice.len())),
+            ptr: unsafe { self.ptr.byte_add(offset) },
+            terminate: T::new(self.terminate.get() && (start <= self.len)),
+            slice: PhantomData,
         }
     }
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        let index = r#unsized::common_prefix(self.slice, other.slice);
+        let index = r#unsized::common_prefix(self.as_slice(), other.as_slice());
 
         Self {
-            slice: &self.slice[..index],
+            ptr: self.ptr,
+            len: index,
             terminate: T::new(
                 self.terminate.get()
                     && other.terminate.get()
-                    && index == self.slice.len()
-                    && index == other.slice.len(),
+                    && index == self.len
+                    && index == other.len,
             ),
+            slice: PhantomData,
         }
     }
 }
@@ -377,7 +401,7 @@ impl<'k, T: Terminate> key::Write<Reader<'k, T>> for Writer {
     fn new(prefix: Reader<'k, T>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         let mut buffer = Vec::new();
-        buffer.extend_from_slice(prefix.slice);
+        buffer.extend_from_slice(prefix.as_slice());
         if prefix.terminate.get() {
             buffer.push(u8::MIN);
             validate_eq!(key.len().bits(), 0);
