@@ -12,6 +12,7 @@ use crate::raw::key::Terminate;
 #[ribbit(size = 64, derive(Debug))]
 pub struct Slice<T> {
     ptr: u48,
+    #[ribbit(get(vis = "pub(crate)"))]
     len: u13,
     value: bool,
     frozen: bool,
@@ -39,12 +40,17 @@ impl<T: ribbit::Pack<Packed: Default>> Slice<T> {
 impl<T: ribbit::Pack> SlicePacked<T> {
     #[inline]
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
-        let ptr = self.ptr().value() as *const u8;
+        let ptr = self.as_ptr();
         if ptr.is_null() {
             return &[];
         }
         let len = self.len().value() as usize;
         unsafe { core::slice::from_raw_parts(ptr, len) }
+    }
+
+    #[inline]
+    pub(crate) fn as_ptr(&self) -> *const u8 {
+        core::ptr::with_exposed_provenance(self.ptr().value() as usize)
     }
 }
 
@@ -116,10 +122,7 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
         Some(
             Slice::new(unsafe {
                 core::slice::from_raw_parts(
-                    child
-                        .as_slice()
-                        .as_ptr()
-                        .byte_sub((len_parent + len_byte) as usize),
+                    child.as_ptr().byte_sub((len_parent + len_byte) as usize),
                     len.bytes(),
                 )
             })

@@ -9,7 +9,6 @@ use ribbit::u13;
 use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
-use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
@@ -258,10 +257,17 @@ pub struct Writer<I: r#unsized::Invariant> {
 
 impl<I: r#unsized::Invariant> Writer<I> {
     unsafe fn as_slice_unchecked<'a, R: ?Sized>(&self) -> &'a Slice<I, R> {
-        let len = self.len.bytes();
-        let suffix = unsafe { self.last.as_slice() };
+        let len_total = self.len.bytes();
+        // NOTE: calling inherent method `len` here to ignore implicit terminator byte
+        let len_suffix = self.last.len().bytes();
+
+        validate!(len_total >= len_suffix);
+
         let raw = I::Terminate::trim(unsafe {
-            core::slice::from_raw_parts(suffix.as_ptr().byte_sub(len - suffix.len()), len)
+            core::slice::from_raw_parts(
+                self.last.as_ptr().byte_sub(len_total - len_suffix),
+                len_total,
+            )
         });
         unsafe { Slice::<I, R>::new_unchecked(core::mem::transmute_copy::<&[u8], &R>(&raw)) }
     }
