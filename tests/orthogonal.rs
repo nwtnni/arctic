@@ -135,7 +135,7 @@ where
                                     assert_eq!(*updated.new(), value);
                                 }
                                 Err(new) => {
-                                    assert!(expected.get(key.borrow()).is_none());
+                                    assert!(!expected.contains_key(key.borrow()));
                                     assert_eq!(new, value);
                                 }
                             }
