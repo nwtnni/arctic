@@ -2,6 +2,8 @@
 
 //! This is the original implementation of
 //! [Arctic: a practical lock-free adaptive radix tree](https://www.usenix.org/conference/osdi26/presentation/ni).
+//! To the best of our knowledge (corrections welcome!), this is the
+//! [fastest and most scalable concurrent ordered map to date](https://nwtnni.github.io/index-bench/).
 //!
 //! The main data structure is [`ConcurrentMap`],
 //! which is a thread-safe [map](https://en.wikipedia.org/wiki/Associative_array) that provides
@@ -17,7 +19,7 @@
 //! the same underlying structure as [`ConcurrentMap`], but
 //! gives up thread safety in exchange for single threaded performance
 //! and a more convenient API. The borrow checker allows us to
-//! safely take advantage of both APIs at runtime, via [`ConcurrentMap::as_sequential`].
+//! safely access both APIs via [`ConcurrentMap::as_sequential`].
 //!
 //! # Examples
 //!
@@ -62,12 +64,13 @@
 //!
 //! # Why use this crate?
 //!
-//! As far as we know (corrections welcome!), out of all map data structures that (a) are lock-free
-//! and (b) support ordered scan operations, [`ConcurrentMap`] provides the highest scalability and throughput.
+//! Out of all concurrent map data structures that (a) are lock-free and (b) support ordered scan operations,
+//! [`ConcurrentMap`] provides the highest scalability and throughput.
 //! In fact, under various conditions (integer keys, skewed requests, update-heavy),
 //! we even out-perform data structures without properties (a) and/or (b).
-//! Our benchmarking infrastructure is in [this repository](https://github.com/nwtnni/index-bench);
-//! users are encouraged to measure performance on their own workloads.
+//! Our benchmarking infrastructure is in [this repository](https://github.com/nwtnni/index-bench)
+//! and our measurements are accessible through the [web interface](https://nwtnni.github.io/index-bench/),
+//! but users are encouraged to measure performance on their own workloads.
 //!
 //! Briefly comparing against some alternative data structures:
 //!
