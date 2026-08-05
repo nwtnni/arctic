@@ -68,7 +68,7 @@ assert!(
 ## Why use this crate?
 
 Out of all concurrent map data structures that (a) are lock-free and (b) support ordered scan operations,
-[`ConcurrentMap`] provides the highest scalability and throughput.
+`ConcurrentMap` provides the highest scalability and throughput.
 In fact, under various conditions (integer keys, skewed requests, update-heavy),
 we even out-perform data structures without properties (a) and/or (b).
 Our benchmarking infrastructure is in [this repository](https://github.com/nwtnni/index-bench)
