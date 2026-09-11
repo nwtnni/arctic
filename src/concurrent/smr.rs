@@ -43,6 +43,7 @@ cfg_select! {
 use crate::Key;
 use crate::concurrent::Value;
 use crate::stat;
+use crate::sync::Convert as _;
 
 /// Provides [safe memory reclamation](https://arxiv.org/abs/2509.02457) for the
 /// given key and value type.
@@ -95,7 +96,7 @@ pub trait Guard<V: Value> {
 /// and that `node` was previously retired via [`Guard::retire_node`].
 pub unsafe fn deallocate_node(node: NonZeroU64) {
     stat::increment(stat::Counter::FreeRetire);
-    unsafe { ribbit::Packed::<crate::raw::node::Ptr>::from_raw_unchecked(node).deallocate() }
+    unsafe { crate::raw::node::Ptr::from_raw_unchecked(node).deallocate() }
 }
 
 /// Deallocate a previously retired value.

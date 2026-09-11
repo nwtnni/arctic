@@ -21,10 +21,10 @@ impl<R> core::fmt::Debug for Discard<R> {
 impl<R: Read> Write<R> for Discard<R> {
     type Len = ();
 
-    fn new(_: R, _: ribbit::Packed<R::Edge>) -> (Self, Self::Len) {
+    fn new(_: R, _: R::Edge) -> (Self, Self::Len) {
         (Self(PhantomData), ())
     }
 
     #[inline]
-    fn replace(&mut self, _: Self::Len, _: u8, _: ribbit::Packed<R::Edge>) -> Self::Len {}
+    fn replace(&mut self, _: Self::Len, _: u8, _: R::Edge) -> Self::Len {}
 }

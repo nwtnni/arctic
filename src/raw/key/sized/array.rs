@@ -95,18 +95,15 @@ impl<'k, const N: usize> key::Read for Reader<'k, N> {
         self.0.len()
     }
 
-    fn get_edge(
-        &self,
-        len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
-    ) -> ribbit::Packed<Self::Edge> {
+    fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
         self.0.get_edge(len)
     }
 
-    fn get_byte(&self, index: <ribbit::Packed<Self::Edge> as edge::Meta>::Len) -> Option<u8> {
+    fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8> {
         self.0.get_byte(index.bytes())
     }
 
-    fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
+    fn match_prefix(&self, meta: Self::Edge) -> Self::Len {
         self.0.match_prefix(meta)
     }
 
@@ -139,7 +136,7 @@ impl<'k, const N: usize> key::Write<Reader<'k, N>> for Writer<N> {
     type Len = Byte;
 
     #[inline]
-    fn new(prefix: Reader<'k, N>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
+    fn new(prefix: Reader<'k, N>, key: edge::Le) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         let mut buffer = [0u8; N];
         buffer[..prefix.0.len().bytes()].copy_from_slice(prefix.0.as_slice());
@@ -153,7 +150,7 @@ impl<'k, const N: usize> key::Write<Reader<'k, N>> for Writer<N> {
     }
 
     #[inline]
-    fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<edge::Le>) -> Self::Len {
+    fn replace(&mut self, start: Self::Len, node: u8, edge: edge::Le) -> Self::Len {
         self.0[start.bytes()] = node;
         self.0[start.bytes() + 1..]
             .iter_mut()

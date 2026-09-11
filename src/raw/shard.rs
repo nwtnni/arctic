@@ -13,17 +13,17 @@ use crate::raw::iter::Range;
 use crate::raw::iter::RangeIter;
 use crate::raw::iter::ValueIter;
 use crate::raw::key::Read as _;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 pub(crate) struct Shard<'g, 'k, K, R = RangeFull>
 where
     K: Key,
 {
-    root: *mut Atomic<Edge<K::Edge>>,
-    edge: ribbit::Packed<Edge<K::Edge>>,
+    root: *mut Atomic128<Edge<K::Edge>>,
+    edge: Edge<K::Edge>,
     prefix: K::Read<'k>,
     range: R,
-    _global: PhantomData<&'g Atomic<Edge<K::Edge>>>,
+    _global: PhantomData<&'g Atomic128<Edge<K::Edge>>>,
 }
 
 impl<'g, 'k, K, R> Shard<'g, 'k, K, R>
@@ -32,13 +32,15 @@ where
     R: raw::iter::Range<K::Read<'k>>,
 {
     #[inline]
-    pub(crate) unsafe fn new_all(root: &'g Atomic<Edge<K::Edge>>) -> Shard<'g, 'k, K, RangeFull> {
-        let edge = root.load_packed(Ordering::Relaxed);
+    pub(crate) unsafe fn new_all(
+        root: &'g Atomic128<Edge<K::Edge>>,
+    ) -> Shard<'g, 'k, K, RangeFull> {
+        let edge = root.load(Ordering::Relaxed);
         unsafe { Shard::new(root as *const _ as *mut _, edge, K::Read::default(), ..) }
     }
 
     pub(crate) unsafe fn new_prefix(
-        root: &'g Atomic<Edge<K::Edge>>,
+        root: &'g Atomic128<Edge<K::Edge>>,
         prefix: K::Read<'k>,
     ) -> Shard<'g, 'k, K, RangeFull> {
         let mut cursor = unsafe { Cursor::<_, path::Len<_>>::new(root, prefix) };
@@ -51,7 +53,7 @@ where
     }
 
     pub(crate) unsafe fn new_range(
-        root: &'g Atomic<Edge<K::Edge>>,
+        root: &'g Atomic128<Edge<K::Edge>>,
         range: R,
         prefix: K::Read<'k>,
     ) -> Shard<'g, 'k, K, R>
@@ -70,8 +72,8 @@ where
 
     #[inline]
     unsafe fn new(
-        root: *mut Atomic<Edge<K::Edge>>,
-        edge: ribbit::Packed<Edge<K::Edge>>,
+        root: *mut Atomic128<Edge<K::Edge>>,
+        edge: Edge<K::Edge>,
         prefix: K::Read<'k>,
         range: R,
     ) -> Shard<'g, 'k, K, R> {

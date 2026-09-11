@@ -89,8 +89,8 @@ pub(super) mod tests {
         /// 2. Has a unique key byte and index
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
         pub(crate) fn keys_get_consistent<H: Header>(header: H, lower: u8, upper: u8) {
-            let mut key_set = Set256::<core::sync::atomic::AtomicU64>::default();
-            let mut index_set = Set256::<core::sync::atomic::AtomicU64>::default();
+            let mut key_set = Set256::default();
+            let mut index_set = Set256::default();
 
             let mut keys = H::KeyIter::default();
             header.keys(Some(lower), Some(upper), &mut keys);
@@ -253,7 +253,7 @@ pub(super) mod tests {
         {
             let expect = header.get(key);
             let len = header.len();
-            let mut expected_key_set = Set256::<core::sync::atomic::AtomicU64>::default();
+            let mut expected_key_set = Set256::default();
             let mut iter = H::KeyIter::default();
             header.keys(None, None, &mut iter);
             for entry in iter {
@@ -268,7 +268,7 @@ pub(super) mod tests {
                     header.keys(None, None, &mut iter);
                     let get_or_insert = get_or_insert.join().unwrap();
 
-                    let mut actual_key_set = Set256::<core::sync::atomic::AtomicU64>::default();
+                    let mut actual_key_set = Set256::default();
                     let mut actual_index = None;
                     for entry in iter {
                         assert!(actual_key_set.insert_mut(entry.key));

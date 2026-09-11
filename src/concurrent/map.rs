@@ -25,6 +25,7 @@ use crate::raw::edge::Meta as _;
 use crate::raw::key::Len as _;
 use crate::sequential;
 use crate::stat;
+use crate::sync::Convert as _;
 
 /// See [`smr::Guard`].
 pub type Guard<'g, K, V, S> = <S as Smr<K, V>>::Guard<'g>;
@@ -1131,7 +1132,7 @@ where
     unsafe fn get_raw<'g>(&'g self, _guard: &mut S::Guard<'g>, reader: K::Read<'_>) -> Option<u64> {
         unsafe {
             let mut cursor = self.seq.raw.cursor::<path::Discard<_>>(reader);
-            let walk = cursor.edge().load_packed(Ordering::Relaxed);
+            let walk = cursor.edge().load(Ordering::Relaxed);
             cursor
                 .traverse_value(walk)
                 .map(|cursor::Value { value, edge: _ }| {
@@ -1189,7 +1190,7 @@ where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-        let mut walk = cursor.edge().load_packed(Ordering::Relaxed);
+        let mut walk = cursor.edge().load(Ordering::Relaxed);
 
         loop {
             match unsafe { cursor.traverse_insert(walk) } {
@@ -1215,7 +1216,7 @@ where
                         initial = Some(new_value);
                     } else {
                         let (new_edge, _) = cursor.create_path(old_edge, new_value);
-                        match cursor.edge().compare_exchange_packed(
+                        match cursor.edge().compare_exchange(
                             old_edge,
                             new_edge,
                             // Technically, if `new_edge` is an inline value, this could be relaxed.
@@ -1252,7 +1253,7 @@ where
                         old_node.freeze::<K::Edge>();
                         old_node.replace(old_edge.meta())
                     };
-                    match cursor.edge().compare_exchange_packed(
+                    match cursor.edge().compare_exchange(
                         old_edge,
                         new_edge,
                         Ordering::Release,
@@ -1329,7 +1330,7 @@ where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-        let mut walk = cursor.edge().load_packed(Ordering::Relaxed);
+        let mut walk = cursor.edge().load(Ordering::Relaxed);
 
         loop {
             let cursor::Value {
@@ -1357,7 +1358,7 @@ where
                 }
             };
 
-            match cursor.edge().compare_exchange_packed(
+            match cursor.edge().compare_exchange(
                 old_edge,
                 Edge::new_value(old_edge.meta(), new_value),
                 if V::INDIRECT {
@@ -1421,7 +1422,7 @@ where
         F: FnMut(u64) -> ControlFlow<(), ()>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-        let mut walk = cursor.edge().load_packed(Ordering::Relaxed);
+        let mut walk = cursor.edge().load(Ordering::Relaxed);
 
         let (value, edge) = loop {
             let cursor::Value { value, edge } = match unsafe { cursor.traverse_value(walk) } {
@@ -1446,7 +1447,7 @@ where
                 }
             }
 
-            match cursor.edge().compare_exchange_packed(
+            match cursor.edge().compare_exchange(
                 edge,
                 Edge::NULL,
                 // Relaxed because publishing `Edge::NULL`
@@ -1472,7 +1473,7 @@ where
                 cursor.trim(K::Len::BYTE + trim);
                 pop += 1;
 
-                let mut old_edge = cursor.edge().load_packed(Ordering::Relaxed);
+                let mut old_edge = cursor.edge().load(Ordering::Relaxed);
 
                 'freeze: loop {
                     let addr = cursor.edge();
@@ -1528,7 +1529,7 @@ where
         &'g self,
         guard: &mut S::Guard<'g>,
         cursor: &mut Cursor<K::Read<'k>, P>,
-    ) -> Result<ribbit::Packed<Edge<K::Edge>>, P::PopError>
+    ) -> Result<Edge<K::Edge>, P::PopError>
     where
         P: Path<K::Read<'k>>,
     {
@@ -1539,7 +1540,7 @@ where
                 old_len,
                 old_node,
                 // Need to load here since we just popped
-                cursor.edge().load_packed(Ordering::Relaxed),
+                cursor.edge().load(Ordering::Relaxed),
             )
         }? {
             cursor::Freeze::Traverse { edge }

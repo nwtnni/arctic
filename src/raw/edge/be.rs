@@ -1,41 +1,41 @@
 //! [`Be`] stores edge metadata for integers and big-endian systems.
 
 use core::cmp;
+use core::fmt::Debug;
 use core::ops::BitAnd as _;
 use core::ops::BitOr as _;
 
-use ribbit::Unpack;
-use ribbit::u3;
 use ribbit::u6;
-use ribbit::u56;
 
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
+use crate::raw::edge::Meta as _;
+use crate::sync::Convert;
 
 /// Edge metadata storing compressed edge bytes starting at most significant byte.
 ///
 /// Optimized for integer keys, or slice keys on big-endian systems.
-#[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 64, derive(Debug))]
-pub struct Be {
-    value: bool,
-    frozen: bool,
-    #[ribbit(offset = 3)]
-    len: u3,
-    #[ribbit(offset = 8)]
-    prefix: u56,
-}
+// Layout:
+// - 0: value
+// - 1: frozen
+// - 2: padding for len
+// - 3..6: len
+// - 6..8: zero
+// - 8..16: least significant key byte
+// - ...
+// - 56..64: most significant key byte
+#[derive(Copy, Clone)]
+pub struct Be(u64);
 
 impl Be {
-    const MASK_FLAG: u64 = 0b111;
-    const MASK_LEN: u64 = 0b11_1000;
+    const MASK_VALUE: u64 = 1;
+    const MASK_FROZEN: u64 = 1 << 1;
+    const MASK_LEN: u64 = ((1 << 3) - 1) << 3;
 
     #[inline]
-    pub(crate) fn new(value: u64, len: u6) -> ribbit::Packed<Self> {
+    pub(crate) fn new(value: u64, len: u6) -> Self {
         validate_eq!(len.bits() & 0b111, 0);
-        unsafe {
-            ribbit::Packed::<Self>::from_raw_unchecked(value & Self::mask(len) | len.bits() as u64)
-        }
+        unsafe { Self::from_raw_unchecked(value & Self::mask(len) | len.bits() as u64) }
     }
 
     #[inline]
@@ -44,59 +44,47 @@ impl Be {
     }
 }
 
-impl BePacked {
-    #[inline]
-    pub(crate) fn raw(self) -> u64 {
-        Unpack::into_raw(self)
-    }
-}
-
-impl IntoIterator for BePacked {
-    type Item = u8;
-    type IntoIter = core::iter::Take<core::array::IntoIter<u8, 8>>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.raw()
-            .to_be_bytes()
-            .into_iter()
-            .take(self.len().value() as usize)
-    }
-}
-
-impl edge::Meta for BePacked {
-    const NULL: Self = Self::new(false, false, u3::new(0), u56::new(0));
+impl edge::Meta for Be {
+    const NULL: Self = Self(0);
 
     type Len = u6;
 
     #[inline]
     fn len(self) -> Self::Len {
-        unsafe { u6::new_unchecked((self.raw() & Be::MASK_LEN) as u8) }
+        unsafe { u6::new_unchecked((self.into_raw() & Be::MASK_LEN) as u8) }
     }
 
     #[inline]
     fn is_value(self) -> bool {
-        self.value()
+        self.0 & Self::MASK_VALUE > 0
     }
 
     #[inline]
     fn is_frozen(self) -> bool {
-        self.frozen()
+        self.0 & Self::MASK_FROZEN > 0
     }
 
     #[inline]
     fn with_value(self, value: bool) -> Self {
-        self.with_value(value)
+        Self(if value {
+            self.0 | Self::MASK_VALUE
+        } else {
+            self.0 & !Self::MASK_VALUE
+        })
     }
 
     #[inline]
     fn with_frozen(self, frozen: bool) -> Self {
-        self.with_frozen(frozen)
+        Self(if frozen {
+            self.0 | Self::MASK_FROZEN
+        } else {
+            self.0 & !Self::MASK_FROZEN
+        })
     }
 
     fn try_compress(self, byte: u8, child: Self) -> Option<Self> {
-        validate!(!self.frozen());
-        validate!(!self.value());
+        validate!(!self.is_frozen());
+        validate!(!self.is_value());
 
         let len_parent = edge::Meta::len(self);
         let len_byte = Self::Len::BYTE.value();
@@ -107,15 +95,16 @@ impl edge::Meta for BePacked {
         Some(unsafe {
             Self::from_raw_unchecked(
                 // Parent prefix
-                self.raw()
+                self.into_raw()
                     // Byte
                     .bitor((byte as u64).rotate_right(index_child))
                     // Child prefix
-                    .bitor(child.raw() >> index_child)
-                    // Length and flags
+                    .bitor(child.into_raw() >> index_child)
+                    // Length
                     .bitand(Be::mask(len))
                     .bitor(len.value() as u64)
-                    .bitor(child.raw() & Be::MASK_FLAG),
+                    // Preserve child flags
+                    .bitor(child.into_raw() & (Self::MASK_VALUE | Self::MASK_FROZEN)),
             )
         })
     }
@@ -127,17 +116,17 @@ impl edge::Meta for BePacked {
             return None;
         }
 
-        let parent = Be::new(self.raw(), index);
-        let byte = self.raw().rotate_left(8 + index.value() as u32) as u8;
+        let parent = Be::new(self.into_raw(), index);
+        let byte = self.into_raw().rotate_left(8 + index.value() as u32) as u8;
         let index_child = index + Self::Len::BYTE;
         let len_child = len - index_child;
 
         let child = unsafe {
             Self::from_raw_unchecked(
-                (self.raw() << index_child.value())
+                (self.into_raw() << index_child.value())
                     .bitand(Be::mask(len_child))
                     .bitor(len_child.value() as u64)
-                    .bitor(self.raw() & Be::MASK_FLAG),
+                    .bitor(self.into_raw() & (Self::MASK_VALUE | Self::MASK_FROZEN)),
             )
         };
 
@@ -145,30 +134,65 @@ impl edge::Meta for BePacked {
     }
 }
 
-impl Eq for BePacked {}
+impl IntoIterator for Be {
+    type Item = u8;
+    type IntoIter = core::iter::Take<core::array::IntoIter<u8, 8>>;
 
-impl PartialEq for BePacked {
     #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        ((self.raw() ^ other.raw()) & !Be::MASK_FLAG) == 0
+    fn into_iter(self) -> Self::IntoIter {
+        self.into_raw()
+            .to_be_bytes()
+            .into_iter()
+            .take(self.len().value() as usize)
     }
 }
 
-impl Ord for BePacked {
+impl Eq for Be {}
+
+impl PartialEq for Be {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        ((self.into_raw() ^ other.into_raw()) & !(Self::MASK_VALUE | Self::MASK_FROZEN)) == 0
+    }
+}
+
+impl Ord for Be {
     #[inline]
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         if self == other {
             return cmp::Ordering::Equal;
         }
 
-        self.raw().cmp(&other.raw())
+        self.into_raw().cmp(&other.into_raw())
     }
 }
 
-impl PartialOrd for BePacked {
+impl PartialOrd for Be {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl Convert<u64> for Be {
+    #[inline]
+    fn into_raw(self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
+impl Debug for Be {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Be")
+            .field("value", &self.is_value())
+            .field("frozen", &self.is_frozen())
+            .field("keys", &&self.0.to_be_bytes()[..self.len().bytes()])
+            .finish()
     }
 }
 

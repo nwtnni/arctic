@@ -157,7 +157,6 @@ mod seal {
 pub(crate) trait Terminate:
     Debug + Default + Eq + ribbit::Pack<Packed = Self> + Send + Sync + 'static + seal::Seal
 {
-    const FALSE: Self;
     const TRUE: Self;
 
     fn new(terminate: bool) -> Self;
@@ -170,7 +169,6 @@ pub(crate) trait Terminate:
 
 impl seal::Seal for () {}
 impl Terminate for () {
-    const FALSE: Self = ();
     const TRUE: Self = ();
 
     #[inline]
@@ -194,7 +192,6 @@ impl Terminate for () {
 
 impl seal::Seal for bool {}
 impl Terminate for bool {
-    const FALSE: Self = false;
     const TRUE: Self = true;
 
     #[inline]

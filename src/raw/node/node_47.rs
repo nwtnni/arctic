@@ -15,7 +15,6 @@ use fearless_simd::SimdFrom as _;
 use fearless_simd::SimdInt as _;
 use fearless_simd::SimdMask as _;
 use fearless_simd::u8x16;
-use ribbit::u6;
 
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
@@ -25,7 +24,9 @@ use crate::raw::node::header;
 use crate::raw::node::iter::KeyIndex;
 use crate::raw::node::iter::KeyIter47;
 use crate::stat;
-use crate::sync::Atomic;
+use crate::sync::Atomic64;
+use crate::sync::Atomic128;
+use crate::sync::Convert;
 
 const CAPACITY: usize = 47;
 
@@ -37,10 +38,7 @@ pub(super) struct Node47(Node<CAPACITY, Header>);
 const_assert_size_align!(Node47, 1024, 1024);
 
 impl Node47 {
-    pub(super) unsafe fn new_unchecked(
-        keys: &[u8],
-        edges: &[ribbit::Packed<edge::Raw>],
-    ) -> Box<Self> {
+    pub(super) unsafe fn new_unchecked(keys: &[u8], edges: &[edge::Raw]) -> Box<Self> {
         validate!(crate::raw::is_unique(keys));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= CAPACITY);
@@ -55,14 +53,13 @@ impl Node47 {
             row.set(new);
         }
 
-        *node.0.header.meta.get_mut_packed() = ribbit::Packed::<Meta>::new(
-            keys.last().copied().unwrap(),
-            false,
-            u6::new(keys.len() as u8),
-        );
+        node.0
+            .header
+            .meta
+            .set(Meta::new(keys.last().copied().unwrap(), keys.len()));
 
         for (out, r#in) in node.0.edges.iter_mut().zip(edges) {
-            *out.get_mut_packed() = *r#in;
+            out.set(*r#in);
         }
 
         node
@@ -80,10 +77,10 @@ impl Deref for Node47 {
 #[repr(C, align(16))]
 #[derive(Clone)]
 pub(super) struct Header {
-    indices: [Atomic<u128>; 16],
+    indices: [Atomic128<u128>; 16],
     // Place `meta` after `indices to make sure former
     // is 16-byte aligned for SIMD.
-    meta: Atomic<Meta>,
+    meta: Atomic64<Meta>,
 }
 
 // NOTE: we fill in uninitialized indices with 0x7F as opposed to
@@ -97,8 +94,8 @@ const UNINIT: u128 = 0x7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F_7F7F;
 impl Default for Header {
     fn default() -> Self {
         Self {
-            indices: core::array::from_fn(|_| Atomic::new_packed(UNINIT)),
-            meta: Atomic::new_packed(Meta::DEFAULT),
+            indices: core::array::from_fn(|_| Atomic128::new(UNINIT)),
+            meta: Atomic64::new(Meta::DEFAULT),
         }
     }
 }
@@ -108,12 +105,12 @@ unsafe impl header::Header for Header {
     type KeyIter = KeyIter47;
 
     fn freeze(&self) -> usize {
-        let mut old = self.meta.load_packed(Ordering::Relaxed);
-        while !old.frozen() {
+        let mut old = self.meta.load(Ordering::Relaxed);
+        while !old.is_frozen() {
             self.ensure_meta_consistent(old);
-            match self.meta.compare_exchange_packed(
+            match self.meta.compare_exchange(
                 old,
-                old.with_frozen(true),
+                old.freeze(),
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
@@ -121,7 +118,7 @@ unsafe impl header::Header for Header {
                 Err(conflict) => old = conflict,
             }
         }
-        old.len().value() as usize
+        old.len() as usize
     }
 
     fn get(&self, key: u8) -> Option<u8> {
@@ -138,7 +135,7 @@ unsafe impl header::Header for Header {
             }
 
             let old = self.meta_consistent();
-            let len = old.len().value();
+            let len = old.len();
 
             // NOTE: tricky edge case here, where the above `get`
             // call returns `None` between another thread updating
@@ -149,15 +146,15 @@ unsafe impl header::Header for Header {
                 return index;
             }
 
-            if len == CAPACITY as u8 || old.frozen() {
+            if len == CAPACITY as u8 || old.is_frozen() {
                 return None;
             }
 
-            let new = old.with_len(u6::new(len + 1)).with_last(key);
+            let new = Meta::new(key, len as usize + 1);
 
             match self
                 .meta
-                .compare_exchange_packed(old, new, Ordering::Relaxed, Ordering::Relaxed)
+                .compare_exchange(old, new, Ordering::Relaxed, Ordering::Relaxed)
             {
                 Ok(_) => {
                     self.ensure_meta_consistent(new);
@@ -169,7 +166,7 @@ unsafe impl header::Header for Header {
     }
 
     // fn insert(&mut self, key: u8) -> Option<u8> {
-    //     let old_meta = self.meta.get_packed();
+    //     let old_meta = self.meta.get();
     //     let len = old_meta.len().value();
     //
     //     validate!(!old_meta.frozen());
@@ -180,7 +177,7 @@ unsafe impl header::Header for Header {
     //     }
     //
     //     let new_meta = old_meta.with_len(u6::new(len + 1)).with_last(key);
-    //     self.meta.set_packed(new_meta);
+    //     self.meta.set(new_meta);
     //
     //     let (row, col) = Self::key_to_row_col(key);
     //
@@ -221,19 +218,19 @@ unsafe impl header::Header for Header {
     }
 
     fn is_frozen(&self) -> bool {
-        self.meta.load_packed(Ordering::Relaxed).frozen()
+        self.meta.load(Ordering::Relaxed).is_frozen()
     }
 }
 
 impl Header {
-    fn meta_consistent(&self) -> ribbit::Packed<Meta> {
-        let meta = self.meta.load_packed(Ordering::Relaxed);
+    fn meta_consistent(&self) -> Meta {
+        let meta = self.meta.load(Ordering::Relaxed);
         self.ensure_meta_consistent(meta);
         meta
     }
 
-    fn ensure_meta_consistent(&self, meta: ribbit::Packed<Meta>) {
-        let len = meta.len().value();
+    fn ensure_meta_consistent(&self, meta: Meta) {
+        let len = meta.len();
         validate!(len <= CAPACITY as u8);
         let index = len - 1;
 
@@ -266,7 +263,7 @@ impl Header {
     }
 
     pub(super) fn len(&self) -> u8 {
-        self.meta.load_packed(Ordering::Relaxed).len().value()
+        self.meta.load(Ordering::Relaxed).len()
     }
 
     pub(super) fn indices(&self) -> [u128; 16] {
@@ -346,7 +343,7 @@ impl Header {
 
 impl Debug for Header {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let meta = self.meta.load_packed(Ordering::Relaxed);
+        let meta = self.meta.load(Ordering::Relaxed);
         let mut iter = KeyIter47::default();
         header::Header::keys(
             self,
@@ -357,28 +354,66 @@ impl Debug for Header {
 
         f.debug_struct("Header")
             .field("len", &iter.0.tail)
-            .field("frozen", &meta.frozen())
+            .field("frozen", &meta.is_frozen())
             .field("last", &meta.last())
             .field("keys", &iter)
             .finish()
     }
 }
 
-#[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 16, derive(Debug))]
-struct Meta {
-    last: u8,
-    frozen: bool,
-    len: u6,
-}
+// Layout:
+// - 0..8: last key byte appended
+// - 8: frozen bit
+// - 9..15: len
+// - 15..64: zero
+#[derive(Copy, Clone, Debug)]
+struct Meta(u64);
 
 impl Meta {
-    const DEFAULT: ribbit::Packed<Self> = ribbit::Packed::<Self>::new(0, false, u6::new(0));
+    const DEFAULT: Self = Self(0);
+
+    const MASK_FROZEN: u64 = 1 << 8;
+    const SHIFT_LEN: usize = 9;
+
+    #[inline]
+    const fn new(last: u8, len: usize) -> Self {
+        validate!(len <= 47);
+        Self(last as u64 | ((len as u64) << Self::SHIFT_LEN))
+    }
+
+    #[inline]
+    const fn freeze(self) -> Self {
+        validate!(!self.is_frozen());
+        Self(self.0 | Self::MASK_FROZEN)
+    }
+
+    #[inline]
+    const fn is_frozen(self) -> bool {
+        self.0 & Self::MASK_FROZEN > 0
+    }
+
+    #[inline]
+    const fn last(self) -> u8 {
+        self.0 as u8
+    }
+
+    #[inline]
+    const fn len(self) -> u8 {
+        let len = self.0 >> Self::SHIFT_LEN;
+        validate!(len <= 47);
+        len as u8
+    }
 }
 
-impl Default for MetaPacked {
-    fn default() -> Self {
-        Meta::DEFAULT
+impl Convert<u64> for Meta {
+    #[inline]
+    fn into_raw(self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
+        Self(raw)
     }
 }
 
@@ -395,7 +430,7 @@ impl proptest::arbitrary::Arbitrary for Header {
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
     fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
-        use core::sync::atomic::AtomicU64;
+        use core::sync::atomic::Atomic128U64;
 
         use proptest::bits::SampledBitSetStrategy;
         use proptest::strategy::Strategy as _;
@@ -405,7 +440,7 @@ impl proptest::arbitrary::Arbitrary for Header {
         assert!(max_len <= 47);
 
         (
-            SampledBitSetStrategy::<crate::raw::set::Set256<AtomicU64>>::new(
+            SampledBitSetStrategy::<crate::raw::set::Set256<Atomic128U64>>::new(
                 min_len.value() as usize..=max_len.value() as usize,
                 u8::MIN as usize..=u8::MAX as usize,
             )
@@ -421,8 +456,8 @@ impl proptest::arbitrary::Arbitrary for Header {
                 }
 
                 Self {
-                    indices: core::array::from_fn(|i| crate::sync::Atomic::new(indices[i])),
-                    meta: crate::sync::Atomic::new(Meta {
+                    indices: core::array::from_fn(|i| crate::sync::Atomic128::new(indices[i])),
+                    meta: crate::sync::Atomic128::new(Meta {
                         last: keys.last().copied().unwrap(),
                         frozen,
                         len: u6::new(keys.len() as u8),

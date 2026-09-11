@@ -6,23 +6,22 @@ use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
 use fearless_simd::u16x16;
-use ribbit::Pack as _;
 use ribbit::u2;
 
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 /// Iterator over key-edge pairs.
 pub(crate) struct EntryIter<'g> {
     keys: KeyIter,
-    edges: NonNull<Atomic<edge::Raw>>,
+    edges: NonNull<Atomic128<edge::Raw>>,
 
     #[cfg(feature = "validate")]
     len: u16,
 
-    _slice: PhantomData<&'g [Atomic<edge::Raw>]>,
+    _slice: PhantomData<&'g [Atomic128<edge::Raw>]>,
 }
 
 impl<'g> EntryIter<'g> {
@@ -30,7 +29,7 @@ impl<'g> EntryIter<'g> {
     ///
     /// Caller must guarantee all indices produced by `keys` are < `edges.len()`.
     #[inline]
-    pub(crate) unsafe fn new(keys: KeyIter, edges: &'g [Atomic<edge::Raw>]) -> Self {
+    pub(crate) unsafe fn new(keys: KeyIter, edges: &'g [Atomic128<edge::Raw>]) -> Self {
         Self {
             keys,
             edges: NonNull::from(edges).cast(),
@@ -44,7 +43,7 @@ impl<'g> EntryIter<'g> {
 }
 
 impl<'g> Iterator for EntryIter<'g> {
-    type Item = (u8, NonNull<Atomic<edge::Raw>>);
+    type Item = (u8, NonNull<Atomic128<edge::Raw>>);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -237,19 +236,17 @@ impl KeyIter {
     };
 
     #[inline]
-    fn r#type(&self) -> ribbit::Packed<node::Type> {
+    fn r#type(&self) -> node::Type {
         // `node_3` and `node_256` are structs with endian-independent layout
         // `node_15` and `node_47` use an endian-dependent shift when encoding
         let byte = unsafe { self.raw[7] };
-        let r#type = u2::extract_u8(byte, TYPE_SHIFT_BYTE);
-        // SAFETY: every `u2` is a valid `ribbit::Packed<node::Type>`
-        unsafe { ribbit::Packed::<node::Type>::from_raw_unchecked(r#type) }
+        node::Type::new_masked(byte >> TYPE_SHIFT_BYTE)
     }
 
     #[inline]
     pub(super) fn new_3(node_3: KeyIter3) -> Self {
         let iter = Self { node_3 };
-        validate_eq!(iter.r#type(), node::Type::Node3.pack());
+        validate_eq!(iter.r#type(), node::Type::Node3);
         iter
     }
 
@@ -268,7 +265,7 @@ impl KeyIter {
             }),
         };
 
-        validate_eq!(iter.r#type(), node::Type::Node15.pack());
+        validate_eq!(iter.r#type(), node::Type::Node15);
         iter
     }
 
@@ -287,20 +284,20 @@ impl KeyIter {
             }),
         };
 
-        validate_eq!(iter.r#type(), node::Type::Node47.pack());
+        validate_eq!(iter.r#type(), node::Type::Node47);
         iter
     }
 
     #[inline]
     pub(super) fn new_256(node_256: KeyIter256) -> Self {
         let iter = Self { node_256 };
-        validate_eq!(iter.r#type(), node::Type::Node256.pack());
+        validate_eq!(iter.r#type(), node::Type::Node256);
         iter
     }
 
     #[inline]
     unsafe fn as_node_15_unchecked(&self) -> NonNull<KeyIter15> {
-        validate_eq!(self.r#type(), node::Type::Node15.pack());
+        validate_eq!(self.r#type(), node::Type::Node15);
 
         unsafe {
             self.node_15.map_addr(|addr| {
@@ -312,7 +309,7 @@ impl KeyIter {
 
     #[inline]
     unsafe fn as_node_47_unchecked(&self) -> NonNull<KeyIter47> {
-        validate_eq!(self.r#type(), node::Type::Node47.pack());
+        validate_eq!(self.r#type(), node::Type::Node47);
 
         unsafe {
             self.node_47.map_addr(|addr| {

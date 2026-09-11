@@ -22,13 +22,13 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node::Lower as _;
 use crate::raw::node::Upper as _;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 pub(crate) enum RangeIter<'g, K: key::Read, W: key::Write<K>, R: Range<K>> {
     Root {
         writer: W,
         #[expect(clippy::type_complexity)]
-        next: Option<(u64, NonNull<Atomic<Edge<K::Edge>>>)>,
+        next: Option<(u64, NonNull<Atomic128<Edge<K::Edge>>>)>,
     },
     Node(NodeIter<'g, K, W, R>),
 }
@@ -54,8 +54,8 @@ where
     R: Range<K>,
 {
     pub(crate) unsafe fn new_unchecked(
-        root: *mut Atomic<Edge<K::Edge>>,
-        edge: ribbit::Packed<Edge<K::Edge>>,
+        root: *mut Atomic128<Edge<K::Edge>>,
+        edge: Edge<K::Edge>,
         prefix: K,
         order: Option<Order>,
         range: &R,
@@ -100,7 +100,7 @@ where
     #[inline]
     pub(crate) fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
     where
-        F: FnMut(C, (&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+        F: FnMut(C, (&W, u64, NonNull<Atomic128<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
     {
         match self {
             RangeIter::Root { writer, mut next } => {
@@ -116,7 +116,7 @@ where
 
     #[inline]
     #[expect(clippy::type_complexity)]
-    pub(crate) fn lend(&mut self) -> Option<(&W, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
+    pub(crate) fn lend(&mut self) -> Option<(&W, u64, NonNull<Atomic128<Edge<K::Edge>>>)> {
         match self {
             RangeIter::Root { writer, next } => {
                 crate::cold();
@@ -155,7 +155,7 @@ where
 {
     #[inline]
     #[expect(clippy::type_complexity)]
-    fn lend(&mut self) -> Option<(&W, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
+    fn lend(&mut self) -> Option<(&W, u64, NonNull<Atomic128<Edge<K::Edge>>>)> {
         let next = match self.try_fold(None, |init, (_, value, edge)| {
             validate!(init.is_none());
             ControlFlow::Break((value, edge))
@@ -189,7 +189,7 @@ where
     // in the exterior is excluded.
     fn try_fold<F, B, C>(&mut self, mut init: C, mut apply: F) -> ControlFlow<B, C>
     where
-        F: FnMut(C, (&W, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+        F: FnMut(C, (&W, u64, NonNull<Atomic128<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
     {
         'vertical: loop {
             let Some((len, lower, upper, iter)) = self.stack.last_mut() else {
@@ -213,8 +213,8 @@ where
 
                 'flatten: loop {
                     let (meta, child) = {
-                        let edge = unsafe { edge.cast::<Atomic<Edge<K::Edge>>>().as_ref() }
-                            .load_packed(Ordering::Relaxed);
+                        let edge = unsafe { edge.cast::<Atomic128<Edge<K::Edge>>>().as_ref() }
+                            .load(Ordering::Relaxed);
                         let Some(child) = edge.child() else {
                             continue 'horizontal;
                         };
@@ -436,26 +436,26 @@ where
 
 trait Lower<M>: Debug
 where
-    M: ribbit::Pack<Packed: edge::Meta>,
+    M: edge::Meta,
 {
     type Bound: raw::node::Lower;
 
-    fn check(&mut self, edge: ribbit::Packed<M>) -> Option<Self::Bound>;
+    fn check(&mut self, edge: M) -> Option<Self::Bound>;
 }
 
 trait Upper<M>: Debug
 where
-    M: ribbit::Pack<Packed: edge::Meta>,
+    M: edge::Meta,
 {
     type Bound: raw::node::Upper;
 
-    fn check(&mut self, edge: ribbit::Packed<M>) -> Option<Self::Bound>;
+    fn check(&mut self, edge: M) -> Option<Self::Bound>;
 }
 
 #[expect(private_bounds)]
 impl<R: key::Read> Include<R> {
     #[inline]
-    fn check_eq(&mut self, len: <ribbit::Packed<R::Edge> as edge::Meta>::Len) -> Option<u8> {
+    fn check_eq(&mut self, len: <R::Edge as edge::Meta>::Len) -> Option<u8> {
         let next = self.0.get_byte(len);
         let skip = match next {
             None => R::Len::ZERO,
@@ -469,7 +469,7 @@ impl<R: key::Read> Include<R> {
 impl<R: key::Read> Lower<R::Edge> for Include<R> {
     type Bound = Option<u8>;
 
-    fn check(&mut self, edge: ribbit::Packed<R::Edge>) -> Option<Self::Bound> {
+    fn check(&mut self, edge: R::Edge) -> Option<Self::Bound> {
         let len = edge.len();
         match edge.cmp(&self.0.get_edge(len)) {
             cmp::Ordering::Less => None,
@@ -482,7 +482,7 @@ impl<R: key::Read> Lower<R::Edge> for Include<R> {
 impl<R: key::Read> Upper<R::Edge> for Include<R> {
     type Bound = Option<u8>;
 
-    fn check(&mut self, edge: ribbit::Packed<R::Edge>) -> Option<Self::Bound> {
+    fn check(&mut self, edge: R::Edge) -> Option<Self::Bound> {
         let len = edge.len();
         match edge.cmp(&self.0.get_edge(len)) {
             cmp::Ordering::Less => Some(None),
@@ -496,7 +496,7 @@ impl<R: key::Read> Lower<R::Edge> for Unbound<R> {
     type Bound = Unbound<R>;
 
     #[inline]
-    fn check(&mut self, _: ribbit::Packed<R::Edge>) -> Option<Self::Bound> {
+    fn check(&mut self, _: R::Edge) -> Option<Self::Bound> {
         Some(Unbound::default())
     }
 }
@@ -505,7 +505,7 @@ impl<R: key::Read> Upper<R::Edge> for Unbound<R> {
     type Bound = Unbound<R>;
 
     #[inline]
-    fn check(&mut self, _: ribbit::Packed<R::Edge>) -> Option<Self::Bound> {
+    fn check(&mut self, _: R::Edge) -> Option<Self::Bound> {
         Some(Unbound::default())
     }
 }

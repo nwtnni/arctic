@@ -7,19 +7,19 @@ use crate::raw::edge;
 use crate::raw::iter::Order;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
-pub(crate) struct PostorderIter<'g, M: ribbit::Pack> {
+pub(crate) struct PostorderIter<'g, M> {
     order: Option<Order>,
     stack: Vec<RepeatIter<'g, M>>,
 }
 
 impl<'g, M> PostorderIter<'g, M>
 where
-    M: ribbit::Pack<Packed: edge::Meta> + 'g,
+    M: edge::Meta + 'g,
 {
     #[inline]
-    pub(crate) unsafe fn new(root: &'g Atomic<Edge<M>>, order: Option<Order>) -> Self {
+    pub(crate) unsafe fn new(root: &'g Atomic128<Edge<M>>, order: Option<Order>) -> Self {
         // HACK: we're masquerading as a node here--this is okay
         // since this iterator doesn't keep track of the key state,
         // so we can use an arbitrary byte.
@@ -29,8 +29,8 @@ where
                 node::EntryIter::new(
                     node::KeyIter::ROOT,
                     core::slice::from_ref(core::mem::transmute::<
-                        &'g Atomic<Edge<M>>,
-                        &'g Atomic<edge::Raw>,
+                        &'g Atomic128<Edge<M>>,
+                        &'g Atomic128<edge::Raw>,
                     >(root)),
                 )
             })],
@@ -40,7 +40,7 @@ where
     #[inline]
     pub(crate) fn try_fold<F, B, C>(mut self, mut init: C, mut apply: F) -> ControlFlow<B, C>
     where
-        F: FnMut(C, (ribbit::Packed<M>, edge::Child)) -> ControlFlow<B, C>,
+        F: FnMut(C, (M, edge::Child)) -> ControlFlow<B, C>,
     {
         'vertical: loop {
             let Some(iter) = self.stack.last_mut() else {
@@ -55,7 +55,7 @@ where
 
                 'flatten: loop {
                     let (meta, child) = {
-                        let edge = unsafe { edge.as_ref() }.load_packed(Ordering::Relaxed);
+                        let edge = unsafe { edge.as_ref() }.load(Ordering::Relaxed);
                         let Some(child) = edge.child() else {
                             continue 'horizontal;
                         };
@@ -100,15 +100,15 @@ where
     }
 }
 
-struct RepeatIter<'g, M: ribbit::Pack> {
+struct RepeatIter<'g, M> {
     first: bool,
-    edge: NonNull<Atomic<Edge<M>>>,
+    edge: NonNull<Atomic128<Edge<M>>>,
     iter: node::EntryIter<'g>,
 }
 
 impl<'g, M> RepeatIter<'g, M>
 where
-    M: ribbit::Pack<Packed: edge::Meta> + 'g,
+    M: edge::Meta + 'g,
 {
     #[inline]
     fn new(iter: node::EntryIter<'g>) -> Self {
@@ -120,7 +120,7 @@ where
     }
 
     #[inline]
-    fn next(&mut self, order: Option<Order>) -> Option<(bool, NonNull<Atomic<Edge<M>>>)> {
+    fn next(&mut self, order: Option<Order>) -> Option<(bool, NonNull<Atomic128<Edge<M>>>)> {
         let first = self.first;
         self.first ^= true;
 

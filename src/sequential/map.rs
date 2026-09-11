@@ -161,7 +161,7 @@ where
     /// ```
     pub fn get_mut(&mut self, key: &K::Borrowed) -> Option<&mut V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(key) };
-        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        let walk = unsafe { cursor.edge_mut() }.get();
         unsafe { cursor.traverse_value(walk) }?;
         Some(unsafe { cursor.as_value_unchecked().cast::<V>().as_mut() })
     }
@@ -447,7 +447,7 @@ where
     #[inline]
     pub(super) fn get_raw(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        let walk = unsafe { cursor.edge_mut() }.get();
         unsafe { cursor.traverse_value(walk) }?;
         Some(unsafe { cursor.as_value_unchecked() })
     }
@@ -458,12 +458,12 @@ where
         value: u64,
     ) -> Result<(u64, NonNull<u64>), u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        let walk = unsafe { cursor.edge_mut() }.get();
         match unsafe { cursor.traverse_value(walk) } {
             None => Err(value),
             Some(update) => {
                 let edge = unsafe { cursor.edge_mut() };
-                *edge.get_mut_packed() = Edge::new_value(update.edge.meta(), value.into_raw());
+                edge.set(Edge::new_value(update.edge.meta(), value.into_raw()));
                 Ok((update.value, unsafe {
                     Edge::as_value_unchecked(NonNull::from(edge))
                 }))
@@ -476,12 +476,12 @@ where
         reader: K::Read<'k>,
     ) -> Option<u64> {
         let mut cursor = unsafe { self.raw.cursor::<path::Full<_>>(reader) };
-        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        let walk = unsafe { cursor.edge_mut().get() };
 
         let update = unsafe { cursor.traverse_value(walk) }?;
 
         unsafe {
-            *cursor.edge_mut().get_mut_packed() = Edge::<K::Edge>::NULL;
+            cursor.edge_mut().set(Edge::<K::Edge>::NULL);
         }
 
         while let Ok(Some((_, target))) = cursor.pop() {
@@ -489,11 +489,11 @@ where
                 break;
             }
 
-            let old = unsafe { cursor.edge_mut() }.get_mut_packed();
+            let old = unsafe { cursor.edge_mut() }.get();
             validate_eq!(old.child(), Some(edge::Child::Node(target)));
 
             let (_smo, new) = unsafe { target.replace::<K::Edge>(old.meta()) };
-            *unsafe { cursor.edge_mut() }.get_mut_packed() = new;
+            unsafe { cursor.edge_mut() }.set(new);
             unsafe { target.deallocate() };
         }
 
@@ -503,7 +503,7 @@ where
     #[inline]
     pub(super) unsafe fn entry_raw<'k>(&mut self, reader: K::Read<'k>) -> Entry<'_, 'k, K, V> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-        let walk = unsafe { *cursor.edge_mut().get_mut_packed() };
+        let walk = unsafe { cursor.edge_mut() }.get();
         match unsafe { cursor.traverse_insert(walk) } {
             raw::cursor::Insert::Value {
                 value: Some(_),
@@ -680,12 +680,12 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
     /// See: [`btree_map::VacantEntry::insert_entry`].
     pub fn insert_entry(mut self, value: V) -> Occupied<'g, V> {
         let new_value = V::into_raw(value);
-        let mut old_edge = unsafe { *self.cursor.edge_mut().get_mut_packed() };
+        let mut old_edge = unsafe { self.cursor.edge_mut() }.get();
 
         if self.replace {
             let old_node = old_edge.as_node().expect("Replace implies node");
             let (_smo, new_edge) = unsafe { old_node.replace(old_edge.meta()) };
-            *unsafe { self.cursor.edge_mut() }.get_mut_packed() = new_edge;
+            unsafe { self.cursor.edge_mut() }.set(new_edge);
             old_edge = new_edge;
             stat::increment(stat::Counter::FreeRetire);
             unsafe { old_node.deallocate() };
@@ -702,7 +702,7 @@ impl<'g, 'k, K: Key, V: Value + 'g> Vacant<'g, 'k, K, V> {
                 edge: old,
             } => {
                 let (head, tail) = self.cursor.create_path(old, new_value);
-                *unsafe { self.cursor.edge_mut() }.get_mut_packed() = head;
+                unsafe { self.cursor.edge_mut() }.set(head);
 
                 let value = match tail {
                     None => unsafe { self.cursor.as_value_unchecked() },

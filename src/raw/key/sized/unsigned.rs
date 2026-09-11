@@ -9,6 +9,7 @@ use crate::raw::key;
 use crate::raw::key::Bit;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
+use crate::sync::Convert as _;
 
 macro_rules! impl_key {
     ($($ty:ty),* $(,)?) => {
@@ -134,10 +135,7 @@ impl<N: Native> key::Read for Reader<N> {
     }
 
     #[inline]
-    fn get_edge(
-        &self,
-        len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
-    ) -> ribbit::Packed<Self::Edge> {
+    fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
         let len = u6::new(self.len.min(len.into()).0);
         edge::Be::new(self.buffer.most_significant_u64(), len)
     }
@@ -153,8 +151,8 @@ impl<N: Native> key::Read for Reader<N> {
     }
 
     #[inline]
-    fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        Bit((edge.raw() ^ self.buffer.most_significant_u64()).leading_zeros() as u8)
+    fn match_prefix(&self, edge: Self::Edge) -> Self::Len {
+        Bit((edge.into_raw() ^ self.buffer.most_significant_u64()).leading_zeros() as u8)
     }
 
     #[inline]
@@ -205,24 +203,24 @@ impl<N: Native> key::Write<Reader<N>> for Writer<N> {
     type Len = Bit;
 
     #[inline]
-    fn new(prefix: Reader<N>, edge: ribbit::Packed<edge::Be>) -> (Self, Self::Len) {
+    fn new(prefix: Reader<N>, edge: edge::Be) -> (Self, Self::Len) {
         let len = prefix.len() + edge.len().into();
 
         validate!(len.0 <= N::BITS);
 
         let writer = Self(
             prefix.buffer.most_significant(prefix.len.0)
-                | N::from_most_significant_u64(edge.raw()).unbounded_shr(prefix.len.0),
+                | N::from_most_significant_u64(edge.into_raw()).unbounded_shr(prefix.len.0),
         );
 
         (writer, len)
     }
 
     #[inline]
-    fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<edge::Be>) -> Self::Len {
+    fn replace(&mut self, start: Self::Len, node: u8, edge: edge::Be) -> Self::Len {
         self.0 = self.0.most_significant(start.0)
             | (N::from_u8(node) >> start.0)
-            | (N::from_most_significant_u64(edge.raw()).unbounded_shr(8 + start.0));
+            | (N::from_most_significant_u64(edge.into_raw()).unbounded_shr(8 + start.0));
 
         start + Bit::BYTE + edge.len().into()
     }

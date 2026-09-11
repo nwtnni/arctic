@@ -1,72 +1,92 @@
 use core::fmt::Debug;
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use ribbit::u13;
-use ribbit::u48;
 
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key::Terminate;
+use crate::sync::Convert;
 
-#[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 64, derive(Debug))]
+// Layout:
+// - 0..48: ptr
+// - 48: value
+// - 49: frozen
+// - 50: terminate
+// - 51..64 len
+#[derive(Copy, Clone)]
 pub struct Slice<T> {
-    ptr: u48,
-    #[ribbit(get(vis = "pub(crate)"))]
-    len: u13,
-    value: bool,
-    frozen: bool,
-    #[ribbit(size = 1)]
-    pub(crate) terminate: T,
+    raw: *const u8,
+    terminate: PhantomData<T>,
 }
 
-impl<T: ribbit::Pack<Packed: Default>> Slice<T> {
+unsafe impl<T> Sync for Slice<T> {}
+unsafe impl<T> Send for Slice<T> {}
+
+impl<T> Slice<T> {
+    const MASK_PTR: usize = (1 << 48) - 1;
+    const MASK_VALUE: usize = 1 << 48;
+    const MASK_FROZEN: usize = 1 << 49;
+    const MASK_TERMINATE: usize = 1 << 50;
+    const SHIFT_LEN: usize = 51;
+
     #[inline]
-    pub(crate) fn new(ptr: NonNull<u8>, len: usize) -> ribbit::Packed<Self> {
-        validate!(len < u16::MAX as usize);
-        let len = u13::new(len as u16);
-        let ptr = ptr.as_ptr().expose_provenance() as u64;
-        validate!(ptr > 1 && ptr < (1 << 48));
-        ribbit::Packed::<Self>::new(
-            u48::new(ptr),
-            len,
-            false,
-            false,
-            ribbit::Packed::<T>::default(),
-        )
+    pub(crate) fn new(ptr: NonNull<u8>, len: usize) -> Self {
+        validate!(len < u13::MAX.value() as usize);
+
+        Self {
+            raw: ptr.as_ptr().map_addr(|addr| {
+                validate_eq!(addr & !Self::MASK_PTR, 0);
+                addr | (len << Self::SHIFT_LEN)
+            }),
+            terminate: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn with_terminate(self, terminate: bool) -> Self {
+        Self {
+            raw: self.raw.map_addr(|addr| {
+                if terminate {
+                    addr | Self::MASK_TERMINATE
+                } else {
+                    addr & !Self::MASK_TERMINATE
+                }
+            }),
+            terminate: PhantomData,
+        }
     }
 }
 
-impl<T: ribbit::Pack> SlicePacked<T> {
+static EMPTY: &[u8] = &[];
+
+impl<T> Slice<T> {
     #[inline]
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
-        let ptr = self.as_ptr();
-        if ptr.is_null() {
-            return &[];
+        if self.raw.is_null() {
+            return EMPTY;
         }
-        let len = self.len().value() as usize;
+
+        let ptr = self.raw.map_addr(|addr| addr & Self::MASK_PTR);
+        let len = self.raw.addr() >> Self::SHIFT_LEN;
         unsafe { core::slice::from_raw_parts(ptr, len) }
     }
 
     #[inline]
     pub(crate) fn as_ptr(&self) -> *const u8 {
-        core::ptr::with_exposed_provenance(self.ptr().value() as usize)
-    }
-
-    #[inline]
-    pub(crate) fn as_non_null(&self) -> NonNull<u8> {
-        NonNull::new(self.as_ptr().cast_mut()).expect("Null slice edge")
+        self.raw.map_addr(|addr| addr & Self::MASK_PTR)
     }
 }
 
-impl<T: Terminate> Default for SlicePacked<T> {
+impl<T: Terminate> Default for Slice<T> {
     fn default() -> Self {
         Self::NULL
     }
 }
 
-impl<T: ribbit::Pack> IntoIterator for SlicePacked<T> {
+impl<T: ribbit::Pack> IntoIterator for Slice<T> {
     type Item = u8;
     type IntoIter = std::vec::IntoIter<u8>;
     fn into_iter(self) -> Self::IntoIter {
@@ -74,47 +94,67 @@ impl<T: ribbit::Pack> IntoIterator for SlicePacked<T> {
     }
 }
 
-impl<T: Terminate> edge::Meta for SlicePacked<T> {
-    const NULL: Self = Self::new(
-        u48::new(0),
-        u13::new(0),
-        false,
-        false,
-        <T as Terminate>::FALSE,
-    );
+impl<T: Terminate> edge::Meta for Slice<T> {
+    const NULL: Self = Self {
+        raw: core::ptr::null(),
+        terminate: PhantomData,
+    };
+
     type Len = u13;
 
     #[inline]
     fn is_value(self) -> bool {
-        self.value()
+        self.raw.addr() & Self::MASK_VALUE > 0
     }
 
     #[inline]
     fn is_frozen(self) -> bool {
-        self.frozen()
+        self.raw.addr() & Self::MASK_FROZEN > 0
     }
 
     #[inline]
     fn is_terminate(self) -> bool {
-        self.terminate().get()
+        T::new(self.raw.addr() & Self::MASK_TERMINATE > 0).get()
     }
 
     #[inline]
     fn with_frozen(self, frozen: bool) -> Self {
-        self.with_frozen(frozen)
+        Self {
+            raw: self.raw.map_addr(|addr| {
+                if frozen {
+                    addr | Self::MASK_FROZEN
+                } else {
+                    addr & !Self::MASK_FROZEN
+                }
+            }),
+            terminate: PhantomData,
+        }
     }
 
+    #[inline]
     fn len(self) -> Self::Len {
-        self.len() + u13::new(self.terminate().get() as u16)
+        let len = (self.raw.addr() >> Self::SHIFT_LEN) + self.is_terminate() as usize;
+        validate!(len <= u13::MAX.value() as usize);
+        u13::new(len as u16)
     }
 
+    #[inline]
     fn with_value(self, value: bool) -> Self {
-        self.with_value(value)
+        Self {
+            raw: self.raw.map_addr(|addr| {
+                if value {
+                    addr | Self::MASK_VALUE
+                } else {
+                    addr & !Self::MASK_VALUE
+                }
+            }),
+            terminate: PhantomData,
+        }
     }
 
     fn try_compress(self, byte: u8, child: Self) -> Option<Self> {
-        validate!(!self.frozen());
-        validate!(!self.value());
+        validate!(!self.is_frozen());
+        validate!(!self.is_value());
 
         let len_parent = self.len().value();
         let len_byte = T::try_compress(byte) as u16;
@@ -123,22 +163,32 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
 
         // If we're compressing a terminator byte, then
         // the child must be an empty edge without a terminator
-        validate!(len_byte == 1 || !child.terminate().get() && len_child == 0 && child.value());
+        validate!(len_byte == 1 || !child.is_terminate() && len_child == 0 && child.is_value());
 
-        Some(
-            Slice::new(
-                unsafe {
-                    child
-                        .as_non_null()
-                        // NOTE: requires provenance of original slice
-                        .byte_sub((len_parent + len_byte) as usize)
-                },
-                len_total.bytes(),
-            )
-            .with_value(child.value())
-            .with_frozen(child.frozen())
-            .with_terminate(T::new(len_byte == 0 || child.terminate().get())),
-        )
+        Some(Slice {
+            raw: unsafe {
+                child
+                    .raw
+                    // NOTE: requires provenance of original slice
+                    .byte_sub((len_parent + len_byte) as usize)
+            }
+            .map_addr(|addr| {
+                let len = len_total.bytes() << Self::SHIFT_LEN;
+                let terminate = if T::new(len_byte == 0).get() {
+                    Self::MASK_TERMINATE
+                } else {
+                    0
+                };
+
+                addr & (Self::MASK_PTR
+                    | Self::MASK_VALUE
+                    | Self::MASK_FROZEN
+                    | Self::MASK_TERMINATE)
+                    | len
+                    | terminate
+            }),
+            terminate: PhantomData,
+        })
     }
 
     #[inline]
@@ -149,41 +199,94 @@ impl<T: Terminate> edge::Meta for SlicePacked<T> {
 
         validate!(index <= self.len());
 
-        let index = index.bytes();
-        let ptr = self.as_non_null();
-        let len_total = SlicePacked::len(self).bytes();
-        let len_middle = (index + Self::Len::BYTE.bytes()).min(len_total);
+        let len_parent = index.bytes();
+        // Length without terminator
+        let len_total = self.raw.addr() >> Self::SHIFT_LEN;
+        let len_middle = (len_parent + Self::Len::BYTE.bytes()).min(len_total);
 
-        let parent = Slice::new(ptr, index);
-        let byte = unsafe { self.as_slice() }.get(index).copied().unwrap_or(0);
-        let child = Slice::new(unsafe { ptr.byte_add(len_middle) }, len_total - len_middle)
-            .with_value(self.value())
-            .with_frozen(self.frozen())
-            .with_terminate(T::new(self.terminate().get() && index < len_total));
+        let parent = Slice {
+            raw: self
+                .raw
+                .map_addr(|addr| addr & Self::MASK_PTR | (len_parent << Self::SHIFT_LEN)),
+            terminate: PhantomData,
+        };
+
+        let byte = unsafe { self.as_slice() }
+            .get(len_parent)
+            .copied()
+            .unwrap_or(0);
+
+        let child = Slice {
+            raw: unsafe { self.raw.byte_add(len_middle) }.map_addr(|addr| {
+                let len = (len_total - len_middle) << Self::SHIFT_LEN;
+                let terminate = if T::new(len_parent < len_total).get() {
+                    usize::MAX
+                } else {
+                    !Self::MASK_TERMINATE
+                };
+
+                addr & (Self::MASK_PTR
+                    | Self::MASK_VALUE
+                    | Self::MASK_FROZEN
+                    | Self::MASK_TERMINATE)
+                    & terminate
+                    | len
+            }),
+            terminate: PhantomData,
+        };
 
         Some((parent, byte, child))
     }
 }
 
-impl<T: Terminate> Eq for SlicePacked<T> {}
+impl<T: Terminate> Eq for Slice<T> {}
 
-impl<T: Terminate> PartialEq for SlicePacked<T> {
+impl<T: Terminate> PartialEq for Slice<T> {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            self.as_slice() == other.as_slice() && self.terminate().get() == other.terminate().get()
+            self.as_slice() == other.as_slice() && self.is_terminate() == other.is_terminate()
         }
     }
 }
 
-impl<T: Terminate> Ord for SlicePacked<T> {
+impl<T: Terminate> Ord for Slice<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         unsafe { self.as_slice().cmp(other.as_slice()) }
     }
 }
 
-impl<T: Terminate> PartialOrd for SlicePacked<T> {
+impl<T: Terminate> PartialOrd for Slice<T> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<T: Terminate> Convert<u64> for Slice<T> {
+    #[inline]
+    fn into_raw(self) -> u64 {
+        self.raw.expose_provenance() as u64
+    }
+
+    #[inline]
+    unsafe fn from_raw_unchecked(raw: u64) -> Self {
+        Self {
+            raw: core::ptr::with_exposed_provenance(raw as usize),
+            terminate: PhantomData,
+        }
+    }
+}
+
+// FIXME: remove after debugging,
+// can easily cause a use-after-free otherwise
+impl<T: Terminate> Debug for Slice<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Le")
+            .field("value", &self.is_value())
+            .field("frozen", &self.is_frozen())
+            .field("terminate", &self.is_terminate())
+            .field("keys", &unsafe { self.as_slice() })
+            .finish()
     }
 }
 

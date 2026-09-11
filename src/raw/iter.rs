@@ -12,7 +12,7 @@ use core::ptr::NonNull;
 use crate::raw::Edge;
 use crate::raw::Key;
 use crate::raw::key;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 /// Key order for scan operations (e.g., [`concurrent::Shard::entries`][crate::concurrent::Shard::entries]).
 ///
@@ -40,7 +40,9 @@ where
 {
     #[inline]
     #[expect(clippy::type_complexity)]
-    pub(crate) fn lend(&mut self) -> Option<(K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)> {
+    pub(crate) fn lend(
+        &mut self,
+    ) -> Option<(K::Insert<'_>, u64, NonNull<Atomic128<Edge<K::Edge>>>)> {
         self.0
             .lend()
             .map(|(writer, value, edge)| (unsafe { K::write_as_insert(writer) }, value, edge))
@@ -49,7 +51,7 @@ where
     #[inline]
     pub(crate) fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
     where
-        F: FnMut(C, (K::Insert<'_>, u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+        F: FnMut(C, (K::Insert<'_>, u64, NonNull<Atomic128<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
     {
         self.0.try_fold(init, |acc, (writer, value, edge)| {
             apply(acc, (unsafe { K::write_as_insert(writer) }, value, edge))
@@ -69,14 +71,14 @@ where
 {
     #[inline]
     #[expect(clippy::type_complexity)]
-    pub(crate) fn lend(&mut self) -> Option<(u64, NonNull<Atomic<Edge<K::Edge>>>)> {
+    pub(crate) fn lend(&mut self) -> Option<(u64, NonNull<Atomic128<Edge<K::Edge>>>)> {
         self.0.lend().map(|(_, value, edge)| (value, edge))
     }
 
     #[inline]
     pub(crate) fn try_fold<F, B, C>(self, init: C, mut apply: F) -> ControlFlow<B, C>
     where
-        F: FnMut(C, (u64, NonNull<Atomic<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
+        F: FnMut(C, (u64, NonNull<Atomic128<Edge<K::Edge>>>)) -> ControlFlow<B, C>,
     {
         self.0
             .try_fold(init, |acc, (_, value, edge)| apply(acc, (value, edge)))

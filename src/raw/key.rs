@@ -95,11 +95,11 @@ pub trait Key: Borrow<Self::Borrowed> {
 
     /// Edge metadata.
     #[expect(private_bounds)]
-    type Edge: ribbit::Pack<Packed: edge::Meta> + Send + Sync;
+    type Edge: edge::Meta + Send + Sync;
 
     /// Key length.
     #[expect(private_bounds)]
-    type Len: Len + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
+    type Len: Len + From<<Self::Edge as edge::Meta>::Len>;
 
     /// Convert the key type to the insert type.
     fn as_insert(&self) -> Self::Insert<'_>;
@@ -135,25 +135,17 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     // Hint for fixed-size keys
     const LEN: Option<Self::Len>;
 
-    type Edge: ribbit::Pack<Packed: edge::Meta>;
-    type Len: Len
-        + From<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>
-        + Into<<ribbit::Packed<Self::Edge> as edge::Meta>::Len>;
+    type Edge: edge::Meta;
+    type Len: Len + From<<Self::Edge as edge::Meta>::Len> + Into<<Self::Edge as edge::Meta>::Len>;
 
     fn len(&self) -> Self::Len;
 
-    fn get_edge(
-        &self,
-        len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
-    ) -> ribbit::Packed<Self::Edge>;
+    fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge;
 
-    fn get_byte(&self, index: <ribbit::Packed<Self::Edge> as edge::Meta>::Len) -> Option<u8>;
+    fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8>;
 
     #[inline]
-    unsafe fn get_byte_unchecked(
-        &self,
-        index: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
-    ) -> u8 {
+    unsafe fn get_byte_unchecked(&self, index: <Self::Edge as edge::Meta>::Len) -> u8 {
         match self.get_byte(index) {
             Some(byte) => byte,
             None => if_validate!(unreachable!(), unsafe {
@@ -163,15 +155,12 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     }
 
     #[inline]
-    fn match_exact(
-        &self,
-        meta: <Self::Edge as ribbit::Pack>::Packed,
-    ) -> Option<<ribbit::Packed<Self::Edge> as edge::Meta>::Len> {
+    fn match_exact(&self, meta: Self::Edge) -> Option<<Self::Edge as edge::Meta>::Len> {
         let len = self.match_prefix(meta);
         (len >= meta.len().into()).then_some(meta.len())
     }
 
-    fn match_prefix(&self, meta: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len;
+    fn match_prefix(&self, meta: Self::Edge) -> Self::Len;
 
     fn prefix(self, end: Self::Len) -> Self;
     fn suffix(self, start: Self::Len) -> Self;
@@ -181,8 +170,8 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
 pub(crate) trait Write<R: Read>: fmt::Debug + Default {
     type Len: Copy + fmt::Debug;
 
-    fn new(prefix: R, key: ribbit::Packed<R::Edge>) -> (Self, Self::Len);
+    fn new(prefix: R, key: R::Edge) -> (Self, Self::Len);
 
     /// Replace bytes starting at `start` with bytes from `node` and `edge`
-    fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<R::Edge>) -> Self::Len;
+    fn replace(&mut self, start: Self::Len, node: u8, edge: R::Edge) -> Self::Len;
 }

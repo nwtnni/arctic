@@ -13,7 +13,7 @@ use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Node3;
 use crate::stat;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 /// Tree traversal state.
 pub(crate) struct Cursor<'g, R: key::Read, P> {
@@ -21,18 +21,18 @@ pub(crate) struct Cursor<'g, R: key::Read, P> {
     reader: R,
 
     /// Edge this cursor currently points to
-    edge: NonNull<Atomic<Edge<R::Edge>>>,
+    edge: NonNull<Atomic128<Edge<R::Edge>>>,
 
     /// Path this cursor has taken
     path: P,
 
-    _global: PhantomData<&'g Atomic<Edge<R::Edge>>>,
+    _global: PhantomData<&'g Atomic128<Edge<R::Edge>>>,
 }
 
 /// Outcome of [`Cursor::traverse_insert`] indicating if
 /// traversal terminated at a value, or if an SMO is
 /// required to continue traversal.
-pub(crate) enum Insert<M: ribbit::Pack<Packed: edge::Meta>> {
+pub(crate) enum Insert<M: edge::Meta> {
     /// Either a value was found, or there is no
     /// value for this key.
     ///
@@ -40,42 +40,36 @@ pub(crate) enum Insert<M: ribbit::Pack<Packed: edge::Meta>> {
     /// `value.map(Child::Value) != edge.child()`, in the
     /// case that an edge expansion is required at
     /// an edge that has a value child.
-    Value {
-        value: Option<u64>,
-        edge: ribbit::Packed<Edge<M>>,
-    },
+    Value { value: Option<u64>, edge: Edge<M> },
 
     /// Node replacement is required to continue traversal.
     ///
     /// Guaranteed that `Some(Child::Node(node)) == edge.child()`.
-    Replace {
-        node: ribbit::Packed<node::Ptr>,
-        edge: ribbit::Packed<Edge<M>>,
-    },
+    Replace { node: node::Ptr, edge: Edge<M> },
 }
 
 /// Outcome of [`Cursor::traverse_value`].
 ///
 /// Guaranteed that `Some(Child::Value(value)) == edge.child()`.
-pub(crate) struct Value<M: ribbit::Pack<Packed: edge::Meta>> {
+pub(crate) struct Value<M: edge::Meta> {
     pub(crate) value: u64,
-    pub(crate) edge: ribbit::Packed<Edge<M>>,
+    pub(crate) edge: Edge<M>,
 }
 
 /// Outcome of [`Cursor::freeze`].
-pub(crate) enum Freeze<M: ribbit::Pack<Packed: edge::Meta>> {
+pub(crate) enum Freeze<M: edge::Meta> {
     /// Freeze suceeded, either due to successfully replacing
     /// the node ourselves, in which case we need to retire
     /// `Some(node)`, or due to another thread concurrently
     /// replacing the node, in which case this will contain `None`.
     Success {
-        old_node: Option<ribbit::Packed<node::Ptr>>,
-        new_edge: ribbit::Packed<Edge<M>>,
+        old_node: Option<node::Ptr>,
+        new_edge: Edge<M>,
     },
 
     /// Detected a concurrent edge expansion, so caller
     /// must re-traverse to frozen node.
-    Traverse { edge: ribbit::Packed<Edge<M>> },
+    Traverse { edge: Edge<M> },
 }
 
 impl<'g, R, P> Cursor<'g, R, P>
@@ -88,7 +82,7 @@ where
     /// Caller must ensure that all nodes underneath `root` along the path associated
     /// with `reader` live at least as long as this struct.
     #[inline]
-    pub(crate) unsafe fn new(root: &'g Atomic<Edge<R::Edge>>, reader: R) -> Self {
+    pub(crate) unsafe fn new(root: &'g Atomic128<Edge<R::Edge>>, reader: R) -> Self {
         Self {
             edge: NonNull::from(root),
             reader,
@@ -98,12 +92,12 @@ where
     }
 
     #[inline]
-    pub(crate) fn edge(&self) -> &'g Atomic<Edge<R::Edge>> {
+    pub(crate) fn edge(&self) -> &'g Atomic128<Edge<R::Edge>> {
         unsafe { self.edge.as_ref() }
     }
 
     #[inline]
-    pub(crate) unsafe fn edge_mut(&mut self) -> &'g mut Atomic<Edge<R::Edge>> {
+    pub(crate) unsafe fn edge_mut(&mut self) -> &'g mut Atomic128<Edge<R::Edge>> {
         unsafe { self.edge.as_mut() }
     }
 
@@ -118,9 +112,9 @@ where
     }
 
     /// Traverse to the root of the subtree prefixed by the key, if it exists.
-    pub(crate) fn traverse_prefix(&mut self) -> Option<ribbit::Packed<Edge<R::Edge>>> {
+    pub(crate) fn traverse_prefix(&mut self) -> Option<Edge<R::Edge>> {
         loop {
-            let edge = self.edge().load_packed(Ordering::Relaxed);
+            let edge = self.edge().load(Ordering::Relaxed);
             let child = edge.child()?;
             let meta = edge.meta();
 
@@ -159,7 +153,7 @@ where
     #[inline]
     pub(crate) unsafe fn traverse_value(
         &mut self,
-        mut edge: ribbit::Packed<Edge<R::Edge>>,
+        mut edge: Edge<R::Edge>,
     ) -> Option<Value<R::Edge>> {
         loop {
             let len = self.reader.match_exact(edge.meta())?;
@@ -175,7 +169,7 @@ where
 
                     let next = unsafe { node.get(byte) }?;
                     self.push(len, node, next);
-                    edge = self.edge().load_packed(Ordering::Relaxed);
+                    edge = self.edge().load(Ordering::Relaxed);
                     continue;
                 }
                 edge::Child::Value(value) => {
@@ -194,8 +188,8 @@ where
     /// or else returns the remaining key length.
     pub(crate) fn traverse_node(
         &mut self,
-        mut edge: ribbit::Packed<Edge<R::Edge>>,
-    ) -> Result<ribbit::Packed<Edge<R::Edge>>, R::Len> {
+        mut edge: Edge<R::Edge>,
+    ) -> Result<Edge<R::Edge>, R::Len> {
         loop {
             let Some(len) = self.reader.match_exact(edge.meta()) else {
                 return Err(self.reader.len());
@@ -219,7 +213,7 @@ where
                     };
 
                     self.push(len, node, next);
-                    edge = self.edge().load_packed(Ordering::Relaxed);
+                    edge = self.edge().load(Ordering::Relaxed);
                     continue;
                 }
             }
@@ -233,10 +227,7 @@ where
     /// # SAFETY
     ///
     /// Caller must guarantee `edge` was loaded from `self.edge()`.
-    pub(crate) unsafe fn traverse_insert(
-        &mut self,
-        mut edge: ribbit::Packed<Edge<R::Edge>>,
-    ) -> Insert<R::Edge> {
+    pub(crate) unsafe fn traverse_insert(&mut self, mut edge: Edge<R::Edge>) -> Insert<R::Edge> {
         loop {
             let Some(child) = edge.child() else {
                 // Case: no child, create path
@@ -263,7 +254,7 @@ where
                     };
 
                     self.push(len, node, next);
-                    edge = self.edge().load_packed(Ordering::Relaxed);
+                    edge = self.edge().load(Ordering::Relaxed);
                 }
                 edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
@@ -284,12 +275,9 @@ where
     #[expect(clippy::type_complexity)]
     pub(crate) fn create_path(
         &self,
-        old: ribbit::Packed<Edge<R::Edge>>,
+        old: Edge<R::Edge>,
         value: u64,
-    ) -> (
-        ribbit::Packed<Edge<R::Edge>>,
-        Option<NonNull<Atomic<Edge<R::Edge>>>>,
-    ) {
+    ) -> (Edge<R::Edge>, Option<NonNull<Atomic128<Edge<R::Edge>>>>) {
         let meta = old.meta();
         let len = self.reader.match_prefix(meta).into();
 
@@ -355,9 +343,9 @@ where
     #[cold]
     pub(crate) unsafe fn freeze(
         &mut self,
-        mut old_len: <ribbit::Packed<R::Edge> as edge::Meta>::Len,
-        mut old_node: ribbit::Packed<node::Ptr>,
-        mut old_edge: ribbit::Packed<Edge<R::Edge>>,
+        mut old_len: <R::Edge as edge::Meta>::Len,
+        mut old_node: node::Ptr,
+        mut old_edge: Edge<R::Edge>,
     ) -> Result<Freeze<R::Edge>, P::PopError> {
         let mut pop = 1;
 
@@ -389,7 +377,7 @@ where
             // ```
             while old_edge.meta().is_frozen() {
                 (old_len, old_node) = self.pop()?.expect("Root edge cannot be frozen");
-                old_edge = self.edge().load_packed(Ordering::Relaxed);
+                old_edge = self.edge().load(Ordering::Relaxed);
                 pop += 1;
             }
 
@@ -514,7 +502,7 @@ where
                 old_node.replace(old_edge.meta())
             };
 
-            match self.edge().compare_exchange_packed(
+            match self.edge().compare_exchange(
                 old_edge,
                 new_edge,
                 Ordering::Release,
@@ -546,9 +534,9 @@ where
     #[inline]
     fn push(
         &mut self,
-        len: <ribbit::Packed<R::Edge> as edge::Meta>::Len,
-        node: ribbit::Packed<node::Ptr>,
-        edge: &'g Atomic<edge::Raw>,
+        len: <R::Edge as edge::Meta>::Len,
+        node: node::Ptr,
+        edge: &'g Atomic128<edge::Raw>,
     ) {
         let edge = core::mem::replace(&mut self.edge, NonNull::from(edge).cast());
         self.reader = self.path.push(path::Segment {
@@ -563,13 +551,7 @@ where
     #[expect(clippy::type_complexity)]
     pub(crate) fn pop(
         &mut self,
-    ) -> Result<
-        Option<(
-            <ribbit::Packed<R::Edge> as edge::Meta>::Len,
-            ribbit::Packed<node::Ptr>,
-        )>,
-        P::PopError,
-    > {
+    ) -> Result<Option<(<R::Edge as edge::Meta>::Len, node::Ptr)>, P::PopError> {
         let Some(segment) = self.path.pop()? else {
             return Ok(None);
         };

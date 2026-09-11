@@ -7,7 +7,7 @@ use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::key;
 use crate::raw::node;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 /// A path along the tree is composed of 0 or more path segments.
 pub(crate) struct Segment<R: key::Read> {
@@ -15,13 +15,13 @@ pub(crate) struct Segment<R: key::Read> {
     pub(super) reader: R,
 
     /// Edge to match
-    pub(super) edge: NonNull<Atomic<Edge<R::Edge>>>,
+    pub(super) edge: NonNull<Atomic128<Edge<R::Edge>>>,
 
     /// Number of bytes matched along `edge`
-    pub(super) len: <ribbit::Packed<R::Edge> as edge::Meta>::Len,
+    pub(super) len: <R::Edge as edge::Meta>::Len,
 
     /// Node underneath `edge`
-    pub(super) node: ribbit::Packed<node::Ptr>,
+    pub(super) node: node::Ptr,
 }
 
 pub(crate) trait Path<R>: Default

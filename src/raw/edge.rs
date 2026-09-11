@@ -10,70 +10,86 @@ use ribbit::u6;
 pub(crate) use slice::Slice;
 
 use core::fmt::Debug;
+use core::marker::PhantomData;
 use core::ops::Add;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
-
-use ribbit::Unpack as _;
 
 use crate::raw::edge;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Node3;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
+use crate::sync::Convert;
 
 /// A fat pointer to a value or a node.
 ///
 /// Generic over [`Meta`] to support different byte orderings depending on key type.
-#[derive(Copy, Clone, Default, ribbit::Pack)]
-#[ribbit(size = 128, derive(Eq))]
+#[derive(Copy, Clone, Default)]
+#[repr(transparent)]
 pub(crate) struct Edge<M> {
-    #[ribbit(size = 64)]
-    pub(crate) meta: M,
-
-    #[ribbit(get(rename = "child_raw"))]
-    child: u64,
+    raw: u128,
+    meta: PhantomData<M>,
 }
 
-/// An edge with its metadata type erased.
-///
-/// Used to reduce code generation, as most node logic is independent of the edge type.
-#[derive(Copy, Clone, Debug, ribbit::Pack)]
-#[ribbit(size = 128, derive(Debug))]
-pub(crate) struct Raw(u128);
+impl<M: Meta> Edge<M> {
+    pub(crate) const NULL: Self = Self {
+        raw: 0,
+        meta: PhantomData,
+    };
 
-impl Raw {
-    pub(crate) const NULL: ribbit::Packed<Self> = ribbit::Packed::<Self>::new(0);
-}
-
-impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
-    pub(crate) const NULL: ribbit::Packed<Self> =
-        ribbit::Packed::<Self>::new(<M::Packed as Meta>::NULL, 0);
+    const MASK_CHILD: u128 = (1 << 64) - 1;
+    const SHIFT_META: usize = 64;
 
     #[inline]
-    pub(super) unsafe fn from_raw_ref(raw: &Atomic<Raw>) -> &Atomic<Self> {
+    pub(crate) fn meta(self) -> M {
+        unsafe { M::from_raw_unchecked((self.raw >> Self::SHIFT_META) as u64) }
+    }
+
+    #[inline]
+    pub(crate) fn with_meta(self, meta: M) -> Self {
+        unsafe {
+            Self::from_raw_unchecked(
+                self.raw & Self::MASK_CHILD | ((meta.into_raw() as u128) << Self::SHIFT_META),
+            )
+        }
+    }
+
+    #[inline]
+    fn child_raw(self) -> u64 {
+        self.raw as u64
+    }
+
+    #[inline]
+    pub(super) unsafe fn from_raw_ref(raw: &Atomic128<Raw>) -> &Atomic128<Self> {
         unsafe { core::mem::transmute(raw) }
     }
 
     #[inline]
-    pub(super) unsafe fn from_raw_mut(raw: &mut Atomic<Raw>) -> &mut Atomic<Self> {
+    pub(super) unsafe fn from_raw_mut(raw: &mut Atomic128<Raw>) -> &mut Atomic128<Self> {
         unsafe { core::mem::transmute(raw) }
     }
 
     /// Create an edge with the given metadata and node.
     #[inline]
-    pub(super) fn new_node(
-        meta: ribbit::Packed<M>,
-        node: ribbit::Packed<node::Ptr>,
-    ) -> ribbit::Packed<Self> {
-        ribbit::Packed::<Self>::new(meta.with_value(false), node.into_raw().get())
+    pub(super) fn new_node(meta: M, node: node::Ptr) -> Self {
+        unsafe {
+            Self::from_raw_unchecked(
+                ((meta.with_value(false).into_raw() as u128) << Self::SHIFT_META)
+                    | Some(node).into_raw() as u128,
+            )
+        }
     }
 
     /// Create an edge with the given metadata and value.
     #[inline]
-    pub(crate) fn new_value(meta: ribbit::Packed<M>, value: u64) -> ribbit::Packed<Self> {
-        ribbit::Packed::<Self>::new(meta.with_value(true), value)
+    pub(crate) fn new_value(meta: M, value: u64) -> Self {
+        unsafe {
+            Self::from_raw_unchecked(
+                (meta.with_value(true).into_raw() as u128) << Self::SHIFT_META | value as u128,
+            )
+        }
     }
 
     /// Given a pointer to an edge, get a pointer to that edge's value.
@@ -83,19 +99,14 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
     /// - Caller must ensure `edge` points to an edge with a value child
     /// - Caller must ensure `edge` is not modified while holding the returned pointer
     #[inline]
-    pub(crate) unsafe fn as_value_unchecked(edge: NonNull<Atomic<Self>>) -> NonNull<u64> {
+    pub(crate) unsafe fn as_value_unchecked(edge: NonNull<Atomic128<Self>>) -> NonNull<u64> {
         unsafe {
-            validate!(
-                edge.as_ref()
-                    .load_packed(Ordering::Relaxed)
-                    .meta()
-                    .is_value()
-            );
+            validate!(edge.as_ref().load(Ordering::Relaxed).meta().is_value());
 
             if cfg!(target_endian = "little") {
-                edge.byte_add(8)
-            } else {
                 edge
+            } else {
+                edge.byte_add(8)
             }
             .cast::<u64>()
         }
@@ -114,15 +125,11 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
     /// re-traversing the new path. (The concurrent map never
     /// returns direct pointers.)
     #[inline]
-    #[expect(clippy::type_complexity)]
-    pub(crate) fn new_path<R>(
-        mut reader: R,
-        value: u64,
-    ) -> (ribbit::Packed<Self>, Option<NonNull<Atomic<Edge<M>>>>)
+    pub(crate) fn new_path<R>(mut reader: R, value: u64) -> (Self, Option<NonNull<Atomic128<Self>>>)
     where
         R: key::Read<Edge = M>,
     {
-        let edge = reader.get_edge(<ribbit::Packed<M> as edge::Meta>::Len::MAX);
+        let edge = reader.get_edge(<M as edge::Meta>::Len::MAX);
 
         let Some(byte) = reader.get_byte(edge.len()) else {
             // Fast path: remaining bytes fit in one edge
@@ -132,15 +139,13 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
         reader = reader.suffix(R::Len::BYTE + edge.len().into());
 
         // Key always fits in one edge
-        if R::LEN.is_some_and(|len| len <= <ribbit::Packed<M> as edge::Meta>::Len::MAX.into()) {
+        if R::LEN.is_some_and(|len| len <= <M as edge::Meta>::Len::MAX.into()) {
             validate!(false);
             unsafe { core::hint::unreachable_unchecked() }
         }
 
         // Key fits in one edge except at root
-        if R::LEN.is_some_and(|len| {
-            len == R::Len::BYTE + <ribbit::Packed<M> as edge::Meta>::Len::MAX.into()
-        }) {
+        if R::LEN.is_some_and(|len| len == R::Len::BYTE + <M as edge::Meta>::Len::MAX.into()) {
             crate::cold();
         }
 
@@ -151,11 +156,11 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
 
     /// Freeze `edge` by atomically setting its frozen bit.
     #[inline]
-    pub(crate) fn freeze(edge: &Atomic<Self>) {
-        let mut old = edge.load_packed(Ordering::Relaxed);
+    pub(crate) fn freeze(edge: &Atomic128<Self>) {
+        let mut old = edge.load(Ordering::Relaxed);
 
         while !old.meta().is_frozen() {
-            match edge.compare_exchange_packed(
+            match edge.compare_exchange(
                 old,
                 old.with_meta(old.meta().with_frozen(true)),
                 Ordering::Relaxed,
@@ -166,13 +171,11 @@ impl<M: ribbit::Pack<Packed: Meta>> Edge<M> {
             }
         }
     }
-}
 
-impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
     /// Return `true` if this edge has no child.
     #[inline]
     pub(crate) fn is_null(self) -> bool {
-        let null = self.unfreeze() == Edge::NULL;
+        let null = self.unfreeze().raw == Self::NULL.raw;
         validate!(
             null || self.meta().is_value() || self.child_raw() > 0,
             "Edge must be null, a value, or a node"
@@ -182,12 +185,12 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
 
     /// Return `Some(node)` if this edge has a node child.
     #[inline]
-    pub(crate) fn as_node(self) -> Option<ribbit::Packed<node::Ptr>> {
+    pub(crate) fn as_node(self) -> Option<node::Ptr> {
         if self.meta().is_value() {
             return None;
         }
 
-        unsafe { ribbit::Packed::<Option<node::Ptr>>::from_raw_unchecked(self.child_raw()) }
+        unsafe { Option::<node::Ptr>::from_raw_unchecked(self.child_raw()) }
     }
 
     /// Return `Some(child)` if this edge has a child.
@@ -197,7 +200,7 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
         if self.meta().is_value() {
             Some(Child::Value(raw))
         } else {
-            unsafe { ribbit::Packed::<Option<node::Ptr>>::from_raw_unchecked(raw) }.map(Child::Node)
+            unsafe { Option::<node::Ptr>::from_raw_unchecked(raw) }.map(Child::Node)
         }
     }
 
@@ -209,14 +212,29 @@ impl<M: ribbit::Pack<Packed: Meta>> EdgePacked<M> {
 
     /// Erase this edge's metadata type.
     #[inline]
-    pub(super) fn erase(self) -> ribbit::Packed<edge::Raw> {
-        ribbit::Packed::<edge::Raw>::new(self.into_raw())
+    pub(super) fn erase(self) -> Raw {
+        Raw(self.raw)
     }
 }
 
-impl<M: ribbit::Pack> Debug for EdgePacked<M>
+impl<M: Copy> Convert<u128> for Edge<M> {
+    #[inline]
+    fn into_raw(self) -> u128 {
+        self.raw
+    }
+
+    #[inline]
+    unsafe fn from_raw_unchecked(raw: u128) -> Self {
+        Self {
+            raw,
+            meta: PhantomData,
+        }
+    }
+}
+
+impl<M> Debug for Edge<M>
 where
-    M::Packed: Meta + core::fmt::Debug,
+    M: Meta + core::fmt::Debug,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut debug = f.debug_struct("Edge");
@@ -228,9 +246,31 @@ where
     }
 }
 
+/// An edge with its metadata type erased.
+///
+/// Used to reduce code generation, as most node logic is independent of the edge type.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Raw(u128);
+
+impl Raw {
+    pub(crate) const NULL: Self = Self(0);
+}
+
+impl crate::sync::Convert<u128> for Raw {
+    #[inline]
+    fn into_raw(self) -> u128 {
+        self.0
+    }
+
+    #[inline]
+    unsafe fn from_raw_unchecked(raw: u128) -> Self {
+        Self(raw)
+    }
+}
+
 /// Edge compression and child pointer metadata.
 pub(crate) trait Meta:
-    ribbit::Unpack + core::fmt::Debug + Ord + IntoIterator<Item = u8>
+    core::fmt::Debug + Ord + IntoIterator<Item = u8> + Sized + Convert<u64>
 {
     /// Null edge with no compressed edge bytes or child
     const NULL: Self;
@@ -303,7 +343,7 @@ impl Len for u6 {
 /// Non-null child of an edge.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Child {
-    Node(ribbit::Packed<node::Ptr>),
+    Node(node::Ptr),
     Value(u64),
 }
 
@@ -319,9 +359,9 @@ mod tests {
 
         /// An expansion followed by a compression results in the same edge.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn expand_compress_inverse<M>(meta: ribbit::Packed<M>)
+        pub(crate) fn expand_compress_inverse<M>(meta: M)
         where
-            M: ribbit::Pack<Packed: Meta<Len: Debug>>,
+            M: Meta<Len: Debug>,
         {
             for index in meta.len().range_to() {
                 let Some((parent, byte, child)) = meta.try_expand(index) else {
@@ -346,9 +386,9 @@ mod tests {
 
         /// An expansion (a) preserves total key bytes, and (b) preserves flags in the child edge.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn expand_correct<M>(meta: ribbit::Packed<M>)
+        pub(crate) fn expand_correct<M>(meta: M)
         where
-            M: ribbit::Pack<Packed: Meta<Len: Debug>>,
+            M: Meta<Len: Debug>,
         {
             for index in meta.len().range_to() {
                 let Some((parent, byte, child)) = meta.try_expand(index) else {
@@ -358,7 +398,7 @@ mod tests {
 
                 assert_eq!(
                     meta.len(),
-                    parent.len() + <ribbit::Packed::<M> as Meta>::Len::BYTE + child.len(),
+                    parent.len() + <M as Meta>::Len::BYTE + child.len(),
                     "Expand length mismatch:\n\
                     {meta:x?}@{index:x?}\n\
                     {parent:x?} - {byte:x?} - {child:x?}",
@@ -383,36 +423,36 @@ mod tests {
         /// `M::eq` is reflexive.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
         #[expect(clippy::eq_op)]
-        pub(crate) fn eq_reflexive<M>(meta: ribbit::Packed<M>)
+        pub(crate) fn eq_reflexive<M>(meta: M)
         where
-            M: ribbit::Pack<Packed: Meta>,
+            M: Meta,
         {
             assert_eq!(meta, meta)
         }
 
         /// `M::cmp` returns equal if and only if `M::eq`.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn eq_ord_consistent<M>(left: ribbit::Packed<M>, right: ribbit::Packed<M>)
+        pub(crate) fn eq_ord_consistent<M>(left: M, right: M)
         where
-            M: ribbit::Pack<Packed: Meta>,
+            M: Meta,
         {
             assert_eq!(left.cmp(&right).is_eq(), left == right)
         }
 
         /// `left < right` if and only if `right > left`.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn ord_duality<M>(left: ribbit::Packed<M>, right: ribbit::Packed<M>)
+        pub(crate) fn ord_duality<M>(left: M, right: M)
         where
-            M: ribbit::Pack<Packed: Meta>,
+            M: Meta,
         {
             assert_eq!(left.cmp(&right), right.cmp(&left).reverse())
         }
 
         /// `M::cmp` ignores freeze and value flag bits.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn ord_ignores_flags<M>(left: ribbit::Packed<M>, right: ribbit::Packed<M>)
+        pub(crate) fn ord_ignores_flags<M>(left: M, right: M)
         where
-            M: ribbit::Pack<Packed: Meta>,
+            M: Meta,
         {
             assert_eq!(
                 left.cmp(&right),
@@ -434,18 +474,18 @@ mod tests {
 
         /// `Edge::new_value` creates an edge with the value bit set.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn new_value_is_value<M>(meta: ribbit::Packed<M>, value: u64)
+        pub(crate) fn new_value_is_value<M>(meta: M, value: u64)
         where
-            M: ribbit::Pack<Packed: Meta>,
+            M: Meta,
         {
             assert!(Edge::<M>::new_value(meta, value).meta().is_value())
         }
 
         /// `M::into_iter` returns an iterator of `M::len` bytes.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]
-        pub(crate) fn into_iter_len_consistent<M>(meta: ribbit::Packed<M>)
+        pub(crate) fn into_iter_len_consistent<M>(meta: M)
         where
-            M: ribbit::Pack<Packed: Meta>,
+            M: Meta,
         {
             let len = meta.len().bytes();
             assert_eq!(meta.into_iter().count(), len);

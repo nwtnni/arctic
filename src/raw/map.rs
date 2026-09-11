@@ -7,18 +7,16 @@ use crate::raw::Key;
 use crate::raw::cursor;
 use crate::raw::iter::Order;
 use crate::raw::iter::PostorderIter;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 #[repr(transparent)]
-pub(crate) struct Map<K: Key>(Atomic<Edge<K::Edge>>);
+pub(crate) struct Map<K: Key>(Atomic128<Edge<K::Edge>>);
 
 impl<K: Key> Map<K> {
     /// Constructs a new empty map. Does not allocate.
     #[inline]
     pub(crate) const fn new() -> Self {
-        Self(Atomic::from_raw(crate::sync::AtomicU128::new(
-            Edge::<K::Edge>::NULL.into_raw(),
-        )))
+        Self(unsafe { Atomic128::from_raw_unchecked(0) })
     }
 
     pub(crate) fn postorder<'g>(&'g mut self, order: Option<Order>) -> PostorderIter<'g, K::Edge> {
@@ -59,7 +57,7 @@ impl<K: Key> Map<K> {
     }
 
     #[inline]
-    fn root(&self) -> &Atomic<Edge<K::Edge>> {
+    fn root(&self) -> &Atomic128<Edge<K::Edge>> {
         &self.0
     }
 }
@@ -70,6 +68,6 @@ where
 {
     #[inline]
     fn default() -> Self {
-        Self(Atomic::new_packed(Edge::NULL))
+        Self(Atomic128::new(Edge::NULL))
     }
 }

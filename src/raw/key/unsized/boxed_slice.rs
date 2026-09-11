@@ -25,6 +25,7 @@ use crate::raw::key::Read as _;
 use crate::raw::key::r#unsized;
 use crate::raw::key::r#unsized::Terminate;
 use crate::raw::key::r#unsized::slice::Slice;
+use crate::sync::Convert as _;
 
 /// An owned, dynamically sized key that satisfies an [`Invariant`][crate::key::unsized::Invariant].
 #[repr(transparent)]
@@ -306,10 +307,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     }
 
     #[inline]
-    fn get_edge(
-        &self,
-        len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
-    ) -> ribbit::Packed<Self::Edge> {
+    fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
         let len = u6::new((self.len().bits()).min(len.bits()) as u8);
         edge::Le::new(r#unsized::read_u64(self.as_slice()), len)
     }
@@ -320,19 +318,20 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     }
 
     #[inline]
-    fn match_exact(
-        &self,
-        edge: <Self::Edge as ribbit::Pack>::Packed,
-    ) -> Option<<ribbit::Packed<Self::Edge> as edge::Meta>::Len> {
+    fn match_exact(&self, edge: Self::Edge) -> Option<<Self::Edge as edge::Meta>::Len> {
         // Avoid bit <-> byte conversion
         let len_edge = edge.len();
-        let len_match = (edge.raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as u8;
+        let len_match =
+            (edge.into_raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as u8;
         (len_match >= len_edge.value()).then_some(len_edge)
     }
 
     #[inline]
-    fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Self::Len {
-        Byte(((edge.raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as usize) >> 3)
+    fn match_prefix(&self, edge: Self::Edge) -> Self::Len {
+        Byte(
+            ((edge.into_raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as usize)
+                >> 3,
+        )
     }
 
     #[inline]
@@ -398,7 +397,7 @@ impl<'k, T: Terminate> key::Write<Reader<'k, T>> for Writer {
     type Len = Byte;
 
     #[inline]
-    fn new(prefix: Reader<'k, T>, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
+    fn new(prefix: Reader<'k, T>, key: edge::Le) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         let mut buffer = Vec::new();
         buffer.extend_from_slice(prefix.as_slice());
@@ -412,7 +411,7 @@ impl<'k, T: Terminate> key::Write<Reader<'k, T>> for Writer {
     }
 
     #[inline]
-    fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<edge::Le>) -> Self::Len {
+    fn replace(&mut self, start: Self::Len, node: u8, edge: edge::Le) -> Self::Len {
         validate!(start.0 <= self.0.len());
         self.0.truncate(start.0);
         self.0.push(node);

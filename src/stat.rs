@@ -5,8 +5,6 @@ use core::ops::ControlFlow;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
-use ribbit::Unpack as _;
-
 use crate::Key;
 use crate::concurrent;
 use crate::concurrent::Smr;
@@ -17,7 +15,7 @@ use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::iter::Unbound;
 use crate::raw::node;
-use crate::sync::Atomic;
+use crate::sync::Atomic128;
 
 static RECORD: AtomicBool = AtomicBool::new(false);
 
@@ -44,7 +42,7 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S
             match child {
                 edge::Child::Value(_) => {}
                 edge::Child::Node(node) => {
-                    let histogram = match node.r#type().unpack() {
+                    let histogram = match node.r#type() {
                         node::Type::Node3 => &mut node_3,
                         node::Type::Node15 => &mut node_15,
                         node::Type::Node47 => &mut node_47,
@@ -55,8 +53,8 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S
                         node.entries(false, Unbound::<()>::default(), Unbound::<()>::default())
                     }
                     .filter(|(_, edge)| {
-                        !unsafe { edge.cast::<Atomic<Edge<K::Edge>>>().as_ref() }
-                            .load_packed(Ordering::Relaxed)
+                        !unsafe { edge.cast::<Atomic128<Edge<K::Edge>>>().as_ref() }
+                            .load(Ordering::Relaxed)
                             .is_null()
                     })
                     .count();

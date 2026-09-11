@@ -94,10 +94,7 @@ impl key::Read for Reader {
     }
 
     #[inline]
-    fn get_edge(
-        &self,
-        len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
-    ) -> ribbit::Packed<Self::Edge> {
+    fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
         let len = u6::new((self.len().bits()).min(len.bits()) as u8);
         edge::Le::new(u64::from_le_bytes(self.buffer), u6::new(len.bits() as u8))
     }
@@ -113,7 +110,7 @@ impl key::Read for Reader {
     }
 
     #[inline]
-    fn match_prefix(&self, edge: <Self::Edge as ribbit::Pack>::Packed) -> Byte {
+    fn match_prefix(&self, edge: Self::Edge) -> Byte {
         Byte(
             self.buffer
                 .into_iter()
@@ -213,7 +210,7 @@ impl key::Write<Reader> for key::sized::array::Writer<8> {
     type Len = Byte;
 
     #[inline]
-    fn new(prefix: Reader, key: ribbit::Packed<edge::Le>) -> (Self, Self::Len) {
+    fn new(prefix: Reader, key: edge::Le) -> (Self, Self::Len) {
         let len = prefix.len + key.len().into();
         let mut buffer = [0u8; 8];
         buffer[..prefix.len.bytes()].copy_from_slice(&prefix.buffer[..prefix.len.bytes()]);
@@ -227,7 +224,7 @@ impl key::Write<Reader> for key::sized::array::Writer<8> {
     }
 
     #[inline]
-    fn replace(&mut self, start: Self::Len, node: u8, edge: ribbit::Packed<edge::Le>) -> Self::Len {
+    fn replace(&mut self, start: Self::Len, node: u8, edge: edge::Le) -> Self::Len {
         self.0[start.bytes()] = node;
         self.0[start.bytes() + 1..]
             .iter_mut()

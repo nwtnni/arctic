@@ -9,6 +9,7 @@ use ribbit::u13;
 use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
+use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
@@ -206,27 +207,24 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
         self.0.len()
     }
 
-    fn get_edge(
-        &self,
-        len: <ribbit::Packed<Self::Edge> as edge::Meta>::Len,
-    ) -> ribbit::Packed<Self::Edge> {
+    fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
         let min = len.bytes().min(self.0.len);
         edge::Slice::new(self.0.as_non_null(), min)
-            .with_terminate(T::new(self.0.terminate.get() && len.bytes() > self.0.len))
+            .with_terminate(self.0.terminate.get() && len.bytes() > self.0.len)
     }
 
     fn get_byte(&self, index: u13) -> Option<u8> {
         self.0.get_byte(index.bytes())
     }
 
-    fn match_prefix(&self, meta: ribbit::Packed<edge::Slice<T>>) -> Self::Len {
+    fn match_prefix(&self, meta: edge::Slice<T>) -> Self::Len {
         let other = unsafe { meta.as_slice() };
 
         let index = r#unsized::common_prefix(self.0.as_slice(), other);
         let terminate = self.0.terminate.get()
             && index == self.0.len
             && index == other.len()
-            && meta.terminate().get();
+            && meta.is_terminate();
 
         Byte(index + terminate as usize)
     }
@@ -250,7 +248,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
 #[doc(hidden)]
 #[derive(Clone, Default, Debug)]
 pub struct Writer<I: r#unsized::Invariant> {
-    last: ribbit::Packed<edge::Slice<I::Terminate>>,
+    last: edge::Slice<I::Terminate>,
     len: Byte,
 }
 
@@ -276,20 +274,12 @@ impl<I: r#unsized::Invariant> Writer<I> {
 impl<I: r#unsized::Invariant> key::Write<Reader<'_, I::Terminate>> for Writer<I> {
     type Len = Byte;
 
-    fn new(
-        prefix: Reader<'_, I::Terminate>,
-        key: ribbit::Packed<edge::Slice<I::Terminate>>,
-    ) -> (Self, Self::Len) {
+    fn new(prefix: Reader<'_, I::Terminate>, key: edge::Slice<I::Terminate>) -> (Self, Self::Len) {
         let len = prefix.len() + key.len().into();
         (Writer { last: key, len }, len)
     }
 
-    fn replace(
-        &mut self,
-        start: Self::Len,
-        _: u8,
-        edge: ribbit::Packed<edge::Slice<I::Terminate>>,
-    ) -> Self::Len {
+    fn replace(&mut self, start: Self::Len, _: u8, edge: edge::Slice<I::Terminate>) -> Self::Len {
         validate!(start <= self.len);
         self.len = start + Byte::BYTE + edge.len().into();
         self.last = edge;

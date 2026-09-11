@@ -1,5 +1,6 @@
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
+use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
 use ribbit::u6;
@@ -8,12 +9,10 @@ use ribbit::u56;
 use crate::raw::edge::Len as _;
 use crate::sequential;
 
-type AtomicU64 = <u64 as crate::sync::Loose>::Atomic;
-
 pub(crate) union Set {
     raw: u64,
     set_8: ribbit::Packed<Set8>,
-    set_256: NonNull<Set256<AtomicU64>>,
+    set_256: NonNull<Set256>,
 }
 
 unsafe impl sequential::Value for Set {
@@ -57,7 +56,7 @@ impl Set {
     /// # Safety
     ///
     /// Caller must ensure `self` is `Set8`.
-    unsafe fn expand_mut_unchecked(&mut self) -> &mut Set256<AtomicU64> {
+    unsafe fn expand_mut_unchecked(&mut self) -> &mut Set256 {
         validate!(unsafe { self.raw >> 56 } <= 56);
 
         let mut set_256 = Box::new(Set256::default());
@@ -111,12 +110,12 @@ impl Set {
 
 enum Ref<'a> {
     Set8(&'a ribbit::Packed<Set8>),
-    Set256(&'a Set256<AtomicU64>),
+    Set256(&'a Set256),
 }
 
 enum RefMut<'a> {
     Set8(&'a mut ribbit::Packed<Set8>),
-    Set256(&'a mut Set256<AtomicU64>),
+    Set256(&'a mut Set256),
 }
 
 #[derive(Copy, Clone, ribbit::Pack)]
@@ -171,10 +170,10 @@ impl Set8Packed {
 }
 
 #[repr(C)]
-#[derive(Default)]
-pub(super) struct Set256<R>([ribbit::Atomic<u64, R>; 4]);
+#[derive(Debug, Default)]
+pub(super) struct Set256([AtomicU64; 4]);
 
-impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
+impl Set256 {
     pub(super) fn contains(&self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
         self.0[i].load(Ordering::Relaxed) & bit == bit
@@ -182,7 +181,7 @@ impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
 
     pub(super) fn insert_mut(&mut self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
-        let row = self.0[i].get_mut_packed();
+        let row = self.0[i].get_mut();
         if *row & bit == bit {
             return false;
         }
@@ -193,7 +192,7 @@ impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
     #[cfg_attr(not(any(test, feature = "proptest")), expect(unused))]
     pub(super) fn remove_mut(&mut self, byte: u8) -> bool {
         let (i, bit) = Self::index(byte);
-        let row = self.0[i].get_mut_packed();
+        let row = self.0[i].get_mut();
         let old = (*row & bit) > 0;
         *row &= !bit;
         old
@@ -220,9 +219,9 @@ impl<R: ribbit::atomic::Raw<u64>> Set256<R> {
     }
 }
 
-impl<R: ribbit::atomic::Raw<u64>> Eq for Set256<R> {}
+impl Eq for Set256 {}
 
-impl<R: ribbit::atomic::Raw<u64>> PartialEq for Set256<R> {
+impl PartialEq for Set256 {
     fn eq(&self, other: &Self) -> bool {
         self.0
             .iter()
@@ -231,17 +230,11 @@ impl<R: ribbit::atomic::Raw<u64>> PartialEq for Set256<R> {
     }
 }
 
-impl<R: ribbit::atomic::Raw<u64>> Clone for Set256<R> {
+impl Clone for Set256 {
     fn clone(&self) -> Self {
         Self(core::array::from_fn(|i| {
-            ribbit::Atomic::new(self.0[i].load(Ordering::Relaxed))
+            AtomicU64::new(self.0[i].load(Ordering::Relaxed))
         }))
-    }
-}
-
-impl<R: ribbit::atomic::Raw<u64>> core::fmt::Debug for Set256<R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Set256").field(&self.0).finish()
     }
 }
 

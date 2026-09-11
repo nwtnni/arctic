@@ -6,6 +6,7 @@
 use core::fmt::Debug;
 use core::ops::Deref;
 
+use crate::raw::edge;
 use crate::raw::node;
 use crate::raw::node::KeyIter256;
 
@@ -19,17 +20,14 @@ pub(super) struct Node256(node::Node<CAPACITY, Header>);
 const_assert_size_align!(Node256, 4096, 4096);
 
 impl Node256 {
-    pub(super) unsafe fn new_unchecked(
-        keys: &[u8],
-        edges: &[ribbit::Packed<crate::raw::edge::Raw>],
-    ) -> Box<Self> {
+    pub(super) unsafe fn new_unchecked(keys: &[u8], edges: &[edge::Raw]) -> Box<Self> {
         validate!(crate::raw::is_unique(keys));
         validate!(keys.len() == edges.len());
         validate!(keys.len() <= CAPACITY);
 
         let mut node = Box::new(Self::default());
         for (index, edge) in core::iter::zip(keys, edges) {
-            *node.0.edges[*index as usize].get_mut_packed() = *edge;
+            node.0.edges[*index as usize].set(*edge);
         }
 
         node
