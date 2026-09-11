@@ -257,7 +257,7 @@ impl Iterator for Iter256 {
 }
 
 #[cfg(feature = "proptest")]
-impl proptest::bits::BitSetLike for Set256<core::sync::atomic::AtomicU64> {
+impl proptest::bits::BitSetLike for Set256 {
     fn new_bitset(max: usize) -> Self {
         assert!(max <= 256, "Only supports 256 bit sets");
         Self::default()

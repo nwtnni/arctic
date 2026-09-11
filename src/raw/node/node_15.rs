@@ -247,13 +247,11 @@ impl proptest::arbitrary::Arbitrary for Header {
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
     fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
-        use core::sync::atomic::Atomic128U64;
-
         use proptest::bits::SampledBitSetStrategy;
         use proptest::strategy::Strategy as _;
 
         (
-            SampledBitSetStrategy::<crate::raw::set::Set256<Atomic128U64>>::new(
+            SampledBitSetStrategy::<crate::raw::set::Set256>::new(
                 min_len.value() as usize..=max_len.value() as usize,
                 u8::MIN as usize..=u8::MAX as usize,
             )
@@ -264,11 +262,9 @@ impl proptest::arbitrary::Arbitrary for Header {
             .prop_map(|(keys, frozen)| {
                 let mut buffer = [0u8; 16];
                 buffer[..keys.len()].copy_from_slice(&keys);
-                Self {
-                    keys: u120::new(u128::from_le_bytes(buffer)),
-                    frozen,
-                    len: u4::new(keys.len() as u8),
-                }
+
+                let header = Self::new(u128::from_le_bytes(buffer), keys.len());
+                if frozen { header.freeze() } else { header }
             })
             .boxed()
     }

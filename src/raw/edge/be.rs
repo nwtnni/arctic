@@ -143,7 +143,7 @@ impl IntoIterator for Be {
         self.into_raw()
             .to_be_bytes()
             .into_iter()
-            .take(self.len().value() as usize)
+            .take(self.len().bytes())
     }
 }
 
@@ -204,24 +204,19 @@ impl proptest::arbitrary::Arbitrary for Be {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         use proptest::strategy::Just;
         use proptest::strategy::Strategy as _;
-        (
-            bool::arbitrary(),
-            bool::arbitrary(),
-            0u8..=<u3 as ribbit::Integer>::MAX.value(),
-        )
+        (bool::arbitrary(), bool::arbitrary(), 0u8..=7u8)
             .prop_flat_map(|(value, frozen, len)| {
                 (
                     Just(value),
                     Just(frozen),
                     Just(len),
-                    (0..(1u64 << (len << 3))).prop_map(|prefix| prefix.swap_bytes() >> 8),
+                    (0u64..(1u64 << (len << 3))).prop_map(|prefix| prefix.swap_bytes() >> 8),
                 )
             })
-            .prop_map(|(value, frozen, len, prefix)| Self {
-                value,
-                frozen,
-                len: u3::new(len),
-                prefix: u56::new(prefix),
+            .prop_map(|(value, frozen, len, prefix)| {
+                Self::new(prefix, u6::new(len << 3))
+                    .with_value(value)
+                    .with_frozen(frozen)
             })
             .boxed()
     }

@@ -497,49 +497,48 @@ mod tests {
             #[cfg(feature = "proptest")]
             mod sequential {
                 use crate::raw::edge::tests::sequential;
-                use ribbit::Pack as _;
 
                 proptest::proptest! {
                     #![proptest_config(proptest::test_runner::Config::with_cases(100_000))]
 
                     #[test]
                     fn expand_compress_inverse(meta: $type) {
-                        sequential::expand_compress_inverse::<$type>(meta.pack())
+                        sequential::expand_compress_inverse::<$type>(meta)
                     }
 
                     #[test]
                     fn expand_correct(meta: $type) {
-                        sequential::expand_correct::<$type>(meta.pack())
+                        sequential::expand_correct::<$type>(meta)
                     }
 
                     #[test]
                     fn eq_reflexive(meta: $type) {
-                        sequential::eq_reflexive::<$type>(meta.pack())
+                        sequential::eq_reflexive::<$type>(meta)
                     }
 
                     #[test]
                     fn eq_ord_consistent(left: $type, right: $type) {
-                        sequential::eq_ord_consistent::<$type>(left.pack(), right.pack())
+                        sequential::eq_ord_consistent::<$type>(left, right)
                     }
 
                     #[test]
                     fn ord_duality(left: $type, right: $type) {
-                        sequential::ord_duality::<$type>(left.pack(), right.pack())
+                        sequential::ord_duality::<$type>(left, right)
                     }
 
                     #[test]
                     fn ord_ignores_flags(left: $type, right: $type) {
-                        sequential::ord_ignores_flags::<$type>(left.pack(), right.pack())
+                        sequential::ord_ignores_flags::<$type>(left, right)
                     }
 
                     #[test]
                     fn new_value_is_value(meta: $type, value: u64) {
-                        sequential::new_value_is_value::<$type>(meta.pack(), value)
+                        sequential::new_value_is_value::<$type>(meta, value)
                     }
 
                     #[test]
                     fn into_iter_len_consistent(meta: $type) {
-                        sequential::into_iter_len_consistent::<$type>(meta.pack())
+                        sequential::into_iter_len_consistent::<$type>(meta)
                     }
                 }
             }
