@@ -6,6 +6,7 @@ use core::marker::PhantomData;
 
 use ribbit::u13;
 
+use crate::key::Read as _;
 use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -13,7 +14,6 @@ use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
-use crate::raw::key::Read as _;
 use crate::raw::key::r#unsized;
 use crate::raw::key::r#unsized::Terminate;
 use crate::raw::key::r#unsized::boxed_slice::BoxedSlice;
@@ -255,15 +255,16 @@ pub struct Writer<I: r#unsized::Invariant> {
 impl<I: r#unsized::Invariant> Writer<I> {
     unsafe fn as_slice_unchecked<'a, R: ?Sized>(&self) -> &'a Slice<I, R> {
         let len_total = self.len.bytes();
-        let len_suffix = self.last.len_slice();
+        let len_suffix = self.last.len().bytes();
 
         validate!(len_total >= len_suffix);
 
+        let len_terminate = <I::Terminate as Terminate>::TRUE.get() as usize;
         let raw = unsafe {
             core::slice::from_raw_parts(
                 // NOTE: requires provenance of original slice
                 self.last.as_ptr().byte_sub(len_total - len_suffix),
-                len_total,
+                len_total - len_terminate,
             )
         };
         unsafe { Slice::<I, R>::new_unchecked(core::mem::transmute_copy::<&[u8], &R>(&raw)) }
@@ -273,14 +274,14 @@ impl<I: r#unsized::Invariant> Writer<I> {
 impl<I: r#unsized::Invariant> key::Write<Reader<'_, I::Terminate>> for Writer<I> {
     type Len = Byte;
 
-    fn new(prefix: Reader<'_, I::Terminate>, key: edge::Slice<I::Terminate>) -> (Self, Self::Len) {
-        let len = prefix.len() + key.len().into();
-        (Writer { last: key, len }, len)
+    fn new(prefix: Reader<'_, I::Terminate>, edge: edge::Slice<I::Terminate>) -> (Self, Self::Len) {
+        let len = prefix.len() + edge.len().into();
+        (Writer { last: edge, len }, len)
     }
 
     fn replace(&mut self, start: Self::Len, _: u8, edge: edge::Slice<I::Terminate>) -> Self::Len {
         validate!(start <= self.len);
-        self.len = start + Byte::BYTE + Byte(edge.len_slice());
+        self.len = start + Byte::BYTE + edge.len().into();
         self.last = edge;
         self.len
     }
