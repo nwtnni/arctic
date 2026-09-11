@@ -70,13 +70,20 @@ impl<T> Slice<T> {
         }
 
         let ptr = self.raw.map_addr(|addr| addr & Self::MASK_PTR);
-        let len = self.raw.addr() >> Self::SHIFT_LEN;
+        let len = self.len_slice();
         unsafe { core::slice::from_raw_parts(ptr, len) }
     }
 
     #[inline]
     pub(crate) fn as_ptr(&self) -> *const u8 {
         self.raw.map_addr(|addr| addr & Self::MASK_PTR)
+    }
+
+    #[inline]
+    pub(crate) fn len_slice(&self) -> usize {
+        let len = self.raw.addr() >> Self::SHIFT_LEN;
+        validate!(len < u13::MAX.value() as usize);
+        len
     }
 }
 
@@ -133,7 +140,7 @@ impl<T: Terminate> edge::Meta for Slice<T> {
 
     #[inline]
     fn len(self) -> Self::Len {
-        let len = (self.raw.addr() >> Self::SHIFT_LEN) + self.is_terminate() as usize;
+        let len = self.len_slice() + self.is_terminate() as usize;
         validate!(len <= u13::MAX.value() as usize);
         u13::new(len as u16)
     }
@@ -155,10 +162,11 @@ impl<T: Terminate> edge::Meta for Slice<T> {
     fn try_compress(self, byte: u8, child: Self) -> Option<Self> {
         validate!(!self.is_frozen());
         validate!(!self.is_value());
+        validate!(!self.is_terminate());
 
-        let len_parent = self.len().value();
+        let len_parent = self.len_slice() as u16;
         let len_byte = T::try_compress(byte) as u16;
-        let len_child = child.len().value();
+        let len_child = child.len_slice() as u16;
         let len_total = u13::try_new(len_parent + len_byte + len_child).ok()?;
 
         // If we're compressing a terminator byte, then
@@ -197,12 +205,10 @@ impl<T: Terminate> edge::Meta for Slice<T> {
             return None;
         }
 
-        validate!(index <= self.len());
-
         let len_parent = index.bytes();
-        // Length without terminator
-        let len_total = self.raw.addr() >> Self::SHIFT_LEN;
-        let len_middle = (len_parent + Self::Len::BYTE.bytes()).min(len_total);
+        let len_slice = self.len_slice();
+        let len_middle = (len_parent + Self::Len::BYTE.bytes()).min(len_slice);
+        validate!(len_parent <= len_slice);
 
         let parent = Slice {
             raw: self
@@ -218,8 +224,8 @@ impl<T: Terminate> edge::Meta for Slice<T> {
 
         let child = Slice {
             raw: unsafe { self.raw.byte_add(len_middle) }.map_addr(|addr| {
-                let len = (len_total - len_middle) << Self::SHIFT_LEN;
-                let terminate = if T::new(len_parent < len_total).get() {
+                let len = (len_slice - len_middle) << Self::SHIFT_LEN;
+                let terminate = if T::new(len_parent < len_slice).get() {
                     usize::MAX
                 } else {
                     !Self::MASK_TERMINATE

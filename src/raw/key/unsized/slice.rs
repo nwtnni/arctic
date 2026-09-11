@@ -255,18 +255,17 @@ pub struct Writer<I: r#unsized::Invariant> {
 impl<I: r#unsized::Invariant> Writer<I> {
     unsafe fn as_slice_unchecked<'a, R: ?Sized>(&self) -> &'a Slice<I, R> {
         let len_total = self.len.bytes();
-        // NOTE: calling inherent method `len` here to ignore implicit terminator byte
-        let len_suffix = self.last.len().bytes();
+        let len_suffix = self.last.len_slice();
 
         validate!(len_total >= len_suffix);
 
-        let raw = I::Terminate::trim(unsafe {
+        let raw = unsafe {
             core::slice::from_raw_parts(
                 // NOTE: requires provenance of original slice
                 self.last.as_ptr().byte_sub(len_total - len_suffix),
                 len_total,
             )
-        });
+        };
         unsafe { Slice::<I, R>::new_unchecked(core::mem::transmute_copy::<&[u8], &R>(&raw)) }
     }
 }
@@ -281,7 +280,7 @@ impl<I: r#unsized::Invariant> key::Write<Reader<'_, I::Terminate>> for Writer<I>
 
     fn replace(&mut self, start: Self::Len, _: u8, edge: edge::Slice<I::Terminate>) -> Self::Len {
         validate!(start <= self.len);
-        self.len = start + Byte::BYTE + edge.len().into();
+        self.len = start + Byte::BYTE + Byte(edge.len_slice());
         self.last = edge;
         self.len
     }
