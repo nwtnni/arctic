@@ -3,8 +3,6 @@
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
-use ribbit::u2;
-
 use crate::raw::Edge;
 use crate::raw::edge;
 use crate::raw::edge::Len as _;
@@ -125,7 +123,7 @@ unsafe impl header::Header for Atomic64<Header> {
             // TODO: SIMD/SWAR?
             core::iter::zip(
                 &mut out.0.entries,
-                node::simd::iter_3(keys, u2::new(len), lower, upper),
+                node::simd::iter_3(keys, len, lower, upper),
             )
             .map(|(out, r#in)| *out = r#in)
             .count() as u8
@@ -142,12 +140,12 @@ unsafe impl header::Header for Atomic64<Header> {
 
     fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {
         let header = self.load(Ordering::Relaxed);
-        node::simd::min_3(header.into_raw(), u2::new(header.len()), lower)
+        node::simd::min_3(header.into_raw(), header.len(), lower)
     }
 
     fn max<U: node::Upper>(&self, upper: U) -> Option<node::KeyIndex> {
         let header = self.load(Ordering::Relaxed);
-        node::simd::max_3(header.into_raw(), u2::new(header.len()), upper)
+        node::simd::max_3(header.into_raw(), header.len(), upper)
     }
 
     #[inline]
@@ -295,7 +293,7 @@ impl From<KeyIter3> for node::KeyIter {
 
 #[cfg(feature = "proptest")]
 impl proptest::arbitrary::Arbitrary for Header {
-    type Parameters = (u2, u2);
+    type Parameters = (u8, u8);
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
     fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
@@ -304,7 +302,7 @@ impl proptest::arbitrary::Arbitrary for Header {
 
         (
             SampledBitSetStrategy::<crate::raw::set::Set256>::new(
-                min_len.value() as usize..=max_len.value() as usize,
+                min_len as usize..=max_len as usize,
                 u8::MIN as usize..=u8::MAX as usize,
             )
             .prop_map(|set| set.iter().collect::<Vec<_>>())
@@ -327,8 +325,8 @@ impl proptest::arbitrary::Arbitrary for Header {
 mod tests {
     crate::raw::node::header::tests::impl_suite!(
         proptest::arbitrary::any_with::<crate::raw::node::node_3::Header>((
-            ribbit::u2::new(0),
-            <ribbit::u2 as ribbit::Integer>::MAX,
+            0,
+            crate::raw::node::node_3::CAPACITY as u8,
         ))
         .prop_map(crate::sync::Atomic64::new)
     );
