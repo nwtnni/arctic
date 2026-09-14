@@ -11,7 +11,6 @@ use fearless_simd::SimdMask as _;
 use fearless_simd::mask8x16;
 use fearless_simd::u8x16;
 use fearless_simd::u16x16;
-use ribbit::u4;
 
 use crate::raw::edge;
 use crate::raw::node;
@@ -55,6 +54,37 @@ impl Node15 {
 // - 121..125: len
 #[derive(Copy, Clone, Debug, Default)]
 pub(super) struct Header(u128);
+
+impl Header {
+    const MASK_FROZEN: u128 = (1 << 120);
+    const SHIFT_LEN: usize = 121;
+
+    #[inline]
+    const fn new(keys: u128, len: usize) -> Self {
+        validate!(len <= 15);
+        // Bytes above `len` are zero
+        validate!(keys & !((1 << ((len as u32) << 3)) - 1) == 0);
+        Self(keys | ((len as u128) << Self::SHIFT_LEN))
+    }
+
+    #[inline]
+    const fn freeze(self) -> Self {
+        validate!(!self.is_frozen());
+        Self(self.0 | Self::MASK_FROZEN)
+    }
+
+    #[inline]
+    const fn is_frozen(self) -> bool {
+        self.0 & Self::MASK_FROZEN > 0
+    }
+
+    #[inline]
+    const fn len(self) -> u8 {
+        let len = self.0 >> Self::SHIFT_LEN;
+        validate!(len <= 15);
+        len as u8
+    }
+}
 
 unsafe impl header::Header for Atomic128<Header> {
     const TYPE: node::Type = node::Type::Node15;
@@ -107,18 +137,18 @@ unsafe impl header::Header for Atomic128<Header> {
     fn keys<L: node::Lower, U: node::Upper>(&self, lower: L, upper: U, iter: &mut KeyIter15) {
         let header = self.load(Ordering::Relaxed);
         fearless_simd::dispatch!(*crate::raw::SIMD, simd => {
-            header.keys_simd(simd, u4::new(header.len()), lower, upper, iter);
+            header.keys_simd(simd, header.len(), lower, upper, iter);
         })
     }
 
     fn min<L: node::Lower>(&self, lower: L) -> Option<node::KeyIndex> {
         let header = self.load(Ordering::Relaxed);
-        node::simd::min_15(header.into_raw(), u4::new(header.len()), lower)
+        node::simd::min_15(header.into_raw(), header.len(), lower)
     }
 
     fn max<U: node::Upper>(&self, upper: U) -> Option<node::KeyIndex> {
         let header = self.load(Ordering::Relaxed);
-        node::simd::max_15(header.into_raw(), u4::new(header.len()), upper)
+        node::simd::max_15(header.into_raw(), header.len(), upper)
     }
 
     #[inline]
@@ -147,7 +177,7 @@ impl Header {
         }
 
         let key = (key as u128) << (len << 3);
-        let value = (self.into_raw() | key) + (1u128 << 121);
+        let value = (self.into_raw() | key) + (1u128 << Self::SHIFT_LEN);
 
         // SAFETY: `len < Self::LEN`
         Err(Some(unsafe { Self::from_raw_unchecked(value) }))
@@ -164,7 +194,7 @@ impl Header {
     fn keys_simd<S: Simd, L: node::Lower, U: node::Upper>(
         &self,
         simd: S,
-        len: u4,
+        len: u8,
         lower: L,
         upper: U,
         out: &mut KeyIter15,
@@ -173,14 +203,14 @@ impl Header {
         let indices = u8x16::from_fn(simd, |index| index as u8);
 
         let (iter, len) = if lower.get() > u8::MIN || upper.get() < u8::MAX {
-            let mask_len = mask8x16::from_bitmask(simd, (1u64 << len.value()) - 1);
+            let mask_len = mask8x16::from_bitmask(simd, (1u64 << len) - 1);
             let mask_range = node::simd::mask_range(simd, keys, lower.get(), upper.get());
 
             let mask = mask_len & mask_range;
             let len = mask.to_bitmask().count_ones() as u8;
             (node::simd::compress_u8x16(simd, mask, indices, keys), len)
         } else {
-            (node::simd::interleave(simd, indices, keys), len.value())
+            (node::simd::interleave(simd, indices, keys), len)
         };
 
         let ptr = NonNull::from(&mut *out).cast::<u16x16<S>>();
@@ -188,37 +218,6 @@ impl Header {
 
         out.0.head = 0;
         out.0.tail = len;
-    }
-}
-
-impl Header {
-    const MASK_FROZEN: u128 = (1 << 120);
-    const SHIFT_LEN: usize = 121;
-
-    #[inline]
-    const fn new(keys: u128, len: usize) -> Self {
-        validate!(len <= 15);
-        // Bytes above `len` are zero
-        validate!(keys & !((1 << ((len as u32) << 3)) - 1) == 0);
-        Self(keys | ((len as u128) << Self::SHIFT_LEN))
-    }
-
-    #[inline]
-    const fn freeze(self) -> Self {
-        validate!(!self.is_frozen());
-        Self(self.0 | Self::MASK_FROZEN)
-    }
-
-    #[inline]
-    const fn is_frozen(self) -> bool {
-        self.0 & Self::MASK_FROZEN > 0
-    }
-
-    #[inline]
-    const fn len(self) -> u8 {
-        let len = self.0 >> 121;
-        validate!(len <= 15);
-        len as u8
     }
 }
 
@@ -243,7 +242,7 @@ impl From<Box<KeyIter15>> for node::KeyIter {
 
 #[cfg(feature = "proptest")]
 impl proptest::arbitrary::Arbitrary for Header {
-    type Parameters = (u4, u4);
+    type Parameters = (u8, u8);
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
     fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
@@ -252,7 +251,7 @@ impl proptest::arbitrary::Arbitrary for Header {
 
         (
             SampledBitSetStrategy::<crate::raw::set::Set256>::new(
-                min_len.value() as usize..=max_len.value() as usize,
+                min_len as usize..=max_len as usize,
                 u8::MIN as usize..=u8::MAX as usize,
             )
             .prop_map(|set| set.iter().collect::<Vec<_>>())
@@ -274,8 +273,8 @@ impl proptest::arbitrary::Arbitrary for Header {
 mod tests {
     crate::raw::node::header::tests::impl_suite!(
         proptest::arbitrary::any_with::<crate::raw::node::node_15::Header>((
-            ribbit::u4::new(0),
-            <ribbit::u4 as ribbit::Integer>::MAX,
+            0,
+            crate::raw::node::node_15::CAPACITY as u8,
         ))
         .prop_map(crate::sync::Atomic128::new)
     );

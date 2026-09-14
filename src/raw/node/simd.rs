@@ -14,7 +14,6 @@ use fearless_simd::mask16x16;
 use fearless_simd::u8x16;
 use fearless_simd::u8x32;
 use fearless_simd::u16x16;
-use ribbit::u4;
 
 use crate::raw::node;
 use crate::raw::node::iter::KeyIndex;
@@ -40,22 +39,22 @@ fn max_3_fallback<U: node::Upper>(keys: u64, len: u8, upper: U) -> Option<KeyInd
 }
 
 #[inline]
-pub(super) fn min_15<L: node::Lower>(keys: u128, len: u4, lower: L) -> Option<KeyIndex> {
+pub(super) fn min_15<L: node::Lower>(keys: u128, len: u8, lower: L) -> Option<KeyIndex> {
     min_15_fallback(keys, len, lower)
 }
 
 #[inline]
-fn min_15_fallback<L: node::Lower>(keys: u128, len: u4, lower: L) -> Option<KeyIndex> {
+fn min_15_fallback<L: node::Lower>(keys: u128, len: u8, lower: L) -> Option<KeyIndex> {
     iter_15(keys, len, lower, node::Unbound::<()>::default()).min()
 }
 
 #[inline]
-pub(super) fn max_15<U: node::Upper>(keys: u128, len: u4, upper: U) -> Option<KeyIndex> {
+pub(super) fn max_15<U: node::Upper>(keys: u128, len: u8, upper: U) -> Option<KeyIndex> {
     max_15_fallback(keys, len, upper)
 }
 
 #[inline]
-fn max_15_fallback<U: node::Upper>(keys: u128, len: u4, upper: U) -> Option<KeyIndex> {
+fn max_15_fallback<U: node::Upper>(keys: u128, len: u8, upper: U) -> Option<KeyIndex> {
     iter_15(keys, len, node::Unbound::<()>::default(), upper).max()
 }
 
@@ -265,13 +264,13 @@ pub(super) fn iter_3<L: node::Lower, U: node::Upper>(
 
 fn iter_15<L: node::Lower, U: node::Upper>(
     keys: u128,
-    len: u4,
+    len: u8,
     lower: L,
     upper: U,
 ) -> impl Iterator<Item = KeyIndex> {
     keys.to_le_bytes()
         .into_iter()
-        .take(len.value() as usize)
+        .take(len as usize)
         .enumerate()
         .filter(move |(_, key)| *key >= lower.get())
         .filter(move |(_, key)| *key <= upper.get())
