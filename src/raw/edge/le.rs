@@ -5,12 +5,12 @@ use core::fmt::Debug;
 use core::ops::BitAnd as _;
 use core::ops::BitOr as _;
 
-use ribbit::u6;
-
+use crate::key::Len as _;
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::sync::Convert;
+
+type Bit = crate::raw::key::Bit<56>;
 
 /// Edge metadata storing compressed edge bytes starting at least significant byte.
 ///
@@ -21,8 +21,7 @@ use crate::sync::Convert;
 // - 48..56: least significant key byte
 // - 56: value
 // - 57: frozen
-// - 58..61: len
-// - 61..64: zero
+// - 58..64: len
 #[derive(Copy, Clone)]
 pub struct Le(u64);
 
@@ -32,13 +31,12 @@ impl Le {
     const SHIFT_LEN: u64 = 58;
 
     #[inline]
-    pub(crate) fn new(value: u64, len: ribbit::u6) -> Self {
-        validate_eq!(len.value() & 0b111, 0);
-        Self(value & Self::mask(len) | ((len.value() as u64) << Self::SHIFT_LEN))
+    pub(crate) fn new(value: u64, len: Bit) -> Self {
+        Self(value & Self::mask(len) | ((len.into_u8() as u64) << Self::SHIFT_LEN))
     }
 
     #[inline]
-    fn mask(len: u6) -> u64 {
+    fn mask(len: Bit) -> u64 {
         (1 << len.bits()) - 1
     }
 }
@@ -46,11 +44,11 @@ impl Le {
 impl edge::Meta for Le {
     const NULL: Self = Self(0);
 
-    type Len = u6;
+    type Len = Bit;
 
     #[inline]
-    fn len(self) -> u6 {
-        unsafe { u6::new_unchecked((self.into_raw() >> Self::SHIFT_LEN) as u8) }
+    fn len(self) -> Self::Len {
+        unsafe { Bit::new_unchecked((self.into_raw() >> Self::SHIFT_LEN) as u8) }
     }
 
     #[inline]
@@ -86,21 +84,20 @@ impl edge::Meta for Le {
         validate!(!self.is_value());
 
         let len_parent = self.len();
-        let len_byte = Self::Len::BYTE.value();
-        let len_child = edge::Meta::len(child).value();
-        let len = u6::try_new(len_parent.value() + len_byte + len_child).ok()?;
-        let index_child = (len_parent.value() + len_byte) as u32;
+        let len_child = child.len();
+        let len = Bit::try_add(len_parent, Self::Len::BYTE, len_child)?;
+        let index_child = (len_parent + Self::Len::BYTE).into_u8();
 
         Some(Self(
             // Parent prefix
             self.into_raw()
                 // Byte
-                .bitor((byte as u64) << len_parent.value())
+                .bitor((byte as u64) << len_parent.into_u8())
                 // Child prefix
                 .bitor(child.into_raw() << index_child)
                 // Length
                 .bitand(Le::mask(len))
-                .bitor((len.value() as u64) << Self::SHIFT_LEN)
+                .bitor((len.into_u8() as u64) << Self::SHIFT_LEN)
                 // Preserve child flags
                 .bitor(child.into_raw() & (Self::MASK_VALUE | Self::MASK_FROZEN)),
         ))
@@ -108,20 +105,24 @@ impl edge::Meta for Le {
 
     #[inline]
     fn try_expand(self, index: Self::Len) -> Option<(Self, u8, Self)> {
+        let index = index.align_down();
         let len = edge::Meta::len(self);
         if index >= len {
             return None;
         }
 
-        let parent = Le::new(self.into_raw(), index);
-        let byte = (self.into_raw() >> index.value()) as u8;
+        let len_parent = index;
+        let parent = Le::new(self.into_raw(), len_parent);
+
         let index_child = index + Self::Len::BYTE;
         let len_child = len - index_child;
 
+        let byte = (self.into_raw() >> len_parent.into_u8()) as u8;
+
         let child = Self(
-            (self.into_raw() >> index_child.value())
+            (self.into_raw() >> index_child.into_u8())
                 .bitand(Le::mask(len_child))
-                .bitor((len_child.value() as u64) << Self::SHIFT_LEN)
+                .bitor((len_child.into_u8() as u64) << Self::SHIFT_LEN)
                 .bitor(self.into_raw() & (Self::MASK_VALUE | Self::MASK_FROZEN)),
         );
 
@@ -211,7 +212,7 @@ impl proptest::arbitrary::Arbitrary for Le {
                 )
             })
             .prop_map(|(value, frozen, len, prefix)| {
-                Self::new(prefix, u6::new(len << 3))
+                Self::new(prefix, Bit::new_masked(len << 3))
                     .with_value(value)
                     .with_frozen(frozen)
             })

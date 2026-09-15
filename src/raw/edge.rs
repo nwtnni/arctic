@@ -6,12 +6,10 @@ mod slice;
 
 pub(crate) use be::Be;
 pub(crate) use le::Le;
-use ribbit::u6;
 pub(crate) use slice::Slice;
 
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use core::ops::Add;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
@@ -276,7 +274,7 @@ pub(crate) trait Meta:
     const NULL: Self;
 
     /// Representation of compressed edge byte length.
-    type Len: Len;
+    type Len: key::Len;
 
     /// Whether the child pointer is a value.
     fn is_value(self) -> bool;
@@ -310,36 +308,6 @@ pub(crate) trait Meta:
     fn try_expand(self, index: Self::Len) -> Option<(Self, u8, Self)>;
 }
 
-/// Length of compressed bytes along an edge.
-pub(crate) trait Len: Copy + Eq + Ord + Add<Output = Self> + Debug {
-    const MAX: Self;
-    const BYTE: Self;
-
-    #[cfg_attr(not(test), expect(unused))]
-    fn range_to(self) -> impl Iterator<Item = Self>;
-
-    fn bits(self) -> usize;
-
-    #[inline]
-    fn bytes(self) -> usize {
-        self.bits() >> 3
-    }
-}
-
-impl Len for u6 {
-    const MAX: Self = u6::new(56);
-    const BYTE: Self = u6::new(8);
-
-    #[inline]
-    fn bits(self) -> usize {
-        self.value() as usize
-    }
-
-    fn range_to(self) -> impl Iterator<Item = Self> {
-        (0..=self.value()).step_by(8).flat_map(Self::try_new)
-    }
-}
-
 /// Non-null child of an edge.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Child {
@@ -354,8 +322,8 @@ mod tests {
         use core::fmt::Debug;
 
         use crate::raw::Edge;
-        use crate::raw::edge::Len;
         use crate::raw::edge::Meta;
+        use crate::raw::key::Len;
 
         /// An expansion followed by a compression results in the same edge.
         #[cfg_attr(not(feature = "proptest"), expect(unused))]

@@ -1,9 +1,6 @@
 //! Benchmarking baseline for integer keys.
 
-use ribbit::u6;
-
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
@@ -77,13 +74,13 @@ impl Reader {
         let buffer = buffer.to_be_bytes();
         Self {
             buffer,
-            len: Byte((bits as usize) >> 3),
+            len: Byte::new((bits as usize) >> 3),
         }
     }
 }
 
 impl key::Read for Reader {
-    const LEN: Option<Self::Len> = Some(Byte(8));
+    const LEN: Option<Self::Len> = Some(Byte::new(8));
 
     type Edge = edge::Le;
     type Len = Byte;
@@ -95,12 +92,12 @@ impl key::Read for Reader {
 
     #[inline]
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        let len = u6::new((self.len().bits()).min(len.bits()) as u8);
-        edge::Le::new(u64::from_le_bytes(self.buffer), u6::new(len.bits() as u8))
+        let len = len.min(self.len.into());
+        edge::Le::new(u64::from_le_bytes(self.buffer), len)
     }
 
     #[inline]
-    fn get_byte(&self, index: u6) -> Option<u8> {
+    fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8> {
         let index = index.bytes();
         if index < self.len.bytes() {
             self.buffer.get(index).copied()
@@ -110,15 +107,16 @@ impl key::Read for Reader {
     }
 
     #[inline]
-    fn match_prefix(&self, edge: Self::Edge) -> Byte {
-        Byte(
-            self.buffer
-                .into_iter()
-                .zip(edge)
-                .take(self.len.bytes())
-                .position(|(l, r)| l != r)
-                .unwrap_or(self.len.bytes()),
-        )
+    fn match_prefix(&self, edge: Self::Edge) -> <Self::Edge as edge::Meta>::Len {
+        todo!()
+        // Byte(
+        //     self.buffer
+        //         .into_iter()
+        //         .zip(edge)
+        //         .take(self.len.bytes())
+        //         .position(|(l, r)| l != r)
+        //         .unwrap_or(self.len.bytes()),
+        // )
     }
 
     #[inline]
@@ -143,7 +141,7 @@ impl key::Read for Reader {
             .iter()
             .zip(&other.buffer[..len.bytes()])
             .position(|(l, r)| l != r)
-            .map(Byte)
+            .map(Byte::new)
             .unwrap_or(len);
         let mut buffer = [0u8; 8];
         buffer[..len_prefix.bytes()].copy_from_slice(&self.buffer[..len_prefix.bytes()]);

@@ -162,7 +162,7 @@ pub(crate) trait Terminate:
     fn new(terminate: bool) -> Self;
     fn get(self) -> bool;
 
-    fn try_compress(byte: u8) -> usize;
+    fn is_terminator(byte: u8) -> bool;
 
     fn trim(slice: &[u8]) -> &[u8];
 }
@@ -180,8 +180,8 @@ impl Terminate for () {
     }
 
     #[inline]
-    fn try_compress(_: u8) -> usize {
-        1
+    fn is_terminator(_: u8) -> bool {
+        false
     }
 
     #[inline]
@@ -205,8 +205,8 @@ impl Terminate for bool {
     }
 
     #[inline]
-    fn try_compress(byte: u8) -> usize {
-        (byte > 0) as usize
+    fn is_terminator(byte: u8) -> bool {
+        byte == 0
     }
 
     #[inline]

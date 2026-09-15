@@ -6,7 +6,6 @@ use core::sync::atomic::Ordering;
 use ribbit::u6;
 use ribbit::u56;
 
-use crate::raw::edge::Len as _;
 use crate::sequential;
 
 pub(crate) union Set {
@@ -144,7 +143,7 @@ impl Set8Packed {
             | (byte << 40)
             | (byte << 48);
 
-        (crate::raw::find_zero(self.into_raw() ^ broadcast) << 3) < self.len().bits() as u8
+        (crate::raw::find_zero(self.into_raw() ^ broadcast) << 3) < self.len().value()
     }
 
     fn try_insert_mut(&mut self, byte: u8) -> Result<bool, ()> {
@@ -152,19 +151,19 @@ impl Set8Packed {
             return Ok(false);
         }
 
-        if self.len().bits() >= 56 {
-            validate!(self.len().bits() == 56);
+        if self.len().value() >= 56 {
+            validate!(self.len().value() == 56);
             return Err(());
         }
 
-        let byte = (byte as u64) << self.len().bits();
+        let byte = (byte as u64) << self.len().value();
         *self = unsafe { Self::from_raw_unchecked((self.into_raw() | byte) + (8 << 56)) };
         Ok(true)
     }
 
     fn with_bytes<F: FnOnce(&[u8]) -> T, T>(&self, with: F) -> T {
         let buffer = self.into_raw().to_le_bytes();
-        let len = self.len().bytes();
+        let len = (self.len().value() >> 3) as usize;
         with(&buffer[..len])
     }
 }

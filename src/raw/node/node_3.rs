@@ -5,7 +5,6 @@ use core::sync::atomic::Ordering;
 
 use crate::raw::Edge;
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;

@@ -156,11 +156,12 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
 
     #[inline]
     fn match_exact(&self, meta: Self::Edge) -> Option<<Self::Edge as edge::Meta>::Len> {
-        let len = self.match_prefix(meta);
-        (len >= meta.len().into()).then_some(meta.len())
+        let len_match = self.match_prefix(meta);
+        let len_edge = meta.len();
+        (len_match >= len_edge).then_some(len_edge)
     }
 
-    fn match_prefix(&self, meta: Self::Edge) -> Self::Len;
+    fn match_prefix(&self, meta: Self::Edge) -> <Self::Edge as edge::Meta>::Len;
 
     fn prefix(self, end: Self::Len) -> Self;
     fn suffix(self, start: Self::Len) -> Self;

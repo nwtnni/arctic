@@ -11,9 +11,9 @@ use crate::concurrent::Smr;
 use crate::concurrent::Value;
 use crate::raw::Edge;
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::iter::Unbound;
+use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::sync::Atomic128;
 

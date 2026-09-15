@@ -1,27 +1,26 @@
 //! Support for unsigned integer keys.
 
-use ribbit::u6;
-
 use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Bit;
+use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 use crate::sync::Convert as _;
 
 macro_rules! impl_key {
-    ($($ty:ty),* $(,)?) => {
+    ($($ty:ty, $key:expr, $edge:expr);* $(,)?) => {
         $(
             impl Key for $ty {
-                type Read<'k> = Reader<$ty>;
+                type Read<'k> = Reader<$key, $edge, $ty>;
                 type Write = Writer<$ty>;
                 type Borrowed = Self;
                 type Insert<'k> = Self;
 
-                type Edge = edge::Be;
-                type Len = Bit;
+                type Edge = edge::Be<$edge>;
+                type Len = Bit<$key>;
 
                 #[inline]
                 fn as_insert(&self) -> Self::Insert<'_> {
@@ -56,48 +55,48 @@ macro_rules! impl_key {
                     (
                         Reader {
                             buffer: reader.buffer,
-                            len: reader.len.0.checked_sub(Self::Len::BYTE.0).map(Bit).expect("Non-empty"),
+                            len: reader.len - Self::Len::BYTE,
                         },
                         reader.buffer.least_significant_u8(),
                     )
                 }
             }
 
-            impl From<$ty> for Reader<$ty> {
+            impl From<$ty> for Reader<$key, $edge, $ty> {
                 #[inline]
                 fn from(value: $ty) -> Self {
                     Self {
                         buffer: value,
-                        len: Bit(<$ty as Native>::BITS),
+                        len: unsafe { Bit::new_unchecked(<$ty as Native>::BITS) },
                     }
                 }
             }
 
-            impl<'k> From<&'k $ty> for Reader<$ty> {
+            impl<'k> From<&'k $ty> for Reader<$key, $edge, $ty> {
                 #[inline]
                 fn from(value: &'k $ty) -> Self {
                     Self::from(*value)
                 }
             }
 
-            impl<'k> From<&'k [u8]> for Reader<$ty> {
+            impl<'k> From<&'k [u8]> for Reader<$key, $edge, $ty> {
                 #[inline]
                 fn from(prefix: &'k [u8]) -> Self {
                     Self {
                         buffer: Native::from_be_bytes(prefix),
-                        len: Bit(((prefix.len() << 3) as u8).min(<$ty as Native>::BITS)),
+                        len:  Byte::new(prefix.len()).into() ,
                     }
                 }
             }
 
-            impl<'k> From<&'k str> for Reader<$ty> {
+            impl<'k> From<&'k str> for Reader<$key, $edge, $ty> {
                 #[inline]
                 fn from(prefix: &'k str) -> Self {
                     Self::from(prefix.as_bytes())
                 }
             }
 
-            impl<'k, const N: usize> From<&'k [u8; N]> for Reader<$ty> {
+            impl<'k, const N: usize> From<&'k [u8; N]> for Reader<$key, $edge, $ty> {
                 #[inline]
                 fn from(prefix: &'k [u8; N]) -> Self {
                     Self::from(prefix.as_slice())
@@ -107,27 +106,35 @@ macro_rules! impl_key {
     };
 }
 
-impl_key!(u16, u32, u128);
+impl_key!(
+    u16, 16, 16;
+    u32, 32, 32;
+    u128, 128, 56
+);
 
 #[cfg(not(feature = "opt-no-int"))]
-impl_key!(u64);
+impl_key!(u64, 64, 56);
 
 #[doc(hidden)]
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
-pub struct Reader<N> {
+pub struct Reader<const KEY: u8, const EDGE: u8, N> {
     // NOTE: `buffer` is allowed to contain arbitrary bytes beyond
     // the most significant `len` bytes, but must clear them to
     // zero when (a) creating an edge to insert into the tree,
     // or (b) when creating a writer.
     pub(crate) buffer: N,
-    len: Bit,
+    len: Bit<KEY>,
 }
 
-impl<N: Native> key::Read for Reader<N> {
-    const LEN: Option<Self::Len> = Some(Bit(N::BITS));
+impl<const KEY: u8, const EDGE: u8, N: Native> key::Read for Reader<KEY, EDGE, N>
+where
+    Bit<KEY>: From<Bit<EDGE>>,
+    Bit<EDGE>: From<Bit<KEY>>,
+{
+    const LEN: Option<Self::Len> = Some(Bit::<KEY>::MAX);
 
-    type Edge = edge::Be;
-    type Len = Bit;
+    type Edge = edge::Be<EDGE>;
+    type Len = Bit<KEY>;
 
     #[inline]
     fn len(&self) -> Self::Len {
@@ -136,23 +143,36 @@ impl<N: Native> key::Read for Reader<N> {
 
     #[inline]
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        let len = u6::new(self.len.min(len.into()).0);
+        let len = Self::Len::min::<EDGE, KEY>(len, self.len);
         edge::Be::new(self.buffer.most_significant_u64(), len)
     }
 
     #[inline]
-    fn get_byte(&self, index: u6) -> Option<u8> {
-        (self.len > index.into()).then(|| self.buffer.get_u8(index.value()))
+    fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8> {
+        (self.len > index.into()).then(|| self.buffer.get_u8(index.into_u8()))
     }
 
     #[inline]
-    unsafe fn get_byte_unchecked(&self, index: u6) -> u8 {
-        self.buffer.get_u8(index.value())
+    unsafe fn get_byte_unchecked(&self, index: <Self::Edge as edge::Meta>::Len) -> u8 {
+        self.buffer.get_u8(index.into_u8())
     }
 
     #[inline]
-    fn match_prefix(&self, edge: Self::Edge) -> Self::Len {
-        Bit((edge.into_raw() ^ self.buffer.most_significant_u64()).leading_zeros() as u8)
+    fn match_exact(&self, edge: Self::Edge) -> Option<<Self::Edge as edge::Meta>::Len> {
+        let len_match =
+            (edge.into_raw() ^ self.buffer.most_significant_u64()).leading_zeros() as u8;
+        let len_edge = edge.len();
+        (len_match >= len_edge.into_u8()).then_some(len_edge)
+    }
+
+    #[inline]
+    fn match_prefix(&self, edge: Self::Edge) -> <Self::Edge as edge::Meta>::Len {
+        let len_match = (edge.into_raw() ^ self.buffer.most_significant_u64()
+            // HACK: branchless clamp to `Self::Edge::Len::MAX`
+            | const { 1u64.rotate_right(<Self::Edge as edge::Meta>::Len::MAX.into_u8() as u32 + 1) })
+        .leading_zeros() as u8;
+
+        unsafe { Bit::new_unchecked(len_match) }
     }
 
     #[inline]
@@ -170,15 +190,15 @@ impl<N: Native> key::Read for Reader<N> {
         validate!(start <= self.len());
 
         Self {
-            buffer: self.buffer.unbounded_shl(start.0),
+            buffer: self.buffer.unbounded_shl(start.into_u8()),
             len: self.len - start,
         }
     }
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        let max = self.len.min(other.len).0;
-        let len = Bit((self.buffer ^ other.buffer).leading_zeros().min(max) & !0b111);
+        let max = self.len.min(other.len).into_u8();
+        let len = Bit::new_masked((self.buffer ^ other.buffer).leading_zeros().min(max));
         Self {
             buffer: self.buffer,
             len,
@@ -186,7 +206,11 @@ impl<N: Native> key::Read for Reader<N> {
     }
 }
 
-impl<N: Native> core::fmt::Debug for Reader<N> {
+impl<const KEY: u8, const EDGE: u8, N: Native> core::fmt::Debug for Reader<KEY, EDGE, N>
+where
+    Bit<KEY>: From<Bit<EDGE>>,
+    Bit<EDGE>: From<Bit<KEY>>,
+{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let bytes = self.len().bytes();
         self.buffer
@@ -199,30 +223,34 @@ impl<N: Native> core::fmt::Debug for Reader<N> {
 #[derive(Default)]
 pub struct Writer<N>(N);
 
-impl<N: Native> key::Write<Reader<N>> for Writer<N> {
-    type Len = Bit;
+impl<const KEY: u8, const EDGE: u8, N: Native> key::Write<Reader<KEY, EDGE, N>> for Writer<N>
+where
+    Bit<KEY>: From<Bit<EDGE>>,
+    Bit<EDGE>: From<Bit<KEY>>,
+{
+    type Len = Bit<KEY>;
 
     #[inline]
-    fn new(prefix: Reader<N>, edge: edge::Be) -> (Self, Self::Len) {
+    fn new(prefix: Reader<KEY, EDGE, N>, edge: edge::Be<EDGE>) -> (Self, Self::Len) {
         let len = prefix.len() + edge.len().into();
 
-        validate!(len.0 <= N::BITS);
+        validate!(len.into_u8() <= N::BITS);
 
         let writer = Self(
-            prefix.buffer.most_significant(prefix.len.0)
-                | N::from_most_significant_u64(edge.into_raw()).unbounded_shr(prefix.len.0),
+            prefix.buffer.most_significant(prefix.len.into_u8())
+                | N::from_most_significant_u64(edge.into_raw()).unbounded_shr(prefix.len.into_u8()),
         );
 
         (writer, len)
     }
 
     #[inline]
-    fn replace(&mut self, start: Self::Len, node: u8, edge: edge::Be) -> Self::Len {
-        self.0 = self.0.most_significant(start.0)
-            | (N::from_u8(node) >> start.0)
-            | (N::from_most_significant_u64(edge.into_raw()).unbounded_shr(8 + start.0));
+    fn replace(&mut self, start: Self::Len, node: u8, edge: edge::Be<EDGE>) -> Self::Len {
+        self.0 = self.0.most_significant(start.into_u8())
+            | (N::from_u8(node) >> start.into_u8())
+            | (N::from_most_significant_u64(edge.into_raw()).unbounded_shr(8 + start.into_u8()));
 
-        start + Bit::BYTE + edge.len().into()
+        start + Bit::<KEY>::BYTE + edge.len().into()
     }
 }
 
@@ -282,7 +310,7 @@ macro_rules! impl_native {
         $(
             impl Native for $ty {
                 const MAX: Self = <$ty>::MAX;
-                const BITS: u8 = <$ty>::BITS as u8;
+                const BITS: u8 = $bits;
 
                 #[inline]
                 fn from_be_bytes(bytes: &[u8]) -> Self {

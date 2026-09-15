@@ -9,14 +9,13 @@ use std::ffi::CString;
 
 #[cfg(feature = "proptest")]
 use proptest::prelude::Strategy;
-use ribbit::u6;
 
 use crate::Key;
+use crate::key::Bit;
 #[cfg(feature = "proptest")]
 use crate::key::Invariant;
 use crate::key::Terminated;
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
@@ -303,35 +302,36 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
 
     #[inline]
     fn len(&self) -> Self::Len {
-        Byte(self.len + self.terminate.get() as usize)
+        Byte::new(self.len + self.terminate.get() as usize)
     }
 
     #[inline]
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        let len = u6::new((self.len().bits()).min(len.bits()) as u8);
+        let len = Bit::from(self.len()).min(len);
         edge::Le::new(r#unsized::read_u64(self.as_slice()), len)
     }
 
     #[inline]
-    fn get_byte(&self, index: u6) -> Option<u8> {
+    fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8> {
         self.get_byte(index.bytes())
     }
 
+    // Override to avoid bit <-> byte conversion
     #[inline]
     fn match_exact(&self, edge: Self::Edge) -> Option<<Self::Edge as edge::Meta>::Len> {
-        // Avoid bit <-> byte conversion
-        let len_edge = edge.len();
         let len_match =
             (edge.into_raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as u8;
-        (len_match >= len_edge.value()).then_some(len_edge)
+        let len_edge = edge.len();
+        (len_match >= len_edge.into_u8()).then_some(len_edge)
     }
 
     #[inline]
-    fn match_prefix(&self, edge: Self::Edge) -> Self::Len {
-        Byte(
-            ((edge.into_raw() ^ r#unsized::read_u64(self.as_slice())).trailing_zeros() as usize)
-                >> 3,
-        )
+    fn match_prefix(&self, edge: Self::Edge) -> <Self::Edge as edge::Meta>::Len {
+        let len_match = (edge.into_raw() ^ r#unsized::read_u64(self.as_slice())
+            // HACK: branchless clamp to `Self::Edge::Len::MAX`
+            | const { 1u64 << <Self::Edge as edge::Meta>::Len::MAX.into_u8() })
+        .trailing_zeros() as u8;
+        unsafe { Bit::new_unchecked(len_match) }
     }
 
     #[inline]
@@ -412,10 +412,10 @@ impl<'k, T: Terminate> key::Write<Reader<'k, T>> for Writer {
 
     #[inline]
     fn replace(&mut self, start: Self::Len, node: u8, edge: edge::Le) -> Self::Len {
-        validate!(start.0 <= self.0.len());
-        self.0.truncate(start.0);
+        validate!(start <= Byte::new(self.0.len()));
+        self.0.truncate(start.bytes());
         self.0.push(node);
         self.0.extend(edge);
-        Byte(self.0.len())
+        Byte::new(self.0.len())
     }
 }

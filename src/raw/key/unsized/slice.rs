@@ -4,12 +4,9 @@ use core::ffi::CStr;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 
-use ribbit::u13;
-
 use crate::key::Read as _;
 use crate::key::Terminated;
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
@@ -208,16 +205,16 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     }
 
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        let min = len.bytes().min(self.0.len);
+        let min = len.min(Byte::new(self.0.len).into());
         edge::Slice::new(self.0.as_non_null(), min)
             .with_terminate(self.0.terminate.get() && len.bytes() > self.0.len)
     }
 
-    fn get_byte(&self, index: u13) -> Option<u8> {
+    fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8> {
         self.0.get_byte(index.bytes())
     }
 
-    fn match_prefix(&self, meta: edge::Slice<T>) -> Self::Len {
+    fn match_prefix(&self, meta: edge::Slice<T>) -> <Self::Edge as edge::Meta>::Len {
         let other = unsafe { meta.as_slice() };
 
         let index = r#unsized::common_prefix(self.0.as_slice(), other);
@@ -226,7 +223,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
             && index == other.len()
             && meta.is_terminate();
 
-        Byte(index + terminate as usize)
+        unsafe { Byte::new_unchecked(index + terminate as usize) }
     }
 
     #[inline]

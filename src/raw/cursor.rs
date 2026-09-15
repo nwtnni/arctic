@@ -121,7 +121,7 @@ where
             let len_edge = meta.len();
             let len_prefix = self.reader.match_prefix(meta);
 
-            if len_prefix >= len_edge.into()
+            if len_prefix >= len_edge
                 && let edge::Child::Node(node) = child
                 && let Some(byte) = self.reader.get_byte(len_edge)
             {
@@ -134,11 +134,11 @@ where
                 continue;
             }
 
-            if len_prefix < self.reader.len() {
-                return None;
+            return if self.reader.len() <= len_prefix.into() {
+                Some(edge)
             } else {
-                return Some(edge);
-            }
+                None
+            };
         }
     }
 
@@ -279,14 +279,16 @@ where
         value: u64,
     ) -> (Edge<R::Edge>, Option<NonNull<Atomic128<Edge<R::Edge>>>>) {
         let meta = old.meta();
-        let len = self.reader.match_prefix(meta).into();
 
-        match meta.try_expand(len) {
+        match meta.try_expand(self.reader.match_prefix(meta)) {
             None => Edge::new_path(self.reader, value),
             Some((parent, old_byte, old_child)) => {
-                let new_byte = unsafe { self.reader.get_byte_unchecked(len) };
-                let (new_child, tail_path) =
-                    Edge::new_path(self.reader.suffix(R::Len::BYTE + len.into()), value);
+                let len_parent = parent.len();
+                let new_byte = unsafe { self.reader.get_byte_unchecked(len_parent) };
+                let (new_child, tail_path) = Edge::new_path(
+                    self.reader.suffix(R::Len::BYTE + len_parent.into()),
+                    value,
+                );
 
                 // NOTE: must put new allocation first because
                 // `deallocate_recursive` recurses on first edge

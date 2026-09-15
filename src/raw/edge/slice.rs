@@ -2,13 +2,13 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
-use ribbit::u13;
-
+use crate::key::Len as _;
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key::Terminate;
 use crate::sync::Convert;
+
+type Byte = crate::raw::key::Byte<{ (1 << 13) - 1 }>;
 
 // Layout:
 // - 0..48: ptr
@@ -33,13 +33,13 @@ impl<T> Slice<T> {
     const SHIFT_LEN: usize = 51;
 
     #[inline]
-    pub(crate) fn new(ptr: NonNull<u8>, len: usize) -> Self {
-        validate!(len < u13::MAX.value() as usize);
+    pub(crate) fn new(ptr: NonNull<u8>, len: Byte) -> Self {
+        validate!(len < Byte::MAX);
 
         Self {
             raw: ptr.as_ptr().map_addr(|addr| {
                 validate_eq!(addr & !Self::MASK_PTR, 0);
-                addr | (len << Self::SHIFT_LEN)
+                addr | (len.bytes() << Self::SHIFT_LEN)
             }),
             terminate: PhantomData,
         }
@@ -71,7 +71,7 @@ impl<T> Slice<T> {
 
         let ptr = self.raw.map_addr(|addr| addr & Self::MASK_PTR);
         let len = self.len_slice();
-        unsafe { core::slice::from_raw_parts(ptr, len) }
+        unsafe { core::slice::from_raw_parts(ptr, len.bytes()) }
     }
 
     #[inline]
@@ -80,10 +80,8 @@ impl<T> Slice<T> {
     }
 
     #[inline]
-    pub(crate) fn len_slice(&self) -> usize {
-        let len = self.raw.addr() >> Self::SHIFT_LEN;
-        validate!(len < u13::MAX.value() as usize);
-        len
+    pub(crate) fn len_slice(&self) -> Byte {
+        unsafe { Byte::new_unchecked(self.raw.addr() >> Self::SHIFT_LEN) }
     }
 }
 
@@ -107,7 +105,7 @@ impl<T: Terminate> edge::Meta for Slice<T> {
         terminate: PhantomData,
     };
 
-    type Len = u13;
+    type Len = Byte;
 
     #[inline]
     fn is_value(self) -> bool {
@@ -140,9 +138,7 @@ impl<T: Terminate> edge::Meta for Slice<T> {
 
     #[inline]
     fn len(self) -> Self::Len {
-        let len = self.len_slice() + self.is_terminate() as usize;
-        validate!(len <= u13::MAX.value() as usize);
-        u13::new(len as u16)
+        self.len_slice() + self.is_terminate().into()
     }
 
     #[inline]
@@ -164,25 +160,28 @@ impl<T: Terminate> edge::Meta for Slice<T> {
         validate!(!self.is_value());
         validate!(!self.is_terminate());
 
-        let len_parent = self.len_slice() as u16;
-        let len_byte = T::try_compress(byte) as u16;
-        let len_child = child.len_slice() as u16;
-        let len_total = u13::try_new(len_parent + len_byte + len_child).ok()?;
+        let len_parent = self.len_slice();
+        let len_byte = Byte::from(!T::is_terminator(byte));
+        let len_child = child.len_slice();
+        let len_total = Byte::try_add(len_parent, len_byte, len_child)?;
 
         // If we're compressing a terminator byte, then
         // the child must be an empty edge without a terminator
-        validate!(len_byte == 1 || !child.is_terminate() && len_child == 0 && child.is_value());
+        validate!(
+            len_byte == Byte::BYTE
+                || !child.is_terminate() && len_child == Byte::ZERO && child.is_value()
+        );
 
         Some(Slice {
             raw: unsafe {
                 child
                     .raw
                     // NOTE: requires provenance of original slice
-                    .byte_sub((len_parent + len_byte) as usize)
+                    .byte_sub((len_parent + len_byte).bytes())
             }
             .map_addr(|addr| {
                 let len = len_total.bytes() << Self::SHIFT_LEN;
-                let terminate = if T::new(len_byte == 0).get() {
+                let terminate = if T::new(len_byte == Byte::ZERO).get() {
                     Self::MASK_TERMINATE
                 } else {
                     0
@@ -201,30 +200,30 @@ impl<T: Terminate> edge::Meta for Slice<T> {
 
     #[inline]
     fn try_expand(self, index: Self::Len) -> Option<(Self, u8, Self)> {
-        if index >= edge::Meta::len(self) {
+        if index >= self.len() {
             return None;
         }
 
-        let len_parent = index.bytes();
+        let len_parent = index;
         let len_slice = self.len_slice();
-        let len_middle = (len_parent + Self::Len::BYTE.bytes()).min(len_slice);
+        let len_middle = (len_parent + Self::Len::BYTE).min(len_slice);
         validate!(len_parent <= len_slice);
 
         let parent = Slice {
             raw: self
                 .raw
-                .map_addr(|addr| addr & Self::MASK_PTR | (len_parent << Self::SHIFT_LEN)),
+                .map_addr(|addr| addr & Self::MASK_PTR | (len_parent.bytes() << Self::SHIFT_LEN)),
             terminate: PhantomData,
         };
 
         let byte = unsafe { self.as_slice() }
-            .get(len_parent)
+            .get(len_parent.bytes())
             .copied()
             .unwrap_or(0);
 
         let child = Slice {
-            raw: unsafe { self.raw.byte_add(len_middle) }.map_addr(|addr| {
-                let len = (len_slice - len_middle) << Self::SHIFT_LEN;
+            raw: unsafe { self.raw.byte_add(len_middle.bytes()) }.map_addr(|addr| {
+                let len = (len_slice - len_middle).bytes() << Self::SHIFT_LEN;
                 let terminate = if T::new(len_parent < len_slice).get() {
                     usize::MAX
                 } else {
@@ -293,18 +292,5 @@ impl<T: Terminate> Debug for Slice<T> {
             .field("terminate", &self.is_terminate())
             .field("keys", &unsafe { self.as_slice() })
             .finish()
-    }
-}
-
-impl edge::Len for u13 {
-    const MAX: Self = <u13 as ribbit::Integer>::MAX;
-    const BYTE: Self = u13::new(1);
-
-    fn bits(self) -> usize {
-        (self.value() as usize) << 3
-    }
-
-    fn range_to(self) -> impl Iterator<Item = Self> {
-        (0..=self.value()).map(Self::new)
     }
 }

@@ -2,7 +2,6 @@
 
 use crate::raw::Key;
 use crate::raw::edge;
-use crate::raw::edge::Len as _;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Byte;
@@ -87,7 +86,7 @@ impl<'k, const N: usize, const M: usize> From<&'k [u8; N]> for Reader<'k, M> {
 pub struct Reader<'k, const N: usize>(pub(crate) boxed_slice::Reader<'k, ()>);
 
 impl<'k, const N: usize> key::Read for Reader<'k, N> {
-    const LEN: Option<Self::Len> = Some(Byte(N));
+    const LEN: Option<Self::Len> = Some(Byte::new(N));
     type Edge = edge::Le;
     type Len = Byte;
 
@@ -103,7 +102,7 @@ impl<'k, const N: usize> key::Read for Reader<'k, N> {
         self.0.get_byte(index.bytes())
     }
 
-    fn match_prefix(&self, meta: Self::Edge) -> Self::Len {
+    fn match_prefix(&self, meta: Self::Edge) -> <Self::Edge as edge::Meta>::Len {
         self.0.match_prefix(meta)
     }
 
