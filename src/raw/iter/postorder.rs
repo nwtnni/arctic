@@ -48,51 +48,41 @@ where
             };
 
             'horizontal: loop {
-                let Some((mut first, mut edge)) = iter.next(self.order) else {
+                let Some((first, edge)) = iter.next(self.order) else {
                     self.stack.pop();
                     continue 'vertical;
                 };
 
-                'flatten: loop {
-                    let (meta, child) = {
-                        let edge = unsafe { edge.as_ref() }.load(Ordering::Relaxed);
-                        let Some(child) = edge.child() else {
-                            continue 'horizontal;
-                        };
-                        let meta = edge.meta();
-                        (meta, child)
+                let (meta, child) = {
+                    let edge = unsafe { edge.as_ref() }.load(Ordering::Relaxed);
+                    let Some(child) = edge.child() else {
+                        continue 'horizontal;
                     };
+                    let meta = edge.meta();
+                    (meta, child)
+                };
 
-                    match child {
-                        // Visit children before node
-                        edge::Child::Node(node) if first => {
-                            // Synchronizes with release compare_exchanges in
-                            // `concurrent::Map::upsert_with_raw` and `raw::Cursor::freeze`.
-                            crate::sync::atomic::fence(Ordering::Acquire);
+                match child {
+                    // Visit children before node
+                    edge::Child::Node(node) if first => {
+                        // Synchronizes with release compare_exchanges in
+                        // `concurrent::Map::upsert_with_raw` and `raw::Cursor::freeze`.
+                        crate::sync::atomic::fence(Ordering::Acquire);
 
-                            match unsafe {
-                                node.entry_or_entries::<_, _>(
-                                    self.order.is_some(),
-                                    Unbound::<()>::default(),
-                                    Unbound::<()>::default(),
-                                )
-                            } {
-                                Ok((_, edge_)) => {
-                                    first = true;
-                                    edge = edge_.cast();
-                                    continue 'flatten;
-                                }
-                                Err(iter) => {
-                                    self.stack.push(RepeatIter::new(iter));
-                                    continue 'vertical;
-                                }
-                            }
-                        }
-                        _ => {
-                            iter.skip();
-                            init = apply(init, (meta, child))?;
-                            continue 'horizontal;
-                        }
+                        let iter = unsafe {
+                            node.entries::<_, _>(
+                                self.order.is_some(),
+                                Unbound::<()>::default(),
+                                Unbound::<()>::default(),
+                            )
+                        };
+                        self.stack.push(RepeatIter::new(iter));
+                        continue 'vertical;
+                    }
+                    _ => {
+                        iter.skip();
+                        init = apply(init, (meta, child))?;
+                        continue 'horizontal;
                     }
                 }
             }
