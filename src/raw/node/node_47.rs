@@ -432,14 +432,13 @@ impl proptest::arbitrary::Arbitrary for Header {
     fn arbitrary_with((min_len, max_len): Self::Parameters) -> Self::Strategy {
         use proptest::bits::SampledBitSetStrategy;
         use proptest::strategy::Strategy as _;
-        use ribbit::Integer as _;
 
         assert!(min_len >= 1);
         assert!(max_len <= 47);
 
         (
             SampledBitSetStrategy::<crate::raw::set::Set256>::new(
-                min_len.value() as usize..=max_len.value() as usize,
+                min_len as usize..=max_len as usize,
                 u8::MIN as usize..=u8::MAX as usize,
             )
             .prop_map(|set| set.iter().collect::<Vec<_>>())
