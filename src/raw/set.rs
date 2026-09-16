@@ -56,7 +56,7 @@ impl Set {
     ///
     /// Caller must ensure `self` is `Set8`.
     unsafe fn expand_mut_unchecked(&mut self) -> &mut Set256 {
-        validate!(unsafe { self.raw >> 56 } <= 56);
+        validate!(self.is_set_7());
 
         let mut set_256 = Box::new(Set256::default());
 
@@ -69,22 +69,22 @@ impl Set {
         let mut set_256 = NonNull::new(Box::into_raw(set_256)).expect("Box is non-null");
         *self = Self {
             set_256: set_256.map_addr(|address| {
-                validate!(address.get() < (1 << 56));
-                address.saturating_add(64 << 56)
+                validate_eq!(address.get() & Set7::MASK_LEN, 0);
+                address | (64 << Set7::SHIFT_LEN)
             }),
         };
         unsafe { set_256.as_mut() }
     }
 
     fn as_ref<'g>(&'g self) -> Ref<'g> {
-        if unsafe { self.raw >> 56 } <= 56 {
+        if self.is_set_7() {
             Ref::Set7(unsafe { &self.set_7 })
         } else {
             Ref::Set256(unsafe {
                 self.set_256
                     .map_addr(|address| {
-                        validate_eq!(address.get() >> 56, 64);
-                        NonZeroUsize::new(address.get() ^ (64 << 56)).unwrap()
+                        validate_eq!(address.get() >> Set7::SHIFT_LEN, 64);
+                        NonZeroUsize::new(address.get() & !Set7::MASK_LEN).unwrap()
                     })
                     .as_ref()
             })
@@ -92,17 +92,38 @@ impl Set {
     }
 
     fn as_mut<'g>(&'g mut self) -> RefMut<'g> {
-        if unsafe { self.raw >> 56 } <= 56 {
+        if self.is_set_7() {
             RefMut::Set7(unsafe { &mut self.set_7 })
         } else {
             RefMut::Set256(unsafe {
                 self.set_256
                     .map_addr(|address| {
-                        validate_eq!(address.get() >> 56, 64);
-                        NonZeroUsize::new(address.get() ^ (64 << 56)).unwrap()
+                        validate_eq!(address.get() >> Set7::SHIFT_LEN, 64);
+                        NonZeroUsize::new(address.get() & !Set7::MASK_LEN).unwrap()
                     })
                     .as_mut()
             })
+        }
+    }
+
+    #[inline]
+    fn is_set_7(&self) -> bool {
+        (unsafe { self.raw >> Set7::SHIFT_LEN }) <= (Bit::MAX.bits() as u64)
+    }
+}
+
+impl Drop for Set {
+    fn drop(&mut self) {
+        if self.is_set_7() {
+            return;
+        }
+
+        unsafe {
+            drop(Box::from_raw(
+                self.set_256
+                    .as_ptr()
+                    .map_addr(|addr| addr & !Set7::MASK_LEN),
+            ))
         }
     }
 }
@@ -123,6 +144,7 @@ struct Set7(u64);
 impl Set7 {
     const EMPTY: Self = Self(0);
     const SHIFT_LEN: usize = 56;
+    const MASK_LEN: usize = ((1 << 8) - 1) << Self::SHIFT_LEN;
 
     // https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     #[inline]
