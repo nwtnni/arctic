@@ -1,4 +1,5 @@
 use crate::concurrent::smr::hazard;
+use crate::key::len::Bit;
 use crate::raw;
 use crate::raw::key;
 use crate::raw::key::BoxedSlice;
@@ -56,9 +57,12 @@ impl Key for u64 {
 impl_integer!(u64);
 
 #[inline]
-fn hazard_integer<N: Native>(
-    reader: key::unsigned::Reader<N>,
-) -> ribbit::Packed<hazard::prefix::Be> {
+fn hazard_integer<const KEY: u8, const EDGE: u8, N: Native>(
+    reader: key::unsigned::Reader<KEY, EDGE, N>,
+) -> ribbit::Packed<hazard::prefix::Be>
+where
+    Bit<KEY>: From<Bit<EDGE>>,
+{
     hazard::prefix::Be::new_hazard(
         reader.buffer.most_significant_u64(),
         if N::BITS < 64 {

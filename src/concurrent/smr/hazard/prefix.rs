@@ -15,7 +15,7 @@ use ribbit::u56;
 use ribbit::u112;
 use ribbit::u120;
 
-pub(crate) trait Prefix: Send + Sync + ribbit::Unpack<Loose: crate::sync::Loose> {
+pub(crate) trait Prefix: Send + Sync + ribbit::Unpack {
     const HAZARD_NULL: Self;
 
     fn into_prefix(self, value: bool, bits: Option<usize>) -> Self;
