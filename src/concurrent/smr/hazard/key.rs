@@ -1,12 +1,12 @@
 use crate::concurrent::smr::hazard;
-use crate::key::BoxedSlice;
-use crate::key::Invariant;
-use crate::key::Slice;
-use crate::key::Terminate;
 use crate::raw;
 use crate::raw::key;
+use crate::raw::key::BoxedSlice;
+use crate::raw::key::Invariant;
 use crate::raw::key::Len;
 use crate::raw::key::Read as _;
+use crate::raw::key::Slice;
+use crate::raw::key::Terminate;
 use crate::raw::key::unsigned::Native;
 
 /// Extract a hazard key from an operation key.

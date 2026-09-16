@@ -2,13 +2,13 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
-use crate::key::Len as _;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
+use crate::raw::key::Len as _;
 use crate::raw::key::Terminate;
 use crate::sync::Convert;
 
-type Byte = crate::raw::key::Byte<{ (1 << 13) - 1 }>;
+type Byte = crate::raw::key::len::Byte<{ (1 << 13) - 1 }>;
 
 // Layout:
 // - 0..48: ptr

@@ -20,13 +20,11 @@
 //! [^1]: Internally, this prevents one key prefix from mapping to both a node and a value.
 
 mod discard;
-mod len;
+pub(crate) mod len;
 mod sized;
 mod r#unsized;
 
 pub(crate) use discard::Discard;
-pub(crate) use len::Bit;
-pub(crate) use len::Byte;
 pub(crate) use len::Len;
 #[cfg_attr(not(feature = "smr-hazard"), expect(unused))]
 pub(crate) use sized::unsigned;

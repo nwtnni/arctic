@@ -4,13 +4,13 @@ use core::ffi::CStr;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 
-use crate::key::Read as _;
-use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
-use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
+use crate::raw::key::Read as _;
+use crate::raw::key::Terminated;
+use crate::raw::key::len::Byte;
 use crate::raw::key::r#unsized;
 use crate::raw::key::r#unsized::Terminate;
 use crate::raw::key::r#unsized::boxed_slice::BoxedSlice;

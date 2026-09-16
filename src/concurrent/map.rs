@@ -1592,13 +1592,13 @@ mod tests {
 
     use crate::Order;
     use crate::concurrent::Map;
-    use crate::key::BoxedSlice;
-    use crate::key::BoxedStr;
-    use crate::key::NonNull;
-    use crate::key::Slice;
-    use crate::key::Str;
-    use crate::key::Terminated;
+    use crate::raw::key::BoxedSlice;
+    use crate::raw::key::BoxedStr;
+    use crate::raw::key::NonNull;
     use crate::raw::key::Read as _;
+    use crate::raw::key::Slice;
+    use crate::raw::key::Str;
+    use crate::raw::key::Terminated;
 
     #[test]
     fn smoke() {

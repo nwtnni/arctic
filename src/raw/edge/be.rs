@@ -5,10 +5,10 @@ use core::fmt::Debug;
 use core::ops::BitAnd as _;
 use core::ops::BitOr as _;
 
-use crate::key::Bit;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key::Len as _;
+use crate::raw::key::len::Bit;
 use crate::sync::Convert;
 
 /// Edge metadata storing compressed edge bytes starting at most significant byte.

@@ -3,8 +3,8 @@
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
-use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
+use crate::raw::key::len::Byte;
 
 #[cfg(feature = "opt-no-int")]
 impl crate::raw::Key for u64 {

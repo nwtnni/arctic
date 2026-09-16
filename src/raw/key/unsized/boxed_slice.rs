@@ -11,16 +11,16 @@ use std::ffi::CString;
 use proptest::prelude::Strategy;
 
 use crate::Key;
-use crate::key::Bit;
-#[cfg(feature = "proptest")]
-use crate::key::Invariant;
-use crate::key::Terminated;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
-use crate::raw::key::Byte;
+#[cfg(feature = "proptest")]
+use crate::raw::key::Invariant;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
+use crate::raw::key::Terminated;
+use crate::raw::key::len::Bit;
+use crate::raw::key::len::Byte;
 use crate::raw::key::r#unsized;
 use crate::raw::key::r#unsized::Terminate;
 use crate::raw::key::r#unsized::slice::Slice;

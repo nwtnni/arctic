@@ -5,12 +5,12 @@ use core::fmt::Debug;
 use core::ops::BitAnd as _;
 use core::ops::BitOr as _;
 
-use crate::key::Len as _;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
+use crate::raw::key::Len as _;
 use crate::sync::Convert;
 
-type Bit = crate::raw::key::Bit<56>;
+type Bit = crate::raw::key::len::Bit<56>;
 
 /// Edge metadata storing compressed edge bytes starting at least significant byte.
 ///

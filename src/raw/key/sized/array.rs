@@ -4,10 +4,10 @@ use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
-use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 use crate::raw::key::boxed_slice;
+use crate::raw::key::len::Byte;
 
 impl<const N: usize> Key for [u8; N] {
     type Read<'k> = Reader<'k, N>;

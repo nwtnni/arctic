@@ -4,10 +4,10 @@ use crate::raw::Key;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
-use crate::raw::key::Bit;
-use crate::raw::key::Byte;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
+use crate::raw::key::len::Bit;
+use crate::raw::key::len::Byte;
 use crate::sync::Convert as _;
 
 macro_rules! impl_key {
