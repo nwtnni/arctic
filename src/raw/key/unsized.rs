@@ -155,7 +155,7 @@ mod seal {
 }
 
 pub(crate) trait Terminate:
-    Debug + Default + Eq + ribbit::Pack<Packed = Self> + Send + Sync + 'static + seal::Seal
+    Copy + Debug + Default + Eq + Send + Sync + 'static + seal::Seal
 {
     const TRUE: Self;
 
