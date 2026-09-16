@@ -18,13 +18,10 @@ cfg_select! {
             pub use core::sync::atomic::AtomicU16;
             pub use core::sync::atomic::AtomicU64;
             pub use core::sync::atomic::fence;
-            pub use ribbit::atomic::AtomicU128;
+            pub use portable_atomic::AtomicU128;
         }
     }
 }
-
-// pub(crate) type Atomic<T> =
-//     ribbit::Atomic<T, <<<T as ribbit::Pack>::Packed as ribbit::Unpack>::Loose as Loose>::Atomic>;
 
 pub trait Convert<T>: Copy {
     fn into_raw(self) -> T;
