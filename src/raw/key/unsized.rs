@@ -111,7 +111,7 @@ unsafe impl<const TERMINATOR: u8> Invariant for Terminated<TERMINATOR> {
 
 // TODO: optimize?
 #[inline]
-fn common_prefix(left: &[u8], right: &[u8]) -> usize {
+pub(super) fn common_prefix(left: &[u8], right: &[u8]) -> usize {
     core::iter::zip(left, right)
         .position(|(l, r)| l != r)
         .unwrap_or_else(|| left.len().min(right.len()))

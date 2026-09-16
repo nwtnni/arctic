@@ -1,11 +1,13 @@
 //! Benchmarking baseline for integer keys.
 
+use crate::key::r#unsized;
 use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::key::len::Bit;
 use crate::raw::key::len::Byte;
+use crate::sync::Convert as _;
 
 #[cfg(feature = "opt-no-int")]
 impl crate::raw::Key for u64 {
@@ -89,7 +91,7 @@ impl key::Read for Reader {
 
     #[inline]
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        let len = len.min(self.len.into());
+        let len = self.len.min_bit(len);
         edge::Le::new(u64::from_le_bytes(self.buffer), len)
     }
 
@@ -105,14 +107,12 @@ impl key::Read for Reader {
 
     #[inline]
     fn match_prefix(&self, edge: Self::Edge) -> <Self::Edge as edge::Meta>::Len {
-        Bit::from(Byte::new(
-            self.buffer
-                .into_iter()
-                .zip(edge)
-                .take(self.len.bytes())
-                .position(|(l, r)| l != r)
-                .unwrap_or(self.len.bytes()),
-        ))
+        let index = r#unsized::common_prefix(
+            &self.buffer[..self.len().bytes()],
+            &edge.into_raw().to_le_bytes()[..edge.len().bytes()],
+        );
+
+        unsafe { Bit::new_unchecked((index << 3) as u8) }
     }
 
     #[inline]
@@ -132,18 +132,15 @@ impl key::Read for Reader {
 
     #[inline]
     fn common_prefix(self, other: Self) -> Self {
-        let len = self.len.min(other.len);
-        let len_prefix = self.buffer[..len.bytes()]
-            .iter()
-            .zip(&other.buffer[..len.bytes()])
-            .position(|(l, r)| l != r)
-            .map(|len| unsafe { Byte::new_unchecked(len) })
-            .unwrap_or(len);
+        let len = r#unsized::common_prefix(
+            &self.buffer[..self.len().bytes()],
+            &other.buffer[..other.len().bytes()],
+        );
         let mut buffer = [0u8; 8];
-        buffer[..len_prefix.bytes()].copy_from_slice(&self.buffer[..len_prefix.bytes()]);
+        buffer[..len].copy_from_slice(&self.buffer[..len]);
         Self {
             buffer,
-            len: len_prefix,
+            len: unsafe { Byte::new_unchecked(len) },
         }
     }
 }

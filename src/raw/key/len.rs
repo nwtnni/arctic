@@ -71,7 +71,7 @@ impl<const MAX: usize> Byte<MAX> {
 
     #[inline]
     pub(crate) fn min_bit<const BIT: u8>(self, len: Bit<BIT>) -> Bit<BIT> {
-        const { assert!(((BIT as usize) << 3) <= MAX) };
+        const { assert!(BIT as usize <= MAX << 3) };
 
         Bit((self.0 << 3).min(len.0 as usize) as u8)
     }
@@ -278,7 +278,7 @@ impl From<Bit<56>> for Bit<128> {
 impl<const BIT: u8, const BYTE: usize> From<Byte<BYTE>> for Bit<BIT> {
     #[inline]
     fn from(len: Byte<BYTE>) -> Self {
-        const { assert!(BYTE <= ((BIT as usize) << 3)) };
+        const { assert!(BYTE << 3 <= BIT as usize) };
 
         Self((len.0 << 3) as u8)
     }
@@ -287,7 +287,7 @@ impl<const BIT: u8, const BYTE: usize> From<Byte<BYTE>> for Bit<BIT> {
 impl<const BIT: u8, const BYTE: usize> From<Bit<BIT>> for Byte<BYTE> {
     #[inline]
     fn from(len: Bit<BIT>) -> Self {
-        const { assert!(((BIT as usize) << 3) <= BYTE) };
+        const { assert!(BIT as usize <= BYTE << 3) };
 
         Self(len.bytes())
     }
