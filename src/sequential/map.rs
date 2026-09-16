@@ -5,6 +5,7 @@ use core::marker::PhantomData;
 use core::ops::ControlFlow;
 use core::ops::RangeFull;
 use core::ptr::NonNull;
+use core::sync::atomic::Ordering;
 #[cfg_attr(not(doc), expect(unused))]
 use std::collections::btree_map;
 
@@ -447,7 +448,7 @@ where
     #[inline]
     pub(super) fn get_raw(&self, reader: K::Read<'_>) -> Option<NonNull<u64>> {
         let mut cursor = unsafe { self.raw.cursor::<path::Discard<_>>(reader) };
-        let walk = unsafe { cursor.edge_mut() }.get();
+        let walk = cursor.edge().load(Ordering::Relaxed);
         unsafe { cursor.traverse_value(walk) }?;
         Some(unsafe { cursor.as_value_unchecked() })
     }
