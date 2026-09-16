@@ -286,6 +286,11 @@ impl<'k, T: Terminate> Reader<'k, T> {
     pub(super) fn as_non_null(&self) -> NonNull<u8> {
         self.ptr
     }
+
+    #[inline]
+    pub(super) fn len_slice(&self) -> Byte {
+        Byte::new(self.len)
+    }
 }
 
 impl<T: Default> Default for Reader<'_, T> {
@@ -307,7 +312,7 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
 
     #[inline]
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        let len = Bit::from(self.len()).min(len);
+        let len = self.len().min_bit(len);
         edge::Le::new(r#unsized::read_u64(self.as_slice()), len)
     }
 

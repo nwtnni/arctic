@@ -68,6 +68,20 @@ impl<const MAX: usize> Byte<MAX> {
         let sum = parent.0 + byte.0 + child.0;
         (sum <= MAX).then_some(sum).map(Self)
     }
+
+    #[inline]
+    pub(crate) fn min_bit<const BIT: u8>(self, len: Bit<BIT>) -> Bit<BIT> {
+        const { assert!(((BIT as usize) << 3) <= MAX) };
+
+        Bit((self.0 << 3).min(len.0 as usize) as u8)
+    }
+
+    #[inline]
+    pub(crate) fn min_byte<const BYTE: usize>(self, len: Byte<BYTE>) -> Byte<BYTE> {
+        const { assert!(BYTE <= MAX) };
+
+        Byte(self.0.min(len.0))
+    }
 }
 
 impl<const MAX: usize> From<bool> for Byte<MAX> {
@@ -82,13 +96,6 @@ impl From<Byte<{ (1 << 13) - 1 }>> for Byte {
     #[inline]
     fn from(len: Byte<{ (1 << 13) - 1 }>) -> Self {
         Self(len.bytes())
-    }
-}
-
-impl From<Byte> for Byte<{ (1 << 13) - 1 }> {
-    #[inline]
-    fn from(len: Byte) -> Self {
-        Self(len.0.min(Self::MAX.0))
     }
 }
 
@@ -261,13 +268,6 @@ impl From<Bit<56>> for Bit<64> {
     }
 }
 
-impl From<Bit<64>> for Bit<56> {
-    #[inline]
-    fn from(len: Bit<64>) -> Self {
-        Self(len.0.min(Self::MAX.0))
-    }
-}
-
 impl From<Bit<56>> for Bit<128> {
     #[inline]
     fn from(len: Bit<56>) -> Self {
@@ -275,37 +275,20 @@ impl From<Bit<56>> for Bit<128> {
     }
 }
 
-impl From<Bit<128>> for Bit<56> {
-    #[inline]
-    fn from(len: Bit<128>) -> Self {
-        Self(len.0.min(Self::MAX.0))
-    }
-}
-
 impl<const BIT: u8, const BYTE: usize> From<Byte<BYTE>> for Bit<BIT> {
     #[inline]
     fn from(len: Byte<BYTE>) -> Self {
-        let len = if const { BYTE > ((BIT as usize) << 3) } {
-            // Clamp larger max byte to smaller max bit
-            len.0.min(Bit::<BIT>::MAX.bytes())
-        } else {
-            len.0
-        };
+        const { assert!(BYTE <= ((BIT as usize) << 3)) };
 
-        Self((len << 3) as u8)
+        Self((len.0 << 3) as u8)
     }
 }
 
 impl<const BIT: u8, const BYTE: usize> From<Bit<BIT>> for Byte<BYTE> {
     #[inline]
     fn from(len: Bit<BIT>) -> Self {
-        let len = if const { BYTE > ((BIT as usize) << 3) } {
-            len.bytes()
-        } else {
-            // Clamp larger max bit to smaller max byte
-            len.bytes().min(Byte::<BYTE>::MAX.bytes())
-        };
+        const { assert!(((BIT as usize) << 3) <= BYTE) };
 
-        Self(len)
+        Self(len.bytes())
     }
 }

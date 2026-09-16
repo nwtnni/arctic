@@ -53,7 +53,7 @@ impl crate::key::Split for u64 {
         (
             Reader {
                 buffer: reader.buffer,
-                len: Byte::new_const::<7>() ,
+                len: Byte::new_const::<7>(),
             },
             reader.buffer[7],
         )

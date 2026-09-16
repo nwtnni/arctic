@@ -134,7 +134,7 @@ pub(crate) trait Read: Copy + fmt::Debug + Default + Eq {
     const LEN: Option<Self::Len>;
 
     type Edge: edge::Meta;
-    type Len: Len + From<<Self::Edge as edge::Meta>::Len> + Into<<Self::Edge as edge::Meta>::Len>;
+    type Len: Len + From<<Self::Edge as edge::Meta>::Len>;
 
     fn len(&self) -> Self::Len;
 

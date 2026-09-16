@@ -205,9 +205,8 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     }
 
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        let min = len.min(Byte::new(self.0.len).into());
-        edge::Slice::new(self.0.as_non_null(), min)
-            .with_terminate(self.0.terminate.get() && len.bytes() > self.0.len)
+        edge::Slice::new(self.0.as_non_null(), self.0.len_slice().min_byte(len))
+            .with_terminate(self.0.terminate.get() && self.0.len_slice() < len.into())
     }
 
     fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8> {
@@ -215,15 +214,16 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     }
 
     fn match_prefix(&self, meta: edge::Slice<T>) -> <Self::Edge as edge::Meta>::Len {
-        let other = unsafe { meta.as_slice() };
+        let index = Byte::new(r#unsized::common_prefix(self.0.as_slice(), unsafe {
+            meta.as_slice()
+        }));
 
-        let index = r#unsized::common_prefix(self.0.as_slice(), other);
         let terminate = self.0.terminate.get()
-            && index == self.0.len
-            && index == other.len()
+            && index == self.0.len_slice()
+            && index == meta.len_slice().into()
             && meta.is_terminate();
 
-        unsafe { Byte::new_unchecked(index + terminate as usize) }
+        unsafe { Byte::new_unchecked(index.bytes() + terminate as usize) }
     }
 
     #[inline]

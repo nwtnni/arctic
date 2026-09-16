@@ -285,10 +285,8 @@ where
             Some((parent, old_byte, old_child)) => {
                 let len_parent = parent.len();
                 let new_byte = unsafe { self.reader.get_byte_unchecked(len_parent) };
-                let (new_child, tail_path) = Edge::new_path(
-                    self.reader.suffix(R::Len::BYTE + len_parent.into()),
-                    value,
-                );
+                let (new_child, tail_path) =
+                    Edge::new_path(self.reader.suffix(R::Len::BYTE + len_parent.into()), value);
 
                 // NOTE: must put new allocation first because
                 // `deallocate_recursive` recurses on first edge

@@ -7,7 +7,6 @@ use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::key::Read as _;
 use crate::raw::key::len::Bit;
-use crate::raw::key::len::Byte;
 use crate::sync::Convert as _;
 
 macro_rules! impl_key {
@@ -84,7 +83,9 @@ macro_rules! impl_key {
                 fn from(prefix: &'k [u8]) -> Self {
                     Self {
                         buffer: Native::from_be_bytes(prefix),
-                        len:  Byte::new(prefix.len()).into() ,
+                        len: unsafe {
+                            Bit::new_unchecked((prefix.len() << 3).min($key as usize) as u8)
+                        },
                     }
                 }
             }
@@ -129,7 +130,6 @@ pub struct Reader<const KEY: u8, const EDGE: u8, N> {
 impl<const KEY: u8, const EDGE: u8, N: Native> key::Read for Reader<KEY, EDGE, N>
 where
     Bit<KEY>: From<Bit<EDGE>>,
-    Bit<EDGE>: From<Bit<KEY>>,
 {
     const LEN: Option<Self::Len> = Some(Bit::<KEY>::MAX);
 
@@ -209,7 +209,6 @@ where
 impl<const KEY: u8, const EDGE: u8, N: Native> core::fmt::Debug for Reader<KEY, EDGE, N>
 where
     Bit<KEY>: From<Bit<EDGE>>,
-    Bit<EDGE>: From<Bit<KEY>>,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let bytes = self.len().bytes();
@@ -226,7 +225,6 @@ pub struct Writer<N>(N);
 impl<const KEY: u8, const EDGE: u8, N: Native> key::Write<Reader<KEY, EDGE, N>> for Writer<N>
 where
     Bit<KEY>: From<Bit<EDGE>>,
-    Bit<EDGE>: From<Bit<KEY>>,
 {
     type Len = Bit<KEY>;
 
