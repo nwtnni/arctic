@@ -25,7 +25,10 @@ pub struct Slice<T> {
 unsafe impl<T> Sync for Slice<T> {}
 unsafe impl<T> Send for Slice<T> {}
 
-impl<T> Slice<T> {
+static EMPTY: &[u8] = &[];
+
+#[expect(private_bounds)]
+impl<T: Terminate> Slice<T> {
     const MASK_PTR: usize = (1 << 48) - 1;
     const MASK_VALUE: usize = 1 << 48;
     const MASK_FROZEN: usize = 1 << 49;
@@ -46,10 +49,10 @@ impl<T> Slice<T> {
     }
 
     #[inline]
-    pub(crate) fn with_terminate(self, terminate: bool) -> Self {
+    pub(crate) fn with_terminate(self, terminate: T) -> Self {
         Self {
             raw: self.raw.map_addr(|addr| {
-                if terminate {
+                if terminate.get() {
                     addr | Self::MASK_TERMINATE
                 } else {
                     addr & !Self::MASK_TERMINATE
@@ -58,11 +61,7 @@ impl<T> Slice<T> {
             terminate: PhantomData,
         }
     }
-}
 
-static EMPTY: &[u8] = &[];
-
-impl<T> Slice<T> {
     #[inline]
     pub(crate) unsafe fn as_slice(&self) -> &[u8] {
         if self.raw.is_null() {
@@ -91,11 +90,15 @@ impl<T: Terminate> Default for Slice<T> {
     }
 }
 
-impl<T: ribbit::Pack> IntoIterator for Slice<T> {
+impl<T: Terminate> IntoIterator for Slice<T> {
     type Item = u8;
     type IntoIter = std::vec::IntoIter<u8>;
     fn into_iter(self) -> Self::IntoIter {
-        unsafe { self.as_slice().to_vec().into_iter() }
+        let mut vec = unsafe { self.as_slice().to_vec() };
+        if self.is_terminate() {
+            vec.push(0);
+        }
+        vec.into_iter()
     }
 }
 
@@ -256,7 +259,11 @@ impl<T: Terminate> PartialEq for Slice<T> {
 
 impl<T: Terminate> Ord for Slice<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        unsafe { self.as_slice().cmp(other.as_slice()) }
+        unsafe {
+            self.as_slice()
+                .cmp(other.as_slice())
+                .then_with(|| self.is_terminate().cmp(&other.is_terminate()))
+        }
     }
 }
 
@@ -293,4 +300,42 @@ impl<T: Terminate> Debug for Slice<T> {
             .field("keys", &unsafe { self.as_slice() })
             .finish()
     }
+}
+
+#[cfg(feature = "proptest")]
+impl<T: Terminate> proptest::arbitrary::Arbitrary for Slice<T> {
+    type Parameters = ();
+    type Strategy = proptest::strategy::BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        use proptest::strategy::Strategy as _;
+
+        use crate::raw::key::BoxedSlice;
+        use crate::raw::key::NonNull;
+
+        (
+            bool::arbitrary(),
+            bool::arbitrary(),
+            BoxedSlice::<NonNull, [u8]>::arbitrary_with(((0..=32).into(), ())),
+        )
+            .prop_map(|(frozen, terminate, buffer)| {
+                let len = buffer.as_bytes().len();
+                let ptr = core::ptr::NonNull::from(
+                    // HACK: need static lifetime
+                    Box::leak(buffer.into_boxed_slice()),
+                )
+                .cast::<u8>();
+
+                Self::new(ptr, Byte::new_clamped(len))
+                    .with_value(terminate)
+                    .with_frozen(frozen)
+                    .with_terminate(T::new(terminate))
+            })
+            .boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    crate::raw::edge::tests::impl_suite!(crate::raw::edge::Slice<bool>);
 }

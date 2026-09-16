@@ -205,8 +205,9 @@ impl<T: Terminate> key::Read for Reader<'_, T> {
     }
 
     fn get_edge(&self, len: <Self::Edge as edge::Meta>::Len) -> Self::Edge {
-        edge::Slice::new(self.0.as_non_null(), self.0.len_slice().min_byte(len))
-            .with_terminate(self.0.terminate.get() && self.0.len_slice() < len.into())
+        edge::Slice::new(self.0.as_non_null(), self.0.len_slice().min_byte(len)).with_terminate(
+            T::new(self.0.terminate.get() && self.0.len_slice() < len.into()),
+        )
     }
 
     fn get_byte(&self, index: <Self::Edge as edge::Meta>::Len) -> Option<u8> {
