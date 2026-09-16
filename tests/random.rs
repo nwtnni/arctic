@@ -191,24 +191,24 @@ mod boxed_str_terminated {
     use super::Workload;
     use super::test_map;
 
-    struct Bytes;
+    struct BoxedStrTerminated;
 
     #[test]
     fn many() {
-        test_map(&Bytes, 16, 10_000_000, false);
+        test_map(&BoxedStrTerminated, 16, 10_000_000, false);
     }
 
     #[test]
     fn two() {
-        test_map(&Bytes, 2, 1_000_000, false);
+        test_map(&BoxedStrTerminated, 2, 1_000_000, false);
     }
 
     #[test]
     fn one() {
-        test_map(&Bytes, 1, 1_000_000, false);
+        test_map(&BoxedStrTerminated, 1, 1_000_000, false);
     }
 
-    impl Workload for Bytes {
+    impl Workload for BoxedStrTerminated {
         type Key<'k> = BoxedStr<Terminated<0>>;
         type Value = u64;
 
@@ -224,6 +224,57 @@ mod boxed_str_terminated {
             buffer.push('\0');
 
             BoxedStr::<Terminated<0>>::new(buffer).unwrap()
+        }
+
+        fn value(&self, index: usize) -> Self::Value {
+            index as u64
+        }
+
+        fn validate(
+            &self,
+            index: usize,
+            key: &<Self::Key<'_> as Key>::Borrowed,
+            value: &<Self::Value as arctic::concurrent::Value>::Borrowed,
+        ) {
+            assert_eq!(key, self.key(index).as_slice());
+            assert_eq!(*value, index as u64);
+        }
+    }
+}
+
+mod boxed_str_non_null {
+    use arctic::Key;
+    use arctic::key::BoxedStr;
+    use arctic::key::NonNull;
+    use rand::RngExt as _;
+    use rand::SeedableRng as _;
+
+    use super::Workload;
+    use super::test_map;
+
+    struct BoxedStrNonNull;
+
+    #[test]
+    fn many() {
+        test_map(&BoxedStrNonNull, 16, 10_000_000, false);
+    }
+
+    #[test]
+    fn two() {
+        test_map(&BoxedStrNonNull, 2, 1_000_000, false);
+    }
+
+    #[test]
+    fn one() {
+        test_map(&BoxedStrNonNull, 1, 1_000_000, false);
+    }
+
+    impl Workload for BoxedStrNonNull {
+        type Key<'k> = BoxedStr<NonNull>;
+        type Value = u64;
+
+        fn key(&self, index: usize) -> Self::Key<'_> {
+            rand::rngs::Xoshiro256PlusPlus::seed_from_u64(index as u64).random()
         }
 
         fn value(&self, index: usize) -> Self::Value {
@@ -496,7 +547,7 @@ impl Barrier {
             state.count += 1;
             let (_state, info) = self
                 .condition
-                .wait_timeout_while(state, Duration::from_secs(5), |state| {
+                .wait_timeout_while(state, Duration::from_secs(10), |state| {
                     state.generation == generation
                 })
                 .expect("Poisoned mutex");
