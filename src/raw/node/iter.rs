@@ -6,7 +6,6 @@ use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
 use fearless_simd::u16x16;
-use ribbit::u2;
 
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
@@ -205,28 +204,30 @@ pub(crate) union KeyIter {
 const_assert_size_align!(KeyIter, 8, 8);
 
 /// Discriminant offset within a single byte.
-const TYPE_SHIFT_BYTE: usize = 3;
+const SHIFT_TYPE_BYTE: usize = 3;
 
 /// Discriminant offset within a pointer (requires endian-dependent
 /// shift to reach highest byte address).
-const TYPE_SHIFT_PTR: usize = if cfg!(target_endian = "little") {
-    56 + TYPE_SHIFT_BYTE
+const SHIFT_TYPE_ADDR: usize = if cfg!(target_endian = "little") {
+    56 + SHIFT_TYPE_BYTE
 } else {
-    TYPE_SHIFT_BYTE
+    SHIFT_TYPE_BYTE
 };
 
 const _: () = assert!(align_of::<KeyIter15>() == 32);
-const TYPE_15: usize = (node::Type::Node15 as usize) << TYPE_SHIFT_PTR;
+const TYPE_15: usize = (node::Type::Node15 as usize) << SHIFT_TYPE_ADDR;
 
 const _: () = assert!(align_of::<KeyIter47>() == 32);
-const TYPE_47: usize = (node::Type::Node47 as usize) << TYPE_SHIFT_PTR;
+const TYPE_47: usize = (node::Type::Node47 as usize) << SHIFT_TYPE_ADDR;
+
+const MASK_TYPE_ADDR: usize = 0b11 << SHIFT_TYPE_ADDR;
 
 /// Enum with a single possible bit representation.
 #[repr(u8)]
 #[derive(Copy, Clone, Default, Debug)]
 enum Type256 {
     #[default]
-    Type = (node::Type::Node256 as u8) << TYPE_SHIFT_BYTE,
+    Type = (node::Type::Node256 as u8) << SHIFT_TYPE_BYTE,
 }
 
 impl KeyIter {
@@ -240,7 +241,7 @@ impl KeyIter {
         // `node_3` and `node_256` are structs with endian-independent layout
         // `node_15` and `node_47` use an endian-dependent shift when encoding
         let byte = unsafe { self.raw[7] };
-        node::Type::new_masked(byte >> TYPE_SHIFT_BYTE)
+        node::Type::new_masked(byte >> SHIFT_TYPE_BYTE)
     }
 
     #[inline]
@@ -255,8 +256,8 @@ impl KeyIter {
         let iter = Self {
             node_15: NonNull::from(Box::leak(node_15)).map_addr(|addr| {
                 validate_eq!(
-                    u2::extract_u64(addr.get() as u64, TYPE_SHIFT_PTR),
-                    u2::new(0),
+                    addr.get() & MASK_TYPE_ADDR,
+                    0,
                     "Type does not clobber address",
                 );
 
@@ -274,8 +275,8 @@ impl KeyIter {
         let iter = Self {
             node_47: NonNull::from(Box::leak(node_47)).map_addr(|addr| {
                 validate_eq!(
-                    u2::extract_u64(addr.get() as u64, TYPE_SHIFT_PTR),
-                    u2::new(0),
+                    addr.get() & MASK_TYPE_ADDR,
+                    0,
                     "Type does not clobber address",
                 );
 
