@@ -31,7 +31,7 @@ opt-membarrier = ["dep:libc", "seize/fast-barrier"]
 opt-no-path = []
 opt-no-dispatch = []
 
-smr-hazard = []
+smr-hazard = ["dep:ribbit"]
 smr-epoch = ["dep:crossbeam-epoch"]
 smr-seize = ["dep:seize"]
 
@@ -47,7 +47,7 @@ crossbeam-epoch = { version = "0.9.18", optional = true }
 hdrhistogram = { version = "7.5.4", optional = true, default-features = false, features = ["serialization"] }
 libc = { version = "0.2.176", optional = true }
 proptest = { version = "1.9.0", optional = true }
-ribbit = { version = "0.2.1", features = ["atomic-u128"] }
+ribbit = { version = "0.2.1", features = ["atomic-u128"], optional = true }
 seize = { version = "0.5.1", optional = true }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 rand = { version = "0.10.1", optional = true }
