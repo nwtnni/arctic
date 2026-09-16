@@ -3,14 +3,14 @@ use core::ptr::NonNull;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 
-use ribbit::u6;
-use ribbit::u56;
-
+use crate::key::Len as _;
 use crate::sequential;
+
+type Bit = crate::key::len::Bit<56>;
 
 pub(crate) union Set {
     raw: u64,
-    set_8: ribbit::Packed<Set8>,
+    set_7: Set7,
     set_256: NonNull<Set256>,
 }
 
@@ -28,21 +28,21 @@ unsafe impl sequential::Value for Set {
 
 impl Default for Set {
     fn default() -> Self {
-        Self { set_8: Set8::EMPTY }
+        Self { set_7: Set7::EMPTY }
     }
 }
 
 impl Set {
     pub fn contains(&self, byte: u8) -> bool {
         match self.as_ref() {
-            Ref::Set8(set_8) => set_8.contains(byte),
+            Ref::Set7(set_7) => set_7.contains(byte),
             Ref::Set256(set_256) => set_256.contains(byte),
         }
     }
 
     pub fn insert_mut(&mut self, byte: u8) -> bool {
         let set_256 = match self.as_mut() {
-            RefMut::Set8(set_8) => match set_8.try_insert_mut(byte) {
+            RefMut::Set7(set_7) => match set_7.try_insert_mut(byte) {
                 Ok(inserted) => return inserted,
                 Err(()) => unsafe { self.expand_mut_unchecked() },
             },
@@ -60,7 +60,7 @@ impl Set {
 
         let mut set_256 = Box::new(Set256::default());
 
-        unsafe { self.set_8 }.with_bytes(|bytes| {
+        unsafe { self.set_7 }.with_bytes(|bytes| {
             bytes.iter().for_each(|byte| {
                 set_256.insert_mut(*byte);
             });
@@ -78,7 +78,7 @@ impl Set {
 
     fn as_ref<'g>(&'g self) -> Ref<'g> {
         if unsafe { self.raw >> 56 } <= 56 {
-            Ref::Set8(unsafe { &self.set_8 })
+            Ref::Set7(unsafe { &self.set_7 })
         } else {
             Ref::Set256(unsafe {
                 self.set_256
@@ -93,7 +93,7 @@ impl Set {
 
     fn as_mut<'g>(&'g mut self) -> RefMut<'g> {
         if unsafe { self.raw >> 56 } <= 56 {
-            RefMut::Set8(unsafe { &mut self.set_8 })
+            RefMut::Set7(unsafe { &mut self.set_7 })
         } else {
             RefMut::Set256(unsafe {
                 self.set_256
@@ -108,27 +108,22 @@ impl Set {
 }
 
 enum Ref<'a> {
-    Set8(&'a ribbit::Packed<Set8>),
+    Set7(&'a Set7),
     Set256(&'a Set256),
 }
 
 enum RefMut<'a> {
-    Set8(&'a mut ribbit::Packed<Set8>),
+    Set7(&'a mut Set7),
     Set256(&'a mut Set256),
 }
 
-#[derive(Copy, Clone, ribbit::Pack)]
-#[ribbit(size = 64)]
-struct Set8 {
-    set: u56,
-    len: u6,
-}
+#[derive(Copy, Clone)]
+struct Set7(u64);
 
-impl Set8 {
-    const EMPTY: ribbit::Packed<Self> = ribbit::Packed::<Self>::new(u56::new(0), u6::new(0));
-}
+impl Set7 {
+    const EMPTY: Self = Self(0);
+    const SHIFT_LEN: usize = 56;
 
-impl Set8Packed {
     // https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     #[inline]
     fn contains(&self, byte: u8) -> bool {
@@ -143,7 +138,11 @@ impl Set8Packed {
             | (byte << 40)
             | (byte << 48);
 
-        (crate::raw::find_zero(self.into_raw() ^ broadcast) << 3) < self.len().value()
+        crate::raw::find_zero(self.0 ^ broadcast) < self.len().into_u8() >> 3
+    }
+
+    fn len(&self) -> Bit {
+        unsafe { Bit::new_unchecked((self.0 >> Self::SHIFT_LEN) as u8) }
     }
 
     fn try_insert_mut(&mut self, byte: u8) -> Result<bool, ()> {
@@ -151,19 +150,18 @@ impl Set8Packed {
             return Ok(false);
         }
 
-        if self.len().value() >= 56 {
-            validate!(self.len().value() == 56);
+        if self.len() == Bit::MAX {
             return Err(());
         }
 
-        let byte = (byte as u64) << self.len().value();
-        *self = unsafe { Self::from_raw_unchecked((self.into_raw() | byte) + (8 << 56)) };
+        let byte = (byte as u64) << self.len().into_u8();
+        self.0 = (self.0 | byte) + (8 << 56);
         Ok(true)
     }
 
     fn with_bytes<F: FnOnce(&[u8]) -> T, T>(&self, with: F) -> T {
-        let buffer = self.into_raw().to_le_bytes();
-        let len = (self.len().value() >> 3) as usize;
+        let buffer = self.0.to_le_bytes();
+        let len = self.len().bytes();
         with(&buffer[..len])
     }
 }
@@ -284,7 +282,7 @@ mod tests {
     use crate::raw::Set;
 
     #[test]
-    fn smoke_set_8() {
+    fn smoke_set_7() {
         let mut set = Set::default();
 
         for i in 0..8 {
