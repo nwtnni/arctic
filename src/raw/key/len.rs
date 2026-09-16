@@ -47,7 +47,12 @@ impl Byte {
 
 impl<const MAX: usize> Byte<MAX> {
     #[inline]
-    pub(crate) unsafe fn new_unchecked(len: usize) -> Self {
+    pub(crate) fn new_clamped(len: usize) -> Self {
+        Self(len.min(MAX))
+    }
+
+    #[inline]
+    pub(crate) const unsafe fn new_unchecked(len: usize) -> Self {
         validate!(len <= MAX);
         Self(len)
     }
@@ -265,19 +270,30 @@ impl From<Bit<128>> for Bit<56> {
     }
 }
 
-impl<const MAX: u8> From<Byte> for Bit<MAX> {
+impl<const BIT: u8, const BYTE: usize> From<Byte<BYTE>> for Bit<BIT> {
     #[inline]
-    fn from(len: Byte) -> Self {
-        let len = len.0.min(Self::MAX.bytes());
+    fn from(len: Byte<BYTE>) -> Self {
+        let len = if const { BYTE > ((BIT as usize) << 3) } {
+            // Clamp larger max byte to smaller max bit
+            len.0.min(Bit::<BIT>::MAX.bytes())
+        } else {
+            len.0
+        };
+
         Self((len << 3) as u8)
     }
 }
 
-impl From<Bit<56>> for Byte {
+impl<const BIT: u8, const BYTE: usize> From<Bit<BIT>> for Byte<BYTE> {
     #[inline]
-    fn from(len: Bit<56>) -> Self {
-        let len = Self(len.bytes());
-        validate!(len <= Self::MAX);
-        len
+    fn from(len: Bit<BIT>) -> Self {
+        let len = if const { BYTE > ((BIT as usize) << 3) } {
+            len.bytes()
+        } else {
+            // Clamp larger max bit to smaller max byte
+            len.bytes().min(Byte::<BYTE>::MAX.bytes())
+        };
+
+        Self(len)
     }
 }

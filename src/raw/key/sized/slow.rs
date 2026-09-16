@@ -4,6 +4,7 @@ use crate::raw::edge;
 use crate::raw::edge::Meta as _;
 use crate::raw::key;
 use crate::raw::key::Len as _;
+use crate::raw::key::len::Bit;
 use crate::raw::key::len::Byte;
 
 #[cfg(feature = "opt-no-int")]
@@ -12,7 +13,7 @@ impl crate::raw::Key for u64 {
     type Write = key::sized::array::Writer<8>;
     type Borrowed = Self;
     type Edge = edge::Le;
-    type Len = Byte;
+    type Len = Byte<8>;
 
     type Insert<'k> = Self;
 
@@ -52,7 +53,7 @@ impl crate::key::Split for u64 {
         (
             Reader {
                 buffer: reader.buffer,
-                len: Byte(7),
+                len: unsafe { Byte::new_unchecked(7) },
             },
             reader.buffer[7],
         )
@@ -62,28 +63,24 @@ impl crate::key::Split for u64 {
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reader {
     pub(crate) buffer: [u8; 8],
-    len: Byte,
+    len: Byte<8>,
 }
 
 impl Reader {
     #[inline]
-    unsafe fn new_unchecked(buffer: u64, bits: u8) -> Self {
-        validate!(bits <= 64);
-        validate_eq!(bits & 0b111, 0);
-        validate_eq!(buffer & !u64::MAX.unbounded_shl(bits as u32), buffer);
-        let buffer = buffer.to_be_bytes();
+    fn new(key: &[u8], len: Byte<8>) -> Self {
         Self {
-            buffer,
-            len: Byte::new((bits as usize) >> 3),
+            buffer: core::array::from_fn(|i| key.get(i).copied().unwrap_or(0)),
+            len,
         }
     }
 }
 
 impl key::Read for Reader {
-    const LEN: Option<Self::Len> = Some(Byte::new(8));
+    const LEN: Option<Self::Len> = Some(unsafe { Byte::new_unchecked(8) });
 
     type Edge = edge::Le;
-    type Len = Byte;
+    type Len = Byte<8>;
 
     #[inline]
     fn len(&self) -> Self::Len {
@@ -108,15 +105,14 @@ impl key::Read for Reader {
 
     #[inline]
     fn match_prefix(&self, edge: Self::Edge) -> <Self::Edge as edge::Meta>::Len {
-        todo!()
-        // Byte(
-        //     self.buffer
-        //         .into_iter()
-        //         .zip(edge)
-        //         .take(self.len.bytes())
-        //         .position(|(l, r)| l != r)
-        //         .unwrap_or(self.len.bytes()),
-        // )
+        Bit::from(Byte::new(
+            self.buffer
+                .into_iter()
+                .zip(edge)
+                .take(self.len.bytes())
+                .position(|(l, r)| l != r)
+                .unwrap_or(self.len.bytes()),
+        ))
     }
 
     #[inline]
@@ -141,7 +137,7 @@ impl key::Read for Reader {
             .iter()
             .zip(&other.buffer[..len.bytes()])
             .position(|(l, r)| l != r)
-            .map(Byte::new)
+            .map(|len| unsafe { Byte::new_unchecked(len) })
             .unwrap_or(len);
         let mut buffer = [0u8; 8];
         buffer[..len_prefix.bytes()].copy_from_slice(&self.buffer[..len_prefix.bytes()]);
@@ -150,62 +146,45 @@ impl key::Read for Reader {
             len: len_prefix,
         }
     }
-
-    // fn expand(
-    //     &self,
-    //     edge: ribbit::Packed<Self::Edge>,
-    // ) -> Result<
-    //     (
-    //         ribbit::Packed<Self::Edge>,
-    //         u8,
-    //         u8,
-    //         ribbit::Packed<Self::Edge>,
-    //     ),
-    //     (),
-    // > {
-    //     let len_match = self.match_prefix(edge);
-    //     if len_match >= edge.len().into() {
-    //         return Err(());
-    //     }
-    //
-    //     validate!(self.len > len_match);
-    //     let len_start = u6::new(len_match.bits() as u8);
-    //     let len_middle = len_start + const { u6::new(8) };
-    //     let len_end = u6::new((edge.len().bits() - len_middle.bits()) as u8);
-    //
-    //     let edge = u64::to_le_bytes(edge.raw());
-    //
-    //     let mut start = [0u8; 8];
-    //     start[..len_start.bytes()].copy_from_slice(&edge[..len_start.bytes()]);
-    //     let start = edge::Le::new(u64::from_le_bytes(start), len_start);
-    //
-    //     let old_middle = edge[len_start.bytes()];
-    //     let new_middle = self.buffer[len_start.bytes()];
-    //
-    //     let mut end = [0u8; 8];
-    //     end[..len_end.bytes()].copy_from_slice(&edge[len_middle.bytes()..][..len_end.bytes()]);
-    //     let end = edge::Le::new(u64::from_le_bytes(end), len_end);
-    //
-    //     Ok((start, old_middle, new_middle, end))
-    // }
 }
 
 impl From<u64> for Reader {
     #[inline]
     fn from(key: u64) -> Self {
-        unsafe { Reader::new_unchecked(key, 64) }
+        Reader::from(&key.to_be_bytes())
     }
 }
 
 impl<'k> From<&'k u64> for Reader {
     #[inline]
     fn from(key: &'k u64) -> Self {
-        unsafe { Reader::new_unchecked(*key, 64) }
+        Reader::from(*key)
+    }
+}
+
+impl<'k> From<&'k [u8]> for Reader {
+    #[inline]
+    fn from(key: &'k [u8]) -> Self {
+        Reader::new(key, Byte::new_clamped(key.len()))
+    }
+}
+
+impl<'k> From<&'k str> for Reader {
+    #[inline]
+    fn from(key: &'k str) -> Self {
+        Reader::from(key.as_bytes())
+    }
+}
+
+impl<'k, const N: usize> From<&'k [u8; N]> for Reader {
+    #[inline]
+    fn from(key: &'k [u8; N]) -> Self {
+        Reader::from(key.as_slice())
     }
 }
 
 impl key::Write<Reader> for key::sized::array::Writer<8> {
-    type Len = Byte;
+    type Len = Byte<8>;
 
     #[inline]
     fn new(prefix: Reader, key: edge::Le) -> (Self, Self::Len) {
