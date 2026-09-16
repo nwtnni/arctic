@@ -48,7 +48,9 @@ impl edge::Meta for Le {
 
     #[inline]
     fn len(self) -> Self::Len {
-        unsafe { Bit::new_unchecked((self.into_raw() >> Self::SHIFT_LEN) as u8) }
+        let len = unsafe { Bit::new_unchecked((self.into_raw() >> Self::SHIFT_LEN) as u8) };
+        validate_eq!(len, len.align_down());
+        len
     }
 
     #[inline]

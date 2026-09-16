@@ -67,7 +67,7 @@ macro_rules! impl_key {
                 fn from(value: $ty) -> Self {
                     Self {
                         buffer: value,
-                        len: unsafe { Bit::new_unchecked(<$ty as Native>::BITS) },
+                        len: Bit::new_const::<{ <$ty as Native>::BITS }>(),
                     }
                 }
             }

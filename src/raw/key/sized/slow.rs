@@ -53,7 +53,7 @@ impl crate::key::Split for u64 {
         (
             Reader {
                 buffer: reader.buffer,
-                len: unsafe { Byte::new_unchecked(7) },
+                len: Byte::new_const::<7>() ,
             },
             reader.buffer[7],
         )
@@ -77,7 +77,7 @@ impl Reader {
 }
 
 impl key::Read for Reader {
-    const LEN: Option<Self::Len> = Some(unsafe { Byte::new_unchecked(8) });
+    const LEN: Option<Self::Len> = Some(Byte::new_const::<8>());
 
     type Edge = edge::Le;
     type Len = Byte<8>;

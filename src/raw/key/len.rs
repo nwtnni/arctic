@@ -52,6 +52,12 @@ impl<const MAX: usize> Byte<MAX> {
     }
 
     #[inline]
+    pub(crate) const fn new_const<const LEN: usize>() -> Self {
+        const { assert!(LEN <= MAX) };
+        Self(LEN)
+    }
+
+    #[inline]
     pub(crate) const unsafe fn new_unchecked(len: usize) -> Self {
         validate!(len <= MAX);
         Self(len)
@@ -148,6 +154,12 @@ pub struct Bit<const MAX: u8>(u8);
 
 impl<const MAX: u8> Bit<MAX> {
     const MASK: u8 = 0b11_1000;
+
+    #[inline]
+    pub(crate) const fn new_const<const LEN: u8>() -> Self {
+        const { assert!(LEN <= MAX) };
+        Self(LEN)
+    }
 
     #[inline]
     pub(crate) fn new_masked(len: u8) -> Self {
