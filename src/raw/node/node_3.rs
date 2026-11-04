@@ -283,13 +283,6 @@ impl Convert<u64> for Header {
     }
 }
 
-impl From<KeyIter3> for node::KeyIter {
-    #[inline]
-    fn from(iter: KeyIter3) -> Self {
-        node::KeyIter::new_3(iter)
-    }
-}
-
 #[cfg(feature = "proptest")]
 impl proptest::arbitrary::Arbitrary for Header {
     type Parameters = (u8, u8);

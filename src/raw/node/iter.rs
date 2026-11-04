@@ -232,8 +232,8 @@ enum Type256 {
 
 impl KeyIter {
     // HACK: used for postorder traversal
-    pub(crate) const ROOT: Self = Self {
-        node_3: KeyIter3::new([KeyIndex::DEFAULT; 3], 1),
+    pub(crate) const DUMMY: Self = KeyIter {
+        node_3: KeyIter3::DUMMY,
     };
 
     #[inline]
@@ -242,58 +242,6 @@ impl KeyIter {
         // `node_15` and `node_47` use an endian-dependent shift when encoding
         let byte = unsafe { self.raw[7] };
         node::Type::new_masked(byte >> SHIFT_TYPE_BYTE)
-    }
-
-    #[inline]
-    pub(super) fn new_3(node_3: KeyIter3) -> Self {
-        let iter = Self { node_3 };
-        validate_eq!(iter.r#type(), node::Type::Node3);
-        iter
-    }
-
-    #[inline]
-    pub(super) fn new_15(node_15: Box<KeyIter15>) -> Self {
-        let iter = Self {
-            node_15: NonNull::from(Box::leak(node_15)).map_addr(|addr| {
-                validate_eq!(
-                    addr.get() & MASK_TYPE_ADDR,
-                    0,
-                    "Type does not clobber address",
-                );
-
-                // SAFETY: `Self::TYPE_15 > 0`
-                unsafe { NonZeroUsize::new_unchecked(addr.get() | TYPE_15) }
-            }),
-        };
-
-        validate_eq!(iter.r#type(), node::Type::Node15);
-        iter
-    }
-
-    #[inline]
-    pub(super) fn new_47(node_47: Box<KeyIter47>) -> Self {
-        let iter = Self {
-            node_47: NonNull::from(Box::leak(node_47)).map_addr(|addr| {
-                validate_eq!(
-                    addr.get() & MASK_TYPE_ADDR,
-                    0,
-                    "Type does not clobber address",
-                );
-
-                // SAFETY: `Self::TYPE_47 > 0`
-                unsafe { NonZeroUsize::new_unchecked(addr.get() | TYPE_47) }
-            }),
-        };
-
-        validate_eq!(iter.r#type(), node::Type::Node47);
-        iter
-    }
-
-    #[inline]
-    pub(super) fn new_256(node_256: KeyIter256) -> Self {
-        let iter = Self { node_256 };
-        validate_eq!(iter.r#type(), node::Type::Node256);
-        iter
     }
 
     #[inline]
@@ -378,6 +326,66 @@ impl Drop for KeyIter {
             drop(unsafe { Box::from_raw(self.as_node_47_unchecked().as_ptr()) }),
             (),
         )
+    }
+}
+
+impl From<KeyIter3> for node::KeyIter {
+    #[inline]
+    fn from(iter: KeyIter3) -> Self {
+        let iter = Self { node_3: iter };
+        validate_eq!(iter.r#type(), node::Type::Node3);
+        iter
+    }
+}
+
+impl From<Box<KeyIter15>> for node::KeyIter {
+    #[inline]
+    fn from(iter: Box<KeyIter15>) -> Self {
+        let iter = Self {
+            node_15: NonNull::from(Box::leak(iter)).map_addr(|addr| {
+                validate_eq!(
+                    addr.get() & MASK_TYPE_ADDR,
+                    0,
+                    "Type does not clobber address",
+                );
+
+                // SAFETY: `Self::TYPE_15 > 0`
+                unsafe { NonZeroUsize::new_unchecked(addr.get() | TYPE_15) }
+            }),
+        };
+
+        validate_eq!(iter.r#type(), node::Type::Node15);
+        iter
+    }
+}
+
+impl From<Box<KeyIter47>> for node::KeyIter {
+    #[inline]
+    fn from(iter: Box<KeyIter47>) -> Self {
+        let iter = Self {
+            node_47: NonNull::from(Box::leak(iter)).map_addr(|addr| {
+                validate_eq!(
+                    addr.get() & MASK_TYPE_ADDR,
+                    0,
+                    "Type does not clobber address",
+                );
+
+                // SAFETY: `Self::TYPE_47 > 0`
+                unsafe { NonZeroUsize::new_unchecked(addr.get() | TYPE_47) }
+            }),
+        };
+
+        validate_eq!(iter.r#type(), node::Type::Node47);
+        iter
+    }
+}
+
+impl From<KeyIter256> for node::KeyIter {
+    #[inline]
+    fn from(iter: KeyIter256) -> Self {
+        let iter = Self { node_256: iter };
+        validate_eq!(iter.r#type(), node::Type::Node256);
+        iter
     }
 }
 
@@ -470,15 +478,12 @@ impl_key_iter!(KeyIter15, 15);
 impl_key_iter!(KeyIter47, 63);
 
 impl KeyIter3 {
-    #[inline]
-    pub(super) const fn new(entries: [node::iter::KeyIndex; 3], len: u8) -> Self {
-        validate!(len as usize <= entries.len());
-        Self(KeyIterN {
-            head: 0,
-            tail: len,
-            entries,
-        })
-    }
+    /// HACK: used for postorder traversal
+    pub(super) const DUMMY: Self = Self(KeyIterN {
+        entries: [KeyIndex::DEFAULT; 3],
+        head: 0,
+        tail: 1,
+    });
 
     #[inline]
     pub(super) fn sort(&mut self) {
@@ -598,13 +603,6 @@ impl DoubleEndedIterator for KeyIter256 {
             key: self.tail as u8,
             index: self.tail as u8,
         })
-    }
-}
-
-impl From<KeyIter256> for node::KeyIter {
-    #[inline]
-    fn from(iter: KeyIter256) -> Self {
-        node::KeyIter::new_256(iter)
     }
 }
 

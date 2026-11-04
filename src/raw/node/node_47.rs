@@ -417,13 +417,6 @@ impl Convert<u64> for Meta {
     }
 }
 
-impl From<Box<KeyIter47>> for node::KeyIter {
-    #[inline]
-    fn from(iter: Box<KeyIter47>) -> Self {
-        node::KeyIter::new_47(iter)
-    }
-}
-
 #[cfg(feature = "proptest")]
 impl proptest::arbitrary::Arbitrary for Header {
     type Parameters = (u8, u8);

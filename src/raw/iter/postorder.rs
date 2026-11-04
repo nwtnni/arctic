@@ -27,7 +27,7 @@ where
             order,
             stack: vec![RepeatIter::new(unsafe {
                 node::EntryIter::new(
-                    node::KeyIter::ROOT,
+                    node::KeyIter::DUMMY,
                     core::slice::from_ref(core::mem::transmute::<
                         &'g Atomic128<Edge<M>>,
                         &'g Atomic128<edge::Raw>,

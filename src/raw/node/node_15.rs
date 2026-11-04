@@ -233,13 +233,6 @@ impl Convert<u128> for Header {
     }
 }
 
-impl From<Box<KeyIter15>> for node::KeyIter {
-    #[inline]
-    fn from(iter: Box<KeyIter15>) -> Self {
-        node::KeyIter::new_15(iter)
-    }
-}
-
 #[cfg(feature = "proptest")]
 impl proptest::arbitrary::Arbitrary for Header {
     type Parameters = (u8, u8);
