@@ -83,12 +83,12 @@ impl<const CAPACITY: usize, H: Header> Node<CAPACITY, H> {
     }
 
     #[inline]
-    fn get_key(&self, key: u8) -> Option<u8> {
+    fn get(&self, key: u8) -> Option<u8> {
         self.header.get(key)
     }
 
     #[inline]
-    fn get_or_insert_key(&self, key: u8) -> Option<u8> {
+    fn get_or_insert(&self, key: u8) -> Option<u8> {
         self.header.get_or_insert(key)
     }
 
@@ -351,7 +351,7 @@ impl Ptr {
     pub(crate) unsafe fn get<'g>(self, key: u8) -> Option<&'g Atomic128<edge::Raw>> {
         let (index, edges) = dispatch_all!(self, |node| {
             let node = unsafe { node.as_ref() };
-            let index = node.get_key(key);
+            let index = node.get(key);
             let edges = node.edges();
             (index, edges)
         });
@@ -366,7 +366,7 @@ impl Ptr {
     pub(crate) unsafe fn get_or_insert<'g>(self, key: u8) -> Option<&'g Atomic128<edge::Raw>> {
         let (index, edges) = dispatch_all!(self, |node| {
             let node = unsafe { node.as_ref() };
-            let index = node.get_or_insert_key(key);
+            let index = node.get_or_insert(key);
             let edges = node.edges();
             (index, edges)
         });
