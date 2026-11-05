@@ -42,13 +42,6 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S
             match child {
                 edge::Child::Value(_) => {}
                 edge::Child::Node(node) => {
-                    let histogram = match node.r#type() {
-                        node::Type::Node3 => &mut node_3,
-                        node::Type::Node15 => &mut node_15,
-                        node::Type::Node47 => &mut node_47,
-                        node::Type::Node256 => &mut node_256,
-                    };
-
                     let children = unsafe {
                         node.entries(false, Unbound::<()>::default(), Unbound::<()>::default())
                     }
@@ -58,6 +51,14 @@ pub fn process<K: Key, V: Value, S: Smr<K, V>>(map: &mut concurrent::Map<K, V, S
                             .is_null()
                     })
                     .count();
+
+                    let histogram = match node.r#type() {
+                        node::Type::Node1 => return ControlFlow::<Infallible>::Continue(()),
+                        node::Type::Node3 => &mut node_3,
+                        node::Type::Node15 => &mut node_15,
+                        node::Type::Node47 => &mut node_47,
+                        node::Type::Node256 => &mut node_256,
+                    };
 
                     histogram.record(children as u64);
                 }

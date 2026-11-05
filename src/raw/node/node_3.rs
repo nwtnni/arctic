@@ -1,12 +1,12 @@
 //! [`Node3`] is linear and can contain at most 3 key-edge pairs.
 
+use core::ops::Deref;
+use core::ops::DerefMut;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use crate::raw::Edge;
 use crate::raw::edge;
-use crate::raw::key;
-use crate::raw::key::Len as _;
 use crate::raw::node;
 use crate::raw::node::Node;
 use crate::raw::node::header;
@@ -18,9 +18,26 @@ use crate::sync::Convert;
 const CAPACITY: usize = 3;
 
 /// [`Node`] representation that contains at most 3 key-edge pairs.
-pub(in crate::raw) type Node3 = Node<CAPACITY, Atomic64<Header>>;
+#[derive(Debug, Default)]
+#[repr(C, align(64))]
+pub(in crate::raw) struct Node3(Node<CAPACITY, Atomic64<Header>>);
 
 const_assert_size_align!(Node3, 64, 64);
+
+impl Deref for Node3 {
+    type Target = Node<CAPACITY, Atomic64<Header>>;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Node3 {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 // Layout:
 // - 0..8: keys[0]
@@ -233,40 +250,6 @@ impl Node3 {
 
         let tail = NonNull::from(&node.edges[0]);
         let head = Edge::new_node(meta, node::Ptr::new_node_3(node));
-        (head, tail.cast())
-    }
-
-    pub(crate) fn new_path<R: key::Read<Edge = M>, M: edge::Meta>(
-        meta: M,
-        byte: u8,
-        mut reader: R,
-        value: u64,
-    ) -> (Edge<M>, NonNull<Atomic128<Edge<M>>>) {
-        let mut head = Box::new(Self::default());
-        head.header.set(Header::new(byte as u64, 1));
-
-        let mut tail = NonNull::from(&head.edges[0]);
-
-        loop {
-            let edge = reader.get_edge(<M as edge::Meta>::Len::MAX);
-
-            let Some(byte) = reader.get_byte(edge.len()) else {
-                unsafe { tail.as_mut() }.set(Edge::<M>::new_value(edge, value).erase());
-                break;
-            };
-
-            reader = reader.suffix(R::Len::BYTE + edge.len().into());
-
-            let mut node = Box::new(Self::default());
-            node.header.set(Header::new(byte as u64, 1));
-
-            let next = NonNull::from(&node.edges[0]);
-            unsafe { tail.as_mut() }
-                .set(Edge::<M>::new_node(edge, node::Ptr::new_node_3(node)).erase());
-            tail = next;
-        }
-
-        let head = Edge::<M>::new_node(meta, node::Ptr::new_node_3(head));
         (head, tail.cast())
     }
 }
