@@ -17,7 +17,7 @@ use crate::raw::edge;
 use crate::raw::key;
 use crate::raw::key::Len as _;
 use crate::raw::node;
-use crate::raw::node::Node3;
+use crate::raw::node::Node1;
 use crate::sync::Atomic128;
 use crate::sync::Convert;
 
@@ -123,7 +123,7 @@ impl<M: Meta> Edge<M> {
     /// re-traversing the new path. (The concurrent map never
     /// returns direct pointers.)
     #[inline]
-    pub(crate) fn new_path<R>(mut reader: R, value: u64) -> (Self, Option<NonNull<Atomic128<Self>>>)
+    pub(crate) fn new_path<R>(reader: R, value: u64) -> (Self, Option<NonNull<Atomic128<Self>>>)
     where
         R: key::Read<Edge = M>,
     {
@@ -133,8 +133,6 @@ impl<M: Meta> Edge<M> {
             // Fast path: remaining bytes fit in one edge
             return (Self::new_value(edge, value), None);
         };
-
-        reader = reader.suffix(R::Len::BYTE + edge.len().into());
 
         // Key always fits in one edge
         if R::LEN.is_some_and(|len| len <= <M as edge::Meta>::Len::MAX.into()) {
@@ -147,8 +145,13 @@ impl<M: Meta> Edge<M> {
             crate::cold();
         }
 
-        // Slow path: allocate recursive path of Node3s
-        let (head, tail) = Node3::new_path(edge, byte, reader, value);
+        // Slow path: allocate recursive path of Node1s
+        let (head, tail) = Node1::new_path(
+            edge,
+            byte,
+            reader.suffix(R::Len::BYTE + edge.len().into()),
+            value,
+        );
         (head, Some(tail))
     }
 

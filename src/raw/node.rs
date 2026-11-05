@@ -10,6 +10,7 @@
 //! [`Ptr`] as a more performant alternative relative to an enum or
 //! `&dyn Node` that fits in 8 bytes (and hence within a [`crate::raw::Edge`]).
 
+use core::cell::Cell;
 use core::fmt::Debug;
 use core::num::NonZeroU64;
 use core::num::NonZeroUsize;
@@ -18,6 +19,7 @@ use core::sync::atomic::Ordering;
 
 mod header;
 mod iter;
+mod node_1;
 mod node_15;
 mod node_256;
 mod node_3;
@@ -29,6 +31,7 @@ pub(crate) use iter::KeyIndex;
 pub(crate) use iter::KeyIter;
 pub(crate) use iter::Lower;
 pub(crate) use iter::Upper;
+pub(super) use node_1::Node1;
 pub(super) use node_3::Node3;
 
 use crate::raw::Edge;
@@ -36,6 +39,7 @@ use crate::raw::Smo;
 use crate::raw::edge;
 use crate::raw::iter::Unbound;
 use crate::raw::node::header::Header;
+use crate::raw::node::iter::KeyIter1;
 use crate::raw::node::iter::KeyIter3;
 use crate::raw::node::iter::KeyIter15;
 use crate::raw::node::iter::KeyIter47;
@@ -50,7 +54,7 @@ use crate::sync::Convert;
 
 /// A node is a partial mapping from `u8` to [`edge::Raw`].
 #[derive(Debug)]
-#[repr(C, align(64))]
+#[repr(C)]
 pub(super) struct Node<const CAPACITY: usize, H> {
     pub(super) header: H,
     pub(super) edges: [Atomic128<edge::Raw>; CAPACITY],
@@ -112,7 +116,8 @@ impl<const CAPACITY: usize, H: Header> Node<CAPACITY, H> {
 }
 
 fn replace<const CAPACITY: usize, M: edge::Meta, H: Header>(
-    node: &Node<CAPACITY, H>,
+    // node: &Node<CAPACITY, H>,
+    iter: EntryIter,
     meta: M,
     keys: &mut [u8; CAPACITY],
     edges: &mut [Edge<M>; CAPACITY],
@@ -123,20 +128,10 @@ fn replace<const CAPACITY: usize, M: edge::Meta, H: Header>(
     // Can only call replace on nodes
     validate!(!meta.is_value());
 
-    let mut iter = H::KeyIter::default();
-    node.keys(
-        Unbound::<()>::default(),
-        Unbound::<()>::default(),
-        &mut iter,
-    );
-
+    let total = iter.len();
     let len = iter
-        .map(|iter::KeyIndex { key, index }| {
-            let index = index as usize;
-            let raw = if_validate!(&node.edges()[index], unsafe {
-                node.edges().get_unchecked(index)
-            });
-            let edge = unsafe { Edge::from_raw_ref(raw) }.load(Ordering::Relaxed);
+        .map(|(key, edge)| {
+            let edge = unsafe { Edge::from_raw_ref(edge.as_ref()) }.load(Ordering::Relaxed);
             (key, edge)
         })
         .filter(|(_, edge)| !edge.is_null())
@@ -150,7 +145,7 @@ fn replace<const CAPACITY: usize, M: edge::Meta, H: Header>(
 
     if len == 0 {
         return (Smo::DeleteNode, Edge::NULL);
-    } else if len == 1 {
+    } else if len == 1 && total > 1 {
         let key = keys[0];
         let edge = edges[0];
         if let Some(meta) = meta.try_compress(key, edge.meta()) {
@@ -167,28 +162,32 @@ fn replace<const CAPACITY: usize, M: edge::Meta, H: Header>(
         )
     };
     let edge = Edge::new_node(meta, new);
+
     (Smo::ReplaceNode, edge)
 }
 
 /// Node type discriminant.
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Type {
+    // NOTE: must be 0 due to `KeyIter` layout
     Node3 = 0,
     Node15 = 1,
     Node47 = 2,
     Node256 = 3,
+    Node1 = 4,
 }
 
 impl Type {
     #[inline]
-    pub(crate) const fn new_masked(byte: u8) -> Self {
-        // SAFETY: only four possible values
-        unsafe { core::mem::transmute::<u8, Self>(byte & 0b11) }
+    pub(crate) const unsafe fn new_masked(byte: u8) -> Self {
+        unsafe { core::mem::transmute::<u8, Self>(byte & 0b111) }
     }
 
     #[cfg_attr(not(test), expect(unused))]
     pub(crate) const fn capacity(self) -> usize {
         match self {
+            Self::Node1 => 1,
             Self::Node3 => 3,
             Self::Node15 => 15,
             Self::Node47 => 47,
@@ -209,10 +208,12 @@ impl Type {
 /// exclusive closures as parameters. We sometimes need $node3, $node15, $node47, and
 /// $node256 to borrow the same data mutably.
 macro_rules! dispatch {
-    ($type:expr, $node3:expr, $node15:expr, $node47:expr, $node256:expr $(,)?) => {{
+    ($type:expr, $node1:expr, $node3:expr, $node15:expr, $node47:expr, $node256:expr $(,)?) => {{
+        use crate::raw::node::Type;
+
         if cfg!(feature = "opt-no-dispatch") {
-            use crate::raw::node::Type;
             match $type {
+                Type::Node1 => $node1,
                 Type::Node3 => $node3,
                 Type::Node15 => $node15,
                 Type::Node47 => $node47,
@@ -220,15 +221,18 @@ macro_rules! dispatch {
             }
         } else {
             let r#type = $type as u8;
-            let hi = r#type & 0b10;
-            let lo = r#type & 0b01;
 
-            if hi == 0 {
-                if lo == 0 { $node3 } else { $node15 }
-            } else if lo == 0 {
-                $node47
+            if r#type == 0b100 {
+                $node1
             } else {
-                $node256
+                let b0 = r#type & 0b01;
+                let b1 = r#type & 0b10;
+
+                if b1 == 0 {
+                    if b0 == 0 { $node3 } else { $node15 }
+                } else {
+                    if b0 == 0 { $node47 } else { $node256 }
+                }
             }
         }
     }};
@@ -254,8 +258,10 @@ pub(super) use dispatch;
 pub(crate) struct Ptr(NonNull<u8>);
 
 impl Ptr {
-    const MASK_TYPE: u64 = 0b11;
-    const MASK_PTR: u64 = !Self::MASK_TYPE;
+    const MASK_TYPE: u64 = 0b111;
+    const SHIFT_NODE_1: u8 = 56;
+    const MASK_NODE_1: u64 = ((1 << 8) - 1) << Self::SHIFT_NODE_1;
+    const MASK_PTR: u64 = !(Self::MASK_TYPE | Self::MASK_NODE_1);
 
     unsafe fn new_unchecked(grow: bool, keys: &[u8], edges: &[edge::Raw]) -> Self {
         validate_eq!(keys.len(), edges.len());
@@ -281,7 +287,16 @@ impl Ptr {
         }
     }
 
-    // The only way a larger node can be created is through node replacement.
+    #[inline]
+    pub(super) fn new_node_1(node: Box<Node1>, byte: u8) -> Self {
+        Self(unsafe {
+            Self::new::<_, node_1::Header>(node).0.map_addr(|addr| {
+                validate_eq!(addr.get() & Self::MASK_NODE_1 as usize, 0);
+                addr | ((byte as usize) << Self::SHIFT_NODE_1)
+            })
+        })
+    }
+
     #[inline]
     pub(super) fn new_node_3(node: Box<Node3>) -> Self {
         unsafe { Self::new::<_, Atomic64<node_3::Header>>(node) }
@@ -340,8 +355,8 @@ impl Convert<u64> for Option<Ptr> {
 
 /// Reduce dispatch boilerplate for identical branches.
 macro_rules! dispatch_all {
-    ($ptr:expr, $closure:expr) => {
-        $ptr.dispatch($closure, $closure, $closure, $closure)
+    ($ptr:expr, $node_1:expr, $closure:expr) => {
+        $ptr.dispatch($node_1, $closure, $closure, $closure, $closure)
     };
 }
 
@@ -349,12 +364,21 @@ macro_rules! dispatch_all {
 impl Ptr {
     #[inline]
     pub(crate) unsafe fn get<'g>(self, key: u8) -> Option<&'g Atomic128<edge::Raw>> {
-        let (index, edges) = dispatch_all!(self, |node| {
-            let node = unsafe { node.as_ref() };
-            let index = node.get(key);
-            let edges = node.edges();
-            (index, edges)
-        });
+        let (index, edges) = dispatch_all!(
+            self,
+            |node, byte| {
+                let node = unsafe { node.as_ref() };
+                let index = (key == byte).then_some(0);
+                let edges = node.edges();
+                (index, edges)
+            },
+            |node| {
+                let node = unsafe { node.as_ref() };
+                let index = node.get(key);
+                let edges = node.edges();
+                (index, edges)
+            }
+        );
 
         let index = index? as usize;
         Some(if_validate!(&edges[index], unsafe {
@@ -364,12 +388,21 @@ impl Ptr {
 
     #[inline]
     pub(crate) unsafe fn get_or_insert<'g>(self, key: u8) -> Option<&'g Atomic128<edge::Raw>> {
-        let (index, edges) = dispatch_all!(self, |node| {
-            let node = unsafe { node.as_ref() };
-            let index = node.get_or_insert(key);
-            let edges = node.edges();
-            (index, edges)
-        });
+        let (index, edges) = dispatch_all!(
+            self,
+            |node, byte| {
+                let node = unsafe { node.as_ref() };
+                let index = (key == byte).then_some(0);
+                let edges = node.edges();
+                (index, edges)
+            },
+            |node| {
+                let node = unsafe { node.as_ref() };
+                let index = node.get_or_insert(key);
+                let edges = node.edges();
+                (index, edges)
+            }
+        );
 
         let index = index? as usize;
         Some(if_validate!(&edges[index], unsafe {
@@ -384,6 +417,10 @@ impl Ptr {
         upper: U,
     ) -> EntryIter<'g> {
         let (keys, edges) = self.dispatch(
+            |node, byte| {
+                let node = unsafe { node.as_ref() };
+                (KeyIter1::new(lower, upper, byte).into(), node.edges())
+            },
             |node| {
                 let node = unsafe { node.as_ref() };
                 let mut iter = KeyIter3::default();
@@ -428,6 +465,14 @@ impl Ptr {
         // Deduplicate with `entries`?
         let iter = self
             .dispatch(
+                |node, byte| {
+                    let node = unsafe { node.as_ref() };
+                    let iter = KeyIter1::new(lower, upper, byte);
+                    match iter.done {
+                        false => Ok((byte, NonNull::from(&node.edges[0]))),
+                        true => Err((iter.into(), node.edges())),
+                    }
+                },
                 |node| {
                     let node = unsafe { node.as_ref() };
                     let mut iter = KeyIter3::default();
@@ -436,13 +481,7 @@ impl Ptr {
                         iter.sort();
                     }
                     let edges = node.edges();
-                    match iter.0.tail {
-                        1 => {
-                            let KeyIndex { key, index } = iter.0.entries[0];
-                            Ok((key, NonNull::from(&edges[index as usize])))
-                        }
-                        _ => Err((iter.into(), edges)),
-                    }
+                    Err((iter.into(), edges))
                 },
                 |node| {
                     let node = unsafe { node.as_ref() };
@@ -479,12 +518,16 @@ impl Ptr {
 
     #[expect(unused)]
     pub(crate) fn min<L: Lower>(self, lower: L) -> Option<KeyIndex> {
-        dispatch_all!(self, |node| unsafe { node.as_ref().min(lower) })
+        dispatch_all!(self, |_, _| todo!(), |node| unsafe {
+            node.as_ref().min(lower)
+        })
     }
 
     #[expect(unused)]
     pub(crate) fn max<U: Upper>(self, upper: U) -> Option<KeyIndex> {
-        dispatch_all!(self, |node| unsafe { node.as_ref().max(upper) })
+        dispatch_all!(self, |_, _| todo!(), |node| unsafe {
+            node.as_ref().max(upper)
+        })
     }
 
     /// Deallocate this node.
@@ -493,18 +536,24 @@ impl Ptr {
     ///
     /// Caller must ensure there are no other references to this node.
     pub(crate) unsafe fn deallocate(self) {
-        dispatch_all!(self, |node| drop(unsafe { Box::from_raw(node.as_ptr()) }))
+        dispatch_all!(
+            self,
+            |node, _| { drop(unsafe { Box::from_raw(node.as_ptr()) }) },
+            |node| drop(unsafe { Box::from_raw(node.as_ptr()) })
+        )
     }
 
     #[inline(always)]
-    fn dispatch<N3, N15, N47, N256, T>(
+    fn dispatch<N1, N3, N15, N47, N256, T>(
         self,
+        node_1: N1,
         node_3: N3,
         node_15: N15,
         node_47: N47,
         node_256: N256,
     ) -> T
     where
+        N1: FnOnce(NonNull<Node1>, u8) -> T,
         N3: FnOnce(NonNull<Node3>) -> T,
         N15: FnOnce(NonNull<Node15>) -> T,
         N47: FnOnce(NonNull<Node47>) -> T,
@@ -517,6 +566,10 @@ impl Ptr {
 
         dispatch!(
             self.r#type(),
+            node_1(
+                ptr.cast(),
+                (self.0.addr().get() >> Self::SHIFT_NODE_1) as u8
+            ),
             node_3(ptr.cast()),
             node_15(ptr.cast()),
             node_47(ptr.cast()),
@@ -528,59 +581,82 @@ impl Ptr {
 /// # Edge metadata dependent methods
 impl Ptr {
     pub(crate) unsafe fn len<M: edge::Meta>(self) -> u8 {
-        dispatch_all!(self, |node| unsafe { node.as_ref() }.edges())
-            .iter()
-            .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
-            .filter(|edge| !edge.load(Ordering::Relaxed).is_null())
-            .count() as u8
+        dispatch_all!(
+            self,
+            |node, _| {
+                unsafe { node.as_ref() }
+                    .edges()
+                    .iter()
+                    .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
+                    .filter(|edge| !edge.load(Ordering::Relaxed).is_null())
+                    .count() as u8
+            },
+            |node| {
+                unsafe { node.as_ref() }
+                    .edges()
+                    .iter()
+                    .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
+                    .filter(|edge| !edge.load(Ordering::Relaxed).is_null())
+                    .count() as u8
+            }
+        )
     }
 
     pub(crate) unsafe fn freeze<M: edge::Meta>(self) {
-        dispatch_all!(self, |node| {
-            let node = unsafe { node.as_ref() };
-            let len = node.freeze_header();
-            node.edges()
-                .iter()
-                .take(len)
-                .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
-                .for_each(Edge::freeze)
-        });
+        dispatch_all!(
+            self,
+            |node, _| {
+                let node = unsafe { node.as_ref() };
+                let len = node.freeze_header();
+                node.edges()
+                    .iter()
+                    .take(len)
+                    .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
+                    .for_each(Edge::freeze)
+            },
+            |node| {
+                let node = unsafe { node.as_ref() };
+                let len = node.freeze_header();
+                node.edges()
+                    .iter()
+                    .take(len)
+                    .map(|raw| unsafe { Edge::<M>::from_raw_ref(raw) })
+                    .for_each(Edge::freeze)
+            }
+        );
     }
 
     pub(crate) unsafe fn replace<M: edge::Meta>(self, parent: M) -> (Smo, Edge<M>) {
-        self.dispatch(
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 3],
-                    &mut [Edge::NULL; 3],
-                )
-            },
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 15],
-                    &mut [Edge::NULL; 15],
-                )
-            },
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 47],
-                    &mut [Edge::NULL; 47],
-                )
-            },
-            |node| {
-                replace(
-                    unsafe { node.as_ref() },
-                    parent,
-                    &mut [0u8; 256],
-                    &mut [Edge::NULL; 256],
-                )
-            },
+        let iter = unsafe {
+            self.entries::<Unbound, Unbound>(
+                false,
+                Unbound::<()>::default(),
+                Unbound::<()>::default(),
+            )
+        };
+
+        dispatch!(
+            self.r#type(),
+            replace::<_, _, node_1::Header>(iter, parent, &mut [0u8; 1], &mut [Edge::NULL; 1]),
+            replace::<_, _, Atomic64<node_3::Header>>(
+                iter,
+                parent,
+                &mut [0u8; 3],
+                &mut [Edge::NULL; 3],
+            ),
+            replace::<_, _, Atomic128<node_15::Header>>(
+                iter,
+                parent,
+                &mut [0u8; 15],
+                &mut [Edge::NULL; 15],
+            ),
+            replace::<_, _, node_47::Header>(iter, parent, &mut [0u8; 47], &mut [Edge::NULL; 47],),
+            replace::<_, _, node_256::Header>(
+                iter,
+                parent,
+                &mut [0u8; 256],
+                &mut [Edge::NULL; 256],
+            ),
         )
     }
 
@@ -596,14 +672,33 @@ impl Ptr {
     where
         M: edge::Meta,
     {
-        let mut next = self;
-        let mut done = false;
+        // FIXME: Cell shouldn't be necessary
+        let next = Cell::new(self);
+        let done = Cell::new(false);
 
-        while !done {
-            next.dispatch(
+        while !done.get() {
+            next.get().dispatch(
+                |mut node_1, _| {
+                    let child =
+                        unsafe { Edge::<M>::from_raw_mut(&mut node_1.as_mut().edges_mut()[0]) }
+                            .get()
+                            .child();
+
+                    drop(unsafe { Box::from_raw(node_1.as_ptr()) });
+
+                    match child {
+                        None => unreachable!(),
+                        Some(edge::Child::Value(_)) => {
+                            done.set(true);
+                        }
+                        Some(edge::Child::Node(node)) => {
+                            next.set(node);
+                        }
+                    }
+                },
                 |mut node_3| {
-                    // NOTE: relies on `crate::raw::Cursor::create_path` creating new nodes
-                    // at the first edge, especially during edge expansion.
+                    // NOTE: relies on `crate::raw::Cursor::create_path` placing new nodes
+                    // at the first edge during edge expansion.
                     let child =
                         unsafe { Edge::<M>::from_raw_mut(&mut node_3.as_mut().edges_mut()[0]) }
                             .get()
@@ -614,10 +709,10 @@ impl Ptr {
                     match child {
                         None => unreachable!(),
                         Some(edge::Child::Value(_)) => {
-                            done = true;
+                            done.set(true);
                         }
                         Some(edge::Child::Node(node)) => {
-                            next = node;
+                            next.set(node);
                         }
                     }
                 },

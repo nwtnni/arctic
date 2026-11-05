@@ -1,5 +1,7 @@
 //! [`Node15`] is linear and can contain at most 15 key-edge pairs.
 
+use core::ops::Deref;
+use core::ops::DerefMut;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
@@ -23,9 +25,11 @@ use crate::sync::Convert;
 const CAPACITY: usize = 15;
 
 /// [`Node`] representation that contains at most 15 key-edge pairs.
-pub(super) type Node15 = Node<CAPACITY, Atomic128<Header>>;
+#[derive(Debug, Default)]
+#[repr(C, align(256))]
+pub(super) struct Node15(Node<CAPACITY, Atomic128<Header>>);
 
-const_assert_size_align!(Node15, 256, 64);
+const_assert_size_align!(Node15, 256, 256);
 
 impl Node15 {
     pub(super) unsafe fn new_unchecked(keys: &[u8], edges: &[edge::Raw]) -> Box<Self> {
@@ -40,11 +44,26 @@ impl Node15 {
 
         node.header = Atomic128::new(Header::new(u128::from_le_bytes(buffer), keys.len()));
 
-        for (out, r#in) in node.edges.iter_mut().zip(edges) {
+        for (out, r#in) in node.0.edges.iter_mut().zip(edges) {
             out.set(*r#in);
         }
 
         node
+    }
+}
+
+impl Deref for Node15 {
+    type Target = Node<CAPACITY, Atomic128<Header>>;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Node15 {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

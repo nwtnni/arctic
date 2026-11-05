@@ -169,6 +169,8 @@ proptest::prop_compose! {
 /// allocation alignment, and struct layout.
 #[repr(C)]
 pub(crate) union KeyIter {
+    node_1: KeyIter1,
+
     /// Stored inline.
     ///
     /// We know that:
@@ -225,23 +227,27 @@ const MASK_TYPE_ADDR: usize = 0b11 << SHIFT_TYPE_ADDR;
 /// Enum with a single possible bit representation.
 #[repr(u8)]
 #[derive(Copy, Clone, Default, Debug)]
+enum Type1 {
+    #[default]
+    Type = (node::Type::Node1 as u8) << SHIFT_TYPE_BYTE,
+}
+
+/// Enum with a single possible bit representation.
+#[repr(u8)]
+#[derive(Copy, Clone, Default, Debug)]
 enum Type256 {
     #[default]
     Type = (node::Type::Node256 as u8) << SHIFT_TYPE_BYTE,
 }
 
 impl KeyIter {
-    // HACK: used for postorder traversal
     pub(crate) const DUMMY: Self = KeyIter {
-        node_3: KeyIter3::DUMMY,
+        node_1: KeyIter1::DUMMY,
     };
 
     #[inline]
     fn r#type(&self) -> node::Type {
-        // `node_3` and `node_256` are structs with endian-independent layout
-        // `node_15` and `node_47` use an endian-dependent shift when encoding
-        let byte = unsafe { self.raw[7] };
-        node::Type::new_masked(byte >> SHIFT_TYPE_BYTE)
+        unsafe { node::Type::new_masked(self.raw[7] >> SHIFT_TYPE_BYTE) }
     }
 
     #[inline]
@@ -276,6 +282,7 @@ impl Iterator for KeyIter {
     fn next(&mut self) -> Option<Self::Item> {
         node::dispatch!(
             self.r#type(),
+            unsafe { &mut self.node_1 }.next(),
             unsafe { &mut self.node_3 }.next(),
             unsafe { self.as_node_15_unchecked().as_mut() }.next(),
             unsafe { self.as_node_47_unchecked().as_mut() }.next(),
@@ -287,6 +294,7 @@ impl Iterator for KeyIter {
     fn size_hint(&self) -> (usize, Option<usize>) {
         node::dispatch!(
             self.r#type(),
+            unsafe { &self.node_1 }.size_hint(),
             unsafe { &self.node_3 }.size_hint(),
             unsafe { self.as_node_15_unchecked().as_ref() }.size_hint(),
             unsafe { self.as_node_47_unchecked().as_ref() }.size_hint(),
@@ -300,6 +308,7 @@ impl DoubleEndedIterator for KeyIter {
     fn next_back(&mut self) -> Option<Self::Item> {
         node::dispatch!(
             self.r#type(),
+            unsafe { &mut self.node_1 }.next_back(),
             unsafe { &mut self.node_3 }.next_back(),
             unsafe { self.as_node_15_unchecked().as_mut() }.next_back(),
             unsafe { self.as_node_47_unchecked().as_mut() }.next_back(),
@@ -322,10 +331,20 @@ impl Drop for KeyIter {
         node::dispatch!(
             self.r#type(),
             (),
+            (),
             drop(unsafe { Box::from_raw(self.as_node_15_unchecked().as_ptr()) }),
             drop(unsafe { Box::from_raw(self.as_node_47_unchecked().as_ptr()) }),
             (),
         )
+    }
+}
+
+impl From<KeyIter1> for node::KeyIter {
+    #[inline]
+    fn from(iter: KeyIter1) -> Self {
+        let iter = Self { node_1: iter };
+        validate_eq!(iter.r#type(), node::Type::Node1);
+        iter
     }
 }
 
@@ -478,13 +497,6 @@ impl_key_iter!(KeyIter15, 15);
 impl_key_iter!(KeyIter47, 63);
 
 impl KeyIter3 {
-    /// HACK: used for postorder traversal
-    pub(super) const DUMMY: Self = Self(KeyIterN {
-        entries: [KeyIndex::DEFAULT; 3],
-        head: 0,
-        tail: 1,
-    });
-
     #[inline]
     pub(super) fn sort(&mut self) {
         if self.0.tail <= 1 {
@@ -534,6 +546,90 @@ impl KeyIter15 {
 
         self.0.head = 0;
         self.0.tail = len;
+    }
+}
+
+#[repr(C, align(8))]
+#[derive(Copy, Clone, Default)]
+pub(crate) struct KeyIter1 {
+    key: u8,
+    pub(super) done: bool,
+    _pad: [u8; 5],
+    _type: Type1,
+}
+
+impl KeyIter1 {
+    const DUMMY: Self = Self {
+        key: 0,
+        done: true,
+        _pad: [0u8; 5],
+        _type: Type1::Type,
+    };
+
+    #[inline]
+    pub(super) fn new<L: Lower, U: Upper>(lower: L, upper: U, key: u8) -> Self {
+        Self {
+            key,
+            done: key < lower.get() || key > upper.get(),
+            _pad: [0; 5],
+            _type: Type1::Type,
+        }
+    }
+}
+
+impl Iterator for KeyIter1 {
+    type Item = KeyIndex;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        self.done = true;
+        Some(KeyIndex {
+            key: self.key,
+            index: 0,
+        })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = (!self.done) as usize;
+        (len, Some(len))
+    }
+}
+
+impl ExactSizeIterator for KeyIter1 {
+    #[inline]
+    fn len(&self) -> usize {
+        let (lower, upper) = self.size_hint();
+        validate_eq!(upper, Some(lower));
+        lower
+    }
+}
+
+impl DoubleEndedIterator for KeyIter1 {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        self.done = true;
+        Some(KeyIndex {
+            key: self.key,
+            index: 0,
+        })
+    }
+}
+
+impl Debug for KeyIter1 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyIter1")
+            .field("key", &self.key)
+            .field("done", &self.done)
+            .finish()
     }
 }
 
@@ -633,10 +729,6 @@ pub(crate) struct KeyIndex {
 }
 
 const_assert_size_align!(KeyIndex, 2, 2);
-
-impl KeyIndex {
-    pub(crate) const DEFAULT: Self = Self { key: 0, index: 0 };
-}
 
 impl PartialOrd for KeyIndex {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
