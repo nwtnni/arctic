@@ -84,9 +84,8 @@
 //!
 //! # Limitations
 //!
-//! - 128-bit atomic support required for good performance (currently using [portable-atomic](https://github.com/taiki-e/portable-atomic) crate)
-//! - SIMD acceleration is hand-written and currently restricted to AVX2
-//! - Theoretically supports big-endian targets, but untested
+//! - 128-bit atomic compare and swap support required for lock-freedom (currently using [portable-atomic](https://github.com/taiki-e/portable-atomic) crate)
+//! - Currently tested only on Intel x86-64, but should work on other architectures in theory.
 //!
 //! # Correctness
 //!
