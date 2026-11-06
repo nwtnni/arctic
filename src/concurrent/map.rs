@@ -506,12 +506,12 @@ where
     /// use arctic::key::Str;
     /// use arctic::Order;
     ///
-    /// let map = ConcurrentMap::<BoxedStr<NonNull>, Box<u64>>::default();
+    /// let map = ConcurrentMap::<BoxedStr<NonNull>, u64>::default();
     ///
     /// for (key, value) in [("prefix-one", 3), ("prefix-two", 2), ("three", 1)] {
     ///     map.insert(
     ///         Str::new(key).expect("No null byte"),
-    ///         Box::new(value),
+    ///         value,
     ///     ).expect("Key not present");
     /// }
     ///
@@ -1592,6 +1592,7 @@ mod tests {
 
     use crate::Order;
     use crate::concurrent::Map;
+    use crate::concurrent::value::Arc;
     use crate::raw::key::BoxedSlice;
     use crate::raw::key::BoxedStr;
     use crate::raw::key::NonNull;
@@ -1664,6 +1665,37 @@ mod tests {
         for key in 0..values.len() {
             let value = map.get(&(key as u64)).as_deref().copied().unwrap();
             assert_eq!(key, value as usize);
+        }
+    }
+
+    #[test]
+    fn smoke_value_arc() {
+        let value = Arc::new(8);
+        let map = Map::<u64, Arc<u64>>::default();
+
+        for key in 0..8 {
+            map.upsert(key, Arc::clone(&value));
+        }
+
+        for key in 0..8 {
+            let clone = map.get(&key).unwrap();
+            // `get` does not increment reference count
+            assert_eq!(crate::sync::Arc::strong_count(&*value), 9);
+            assert!(core::ptr::eq(&**clone, &**value));
+        }
+
+        for clone in map.all().values(Order::Ascend) {
+            // `Iterator` impl does increment reference count
+            assert_eq!(crate::sync::Arc::strong_count(&*value), 10);
+            assert!(core::ptr::eq(&**clone, &**value));
+        }
+
+        let all = map.all();
+        let mut iter = all.values(Order::Ascend);
+        while let Some(clone) = iter.lend() {
+            // Lending iterator does not increment reference count
+            assert_eq!(crate::sync::Arc::strong_count(&*value), 9);
+            assert!(core::ptr::eq(&**clone, &**value));
         }
     }
 

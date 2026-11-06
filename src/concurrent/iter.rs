@@ -120,15 +120,14 @@ impl<'g, 'k, K, V, R> Iterator for EntryIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
-    V::Borrowed: Clone,
+    V::Borrowed: ToOwned<Owned = V>,
     R: raw::iter::Range<K::Read<'k>>,
 {
-    type Item = (K, V::Borrowed);
+    type Item = (K, V);
 
-    // FIXME: specialize for `Arc` values
     fn next(&mut self) -> Option<Self::Item> {
         self.lend()
-            .map(|(key, value)| (K::insert_to_key(key), value.clone()))
+            .map(|(key, value)| (K::insert_to_key(key), value.to_owned()))
     }
 }
 
@@ -186,13 +185,12 @@ impl<'g, 'k, K, V, R> Iterator for ValueIter<'g, 'k, K, V, R>
 where
     K: Key,
     V: Value,
-    V::Borrowed: Clone,
+    V::Borrowed: ToOwned<Owned = V>,
     R: raw::iter::Range<K::Read<'k>>,
 {
-    type Item = V::Borrowed;
+    type Item = V;
 
-    // FIXME: specialize for `Arc` values
     fn next(&mut self) -> Option<Self::Item> {
-        self.lend().cloned()
+        self.lend().map(ToOwned::to_owned)
     }
 }

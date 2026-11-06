@@ -1,4 +1,5 @@
 use core::ops::Deref;
+use core::ops::DerefMut;
 use std::rc::Rc;
 
 /// Values that can be safely stored in a [`SequentialMap`][crate::sequential::Map].
@@ -100,6 +101,21 @@ unsafe impl<T: Sized> Value for Rc<T> {
 #[derive(Debug)]
 pub struct Arc<T>(pub(crate) crate::sync::Arc<T>);
 
+impl<T> Arc<T> {
+    /// See [`Arc::new`][crate::sync::Arc::new].
+    #[inline]
+    pub fn new(data: T) -> Self {
+        Self(crate::sync::Arc::new(data))
+    }
+}
+
+impl<T> Clone for Arc<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
 impl<T> From<crate::sync::Arc<T>> for Arc<T> {
     #[inline]
     fn from(arc: crate::sync::Arc<T>) -> Self {
@@ -119,6 +135,12 @@ impl<T> Deref for Arc<T> {
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl<T> DerefMut for Arc<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
