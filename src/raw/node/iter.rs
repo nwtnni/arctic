@@ -159,16 +159,13 @@ proptest::prop_compose! {
     }
 }
 
-/// Iterator over (key byte, edge index). Heavily optimized for space because
-/// (a) scan operations require keeping a stack of `KeyIter`s, and
-/// (b) most of them are `KeyIter3`, which is 8 bytes.
-///
-/// We can trivially get the size down to 9-16 bytes by allocating large variants
-/// and keeping a separate discriminant. It turns out it is possible to get the size
-/// down to 8 bytes, but this requires delicate reasoning about endianness,
-/// allocation alignment, and struct layout.
+/// Iterator over (key byte, edge index). Optimized for space because
+/// tree iteration requires keeping a stack of `KeyIter`s.
 #[repr(C)]
 pub(crate) union KeyIter {
+    /// Stored inline.
+    ///
+    /// [`KeyIter1`] fits in 2 bytes.
     node_1: KeyIter1,
 
     /// Stored inline.
@@ -183,10 +180,9 @@ pub(crate) union KeyIter {
 
     /// Stored in `Box`.
     ///
-    /// [`crate::raw::node::linear::KeyIter15`] is 32-byte aligned, and we assume pointers
-    /// are 56 bytes or less, leaving bits 0..5 and 56..64 available (addresses are
-    /// endian-dependent). Combined with the `node_3` constraint, this leaves us
-    /// with exactly bits 3..5 of the highest byte, endian-independent.
+    /// [`KeyIter15`] is 32-byte aligned, and we assume pointers
+    /// are 56 bytes or less, leaving bits 56..64 available (assuming little-endian).
+    /// Combined with the `node_3` constraint, this leaves us with bits 59..64.
     node_15: NonNull<KeyIter15>,
 
     /// Stored in `Box`.
@@ -196,8 +192,7 @@ pub(crate) union KeyIter {
 
     /// Stored inline.
     ///
-    /// [`crate::raw::node::node_256::KeyIter`] fits in 4 bytes, so we can move it
-    /// relatively freely.
+    /// [`KeyIter256`] fits in 4 bytes.
     node_256: KeyIter256,
 
     raw: [u8; 8],
@@ -205,16 +200,14 @@ pub(crate) union KeyIter {
 
 const_assert_size_align!(KeyIter, 8, 8);
 
+#[cfg(not(target_endian = "little"))]
+compile_error!("arctic::raw::node::iter::KeyIter representation requires little-endian system");
+
 /// Discriminant offset within a single byte.
 const SHIFT_TYPE_BYTE: usize = 3;
 
-/// Discriminant offset within a pointer (requires endian-dependent
-/// shift to reach highest byte address).
-const SHIFT_TYPE_ADDR: usize = if cfg!(target_endian = "little") {
-    56 + SHIFT_TYPE_BYTE
-} else {
-    SHIFT_TYPE_BYTE
-};
+/// Discriminant offset within a pointer (little-endian).
+const SHIFT_TYPE_ADDR: usize = 56 + SHIFT_TYPE_BYTE;
 
 const _: () = assert!(align_of::<KeyIter15>() == 32);
 const TYPE_15: usize = (node::Type::Node15 as usize) << SHIFT_TYPE_ADDR;
@@ -222,7 +215,7 @@ const TYPE_15: usize = (node::Type::Node15 as usize) << SHIFT_TYPE_ADDR;
 const _: () = assert!(align_of::<KeyIter47>() == 32);
 const TYPE_47: usize = (node::Type::Node47 as usize) << SHIFT_TYPE_ADDR;
 
-const MASK_TYPE_ADDR: usize = 0b11 << SHIFT_TYPE_ADDR;
+const MASK_TYPE_ADDR: usize = 0b111 << SHIFT_TYPE_ADDR;
 
 /// Enum with a single possible bit representation.
 #[repr(u8)]

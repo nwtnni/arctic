@@ -627,6 +627,7 @@ impl Ptr {
     }
 
     pub(crate) unsafe fn replace<M: edge::Meta>(self, parent: M) -> (Smo, Edge<M>) {
+        // FIXME: avoid KeyIter allocation
         let iter = unsafe {
             self.entries::<Unbound, Unbound>(
                 false,
