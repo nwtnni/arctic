@@ -49,6 +49,11 @@ impl<T: Terminate> Slice<T> {
     }
 
     #[inline]
+    pub(crate) fn is_terminate(self) -> bool {
+        T::new(self.raw.addr() & Self::MASK_TERMINATE > 0).get()
+    }
+
+    #[inline]
     pub(crate) fn with_terminate(self, terminate: T) -> Self {
         Self {
             raw: self.raw.map_addr(|addr| {
@@ -118,11 +123,6 @@ impl<T: Terminate> edge::Meta for Slice<T> {
     #[inline]
     fn is_frozen(self) -> bool {
         self.raw.addr() & Self::MASK_FROZEN > 0
-    }
-
-    #[inline]
-    fn is_terminate(self) -> bool {
-        T::new(self.raw.addr() & Self::MASK_TERMINATE > 0).get()
     }
 
     #[inline]

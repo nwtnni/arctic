@@ -468,12 +468,7 @@ where
                 },
 
                 // Node must have been removed.
-                child @ (None | Some(edge::Child::Value(_))) => {
-                    // NOTE: usually the `edge::Child::Value` case is unreachable
-                    // due to the prefix condition. In the specific case of unsized,
-                    // non-null keys, however, `old_node` can be concurrently replaced
-                    // with a value, with an implicit terminator byte in `edge::Slice`.
-                    validate!(child.is_none_or(|_| old_edge.meta().is_terminate()));
+                None | Some(edge::Child::Value(_)) => {
                     break Freeze::Success {
                         old_node: None,
                         new_edge: old_edge,

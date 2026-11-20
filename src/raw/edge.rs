@@ -285,12 +285,6 @@ pub(crate) trait Meta:
     /// Whether this edge is frozen.
     fn is_frozen(self) -> bool;
 
-    /// Whether this edge has an implicit terminator byte.
-    #[inline]
-    fn is_terminate(self) -> bool {
-        false
-    }
-
     /// The length of compressed edge bytes.
     fn len(self) -> Self::Len;
 
