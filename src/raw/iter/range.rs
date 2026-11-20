@@ -347,12 +347,12 @@ where
 
     #[doc(hidden)]
     #[inline]
-    fn common_prefix(&self) -> R {
-        R::default()
+    fn common_prefix(&self) -> Option<R> {
+        Some(R::default())
     }
 }
 
-impl<R: key::Read, T: Into<R> + Copy> Range<R> for RangeInclusive<T> {
+impl<R: key::Read, T: Into<R> + Copy + Ord> Range<R> for RangeInclusive<T> {
     type Lower = Include<R>;
     type Upper = Include<R>;
 
@@ -369,10 +369,14 @@ impl<R: key::Read, T: Into<R> + Copy> Range<R> for RangeInclusive<T> {
     }
 
     #[inline]
-    fn common_prefix(&self) -> R {
-        let lower = (*self.start()).into();
-        let upper = (*self.end()).into();
-        lower.common_prefix(upper)
+    fn common_prefix(&self) -> Option<R> {
+        if self.start() <= self.end() {
+            let lower = (*self.start()).into();
+            let upper = (*self.end()).into();
+            Some(lower.common_prefix(upper))
+        } else {
+            None
+        }
     }
 }
 

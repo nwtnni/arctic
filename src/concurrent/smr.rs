@@ -56,7 +56,7 @@ pub trait Smr<K: Key, V: Value> {
         Self: 'g;
 
     /// Construct a [`Guard`] that protects nodes and values associated with `prefix`.
-    fn guard<'g>(&'g self, prefix: K::Read<'_>) -> Self::Guard<'g>
+    fn guard<'g>(&'g self, prefix: Option<K::Read<'_>>) -> Self::Guard<'g>
     where
         V: 'g;
 

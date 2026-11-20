@@ -31,7 +31,8 @@ impl<K: Key, V: Value> Smr<K, V> for NoOp {
         V: 'g,
         Self: 'g;
 
-    fn guard<'g>(&'g self, _: K::Read<'_>) -> Self::Guard<'g>
+    #[inline]
+    fn guard<'g>(&'g self, _: Option<K::Read<'_>>) -> Self::Guard<'g>
     where
         V: 'g,
     {

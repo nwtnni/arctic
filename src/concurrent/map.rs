@@ -226,7 +226,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// ```
     pub fn contains_key(&self, key: &K::Borrowed) -> bool {
         let reader = K::Read::from(key);
-        let mut guard = self.smr.guard(reader);
+        let mut guard = self.smr.guard(Some(reader));
         unsafe { self.get_raw(&mut guard, reader) }.is_some()
     }
 
@@ -258,7 +258,7 @@ impl<K: Key, V: Value, S: Smr<K, V>> Map<K, V, S> {
     /// ```
     pub fn get<'g>(&'g self, key: &K::Borrowed) -> Option<Shared<'g, K, V, S>> {
         let reader = K::Read::from(key);
-        let mut guard = self.smr.guard(reader);
+        let mut guard = self.smr.guard(Some(reader));
         let value = unsafe { self.get_raw(&mut guard, reader)? };
         Some(unsafe { Shared::<'_, K, V, S>::wrap(guard, value) })
     }
@@ -490,7 +490,7 @@ where
     /// assert_eq!(map.all().entries(Order::Ascend).count(), 2);
     /// ```
     pub fn all(&self) -> iter::Shard<'_, 'static, K, V, RangeFull, Guard<'_, K, V, S>> {
-        let guard = self.smr.guard(K::Read::default());
+        let guard = self.smr.guard(Some(K::Read::default()));
         unsafe { Shard::new(guard, self.seq.raw.all()) }
     }
 
@@ -541,7 +541,7 @@ where
         prefix: impl Into<K::Read<'k>>,
     ) -> iter::Shard<'g, 'k, K, V, RangeFull, Guard<'g, K, V, S>> {
         let prefix = prefix.into();
-        let guard = self.smr.guard(prefix);
+        let guard = self.smr.guard(Some(prefix));
         unsafe { Shard::new(guard, self.seq.raw.prefix(prefix)) }
     }
 
@@ -568,9 +568,8 @@ where
     where
         R: crate::raw::iter::Range<K::Read<'k>>,
     {
-        let prefix = range.common_prefix();
-        let guard = self.smr.guard(prefix);
-        unsafe { Shard::new(guard, self.seq.raw.range(range, prefix)) }
+        let guard = self.smr.guard(range.common_prefix());
+        unsafe { Shard::new(guard, self.seq.raw.range(range)) }
     }
 }
 
@@ -740,7 +739,7 @@ where
         F: FnMut(Option<&V::Borrowed>, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let reader = K::insert_as_read(key);
-        let mut guard = self.smr.guard(reader);
+        let mut guard = self.smr.guard(Some(reader));
 
         // NOTE: this is a macro so we get disjoint mutable borrows of `initial`
         macro_rules! upsert {
@@ -855,7 +854,7 @@ where
         F: FnMut(&V::Borrowed, &mut Option<V>) -> ControlFlow<(), V>,
     {
         let reader = K::Read::from(key);
-        let mut guard = self.smr.guard(reader);
+        let mut guard = self.smr.guard(Some(reader));
 
         // NOTE: this is a macro so we get disjoint mutable borrows of `initial`
         macro_rules! update {
@@ -961,7 +960,7 @@ where
         F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let reader = K::Read::from(key);
-        let mut guard = self.smr.guard(reader);
+        let mut guard = self.smr.guard(Some(reader));
         let Ok(remove) = unsafe {
             self.remove_with_raw::<true, path::Full<_>, _>(&mut guard, reader, |value| {
                 remove(V::borrow_from_raw_unchecked(&value))
@@ -1002,7 +1001,7 @@ where
         F: FnMut(&V::Borrowed) -> ControlFlow<(), ()>,
     {
         let reader = K::Read::from(key);
-        let mut guard = self.smr.guard(reader);
+        let mut guard = self.smr.guard(Some(reader));
         let mut remove = |value: u64| remove(unsafe { V::borrow_from_raw_unchecked(&value) });
 
         let remove = match if cfg!(feature = "opt-no-path") {
@@ -1858,6 +1857,7 @@ mod tests {
     where
         I: IntoIterator<Item = K>,
         K: crate::Key + Clone + Ord + core::fmt::Debug,
+        K::Borrowed: Ord,
     {
         let mut keys = iter
             .into_iter()

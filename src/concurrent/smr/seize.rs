@@ -58,7 +58,8 @@ impl<K: Key, V: Value> Smr<K, V> for Seize {
     // At least in arctic, pointers are always installed via a CAS
     // with `AcqRel` ordering, so we should always see the correct
     // contents of the allocation with `Acquire` loads.
-    fn guard<'g>(&'g self, _: K::Read<'_>) -> Self::Guard<'g>
+    #[inline]
+    fn guard<'g>(&'g self, _: Option<K::Read<'_>>) -> Self::Guard<'g>
     where
         V: 'g,
     {

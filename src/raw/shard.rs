@@ -45,7 +45,7 @@ where
     ) -> Shard<'g, 'k, K, RangeFull> {
         let mut cursor = unsafe { Cursor::<_, path::Len<_>>::new(root, prefix) };
         let Some(edge) = cursor.traverse_prefix() else {
-            return unsafe { Shard::new(core::ptr::null_mut(), Edge::NULL, prefix, ..) };
+            return Self::empty(..);
         };
         let len = cursor.len();
         let prefix = prefix.prefix(len);
@@ -55,12 +55,14 @@ where
     pub(crate) unsafe fn new_range(
         root: &'g Atomic128<Edge<K::Edge>>,
         range: R,
-        prefix: K::Read<'k>,
     ) -> Shard<'g, 'k, K, R>
     where
         R: Range<K::Read<'k>>,
     {
-        validate_eq!(prefix, range.common_prefix());
+        let Some(prefix) = range.common_prefix() else {
+            return Self::empty(range);
+        };
+
         let mut cursor = unsafe { Cursor::<_, path::Len<_>>::new(root, prefix) };
         let Some(edge) = cursor.traverse_prefix() else {
             return unsafe { Shard::new(core::ptr::null_mut(), Edge::NULL, prefix, range) };
@@ -68,6 +70,10 @@ where
         let len = cursor.len();
         let prefix = prefix.prefix(len);
         unsafe { Shard::new(cursor.edge() as *const _ as *mut _, edge, prefix, range) }
+    }
+
+    fn empty<T: Range<K::Read<'k>>>(range: T) -> Shard<'g, 'k, K, T> {
+        unsafe { Shard::new(core::ptr::null_mut(), Edge::NULL, K::Read::default(), range) }
     }
 
     #[inline]

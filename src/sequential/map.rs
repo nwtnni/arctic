@@ -403,8 +403,7 @@ where
     where
         R: raw::iter::Range<K::Read<'k>>,
     {
-        let prefix = range.common_prefix();
-        unsafe { Shard::new(self.raw.range(range, prefix)) }
+        unsafe { Shard::new(self.raw.range(range)) }
     }
 
     /// Get a mutable reference to the entire tree.

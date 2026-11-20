@@ -45,15 +45,11 @@ impl<K: Key> Map<K> {
     }
 
     #[inline]
-    pub(crate) unsafe fn range<'k, R>(
-        &self,
-        range: R,
-        prefix: K::Read<'k>,
-    ) -> raw::Shard<'_, 'k, K, R>
+    pub(crate) unsafe fn range<'k, R>(&self, range: R) -> raw::Shard<'_, 'k, K, R>
     where
         R: raw::iter::Range<K::Read<'k>>,
     {
-        unsafe { raw::Shard::new_range(self.root(), range, prefix) }
+        unsafe { raw::Shard::new_range(self.root(), range) }
     }
 
     #[inline]

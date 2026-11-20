@@ -196,7 +196,7 @@ impl<K: Key, V: Value> Smr<K, V> for Hazard<K, V> {
         Self: 'g;
 
     #[inline]
-    fn guard<'g>(&'g self, key: K::Read<'_>) -> Self::Guard<'g>
+    fn guard<'g>(&'g self, key: Option<K::Read<'_>>) -> Self::Guard<'g>
     where
         V: 'g,
     {
@@ -205,9 +205,11 @@ impl<K: Key, V: Value> Smr<K, V> for Hazard<K, V> {
         let hazard = &self.0.hazards[id].0;
         let local = &self.0.locals[id];
 
-        assert!(!hazard.load_packed(Ordering::Relaxed).is_active());
-        hazard.store_packed(K::hazard(key), membarrier::fast_store_ordering(membarrier));
-        membarrier::fast_barrier(membarrier);
+        if let Some(key) = key {
+            assert!(!hazard.load_packed(Ordering::Relaxed).is_active());
+            hazard.store_packed(K::hazard(key), membarrier::fast_store_ordering(membarrier));
+            membarrier::fast_barrier(membarrier);
+        }
 
         Guard {
             hazard,
