@@ -17,7 +17,9 @@ cfg_select! {
         pub mod atomic {
             pub use core::sync::atomic::AtomicU16;
             pub use core::sync::atomic::AtomicU64;
+            pub use core::sync::atomic::compiler_fence;
             pub use core::sync::atomic::fence;
+            pub use core::sync::atomic::Ordering;
             pub use portable_atomic::AtomicU128;
         }
     }

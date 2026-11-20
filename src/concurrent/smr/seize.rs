@@ -51,19 +51,37 @@ impl<K: Key, V: Value> Smr<K, V> for Seize {
         V: 'g,
         Self: 'g;
 
-    // NOTE: seize documentation says to call `seize::Guard::protect`
-    // on every pointer load, which loads with `SeqCst` ordering
-    // under the hood, but it's not clear to me why this is necessary?
-    //
-    // At least in arctic, pointers are always installed via a CAS
-    // with `AcqRel` ordering, so we should always see the correct
-    // contents of the allocation with `Acquire` loads.
     #[inline]
     fn guard<'g>(&'g self, _: Option<K::Read<'_>>) -> Self::Guard<'g>
     where
         V: 'g,
     {
-        self.0.enter()
+        let guard = self.0.enter();
+
+        use crate::sync::atomic;
+
+        // NOTE: seize uses a `SeqCst` store and requires subsequent shared
+        // pointer loads to use `SeqCst` (via seize::Guard::protect)
+        // to prevent store-load reordering. In order to keep the SMR API simple,
+        // we're going to issue a `SeqCst` fence instead and allow subsequent
+        // loads to just be `Acquire`.
+        cfg_select! {
+            // On these platforms, a `SeqCst` store is sufficient to
+            // prevent hardware store-load reordering, so just use
+            // a compiler fence.
+            //
+            // See also: https://github.com/crossbeam-rs/crossbeam/blob/b23b7e8eca2efdad9bdc1ceb1aee1207a852c03b/crossbeam-epoch/src/internal.rs#L413-L448
+            any(target_arch = "x86", target_arch = "x86_64") => {
+                atomic::compiler_fence(atomic::Ordering::SeqCst);
+            },
+
+            // Conservatively issue a full `SeqCst` fence.
+            _ => {
+                atomic::fence(atomic::Ordering::SeqCst);
+            }
+        }
+
+        guard
     }
 }
 
