@@ -47,7 +47,7 @@ where
     }
 }
 
-impl<I, R: ?Sized> Default for BoxedSlice<I, R>
+impl<R: ?Sized> Default for BoxedSlice<key::NonNull, R>
 where
     Box<R>: Default,
 {

@@ -116,6 +116,16 @@ impl<'a> From<&'a CStr> for &'a Slice<Terminated<0>, [u8]> {
     }
 }
 
+impl<'a, R> Default for &'a Slice<key::NonNull, R>
+where
+    R: ?Sized + Raw,
+    &'a R: Default,
+{
+    fn default() -> Self {
+        unsafe { Slice::new_unchecked(<&'a R>::default()) }
+    }
+}
+
 impl<'a, I, R> crate::Key for &'a Slice<I, R>
 where
     I: r#unsized::Invariant,
