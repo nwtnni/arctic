@@ -476,7 +476,7 @@ where
         &mut self,
         reader: K::Read<'k>,
     ) -> Option<u64> {
-        let mut cursor = unsafe { self.raw.cursor::<path::Full<_>>(reader) };
+        let mut cursor = unsafe { self.raw.cursor::<P>(reader) };
         let walk = unsafe { cursor.edge_mut().get() };
 
         let update = unsafe { cursor.traverse_value(walk) }?;
