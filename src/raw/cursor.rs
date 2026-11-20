@@ -58,12 +58,17 @@ pub(crate) struct Value<M: edge::Meta> {
 
 /// Outcome of [`Cursor::freeze`].
 pub(crate) enum Freeze<M: edge::Meta> {
-    /// Freeze suceeded, either due to successfully replacing
-    /// the node ourselves, in which case we need to retire
-    /// `Some(node)`, or due to another thread concurrently
-    /// replacing the node, in which case this will contain `None`.
+    /// A freeze is successful when a node is fully frozen
+    /// and then replaced.
     Success {
+        /// If this is `Some(old_node)`, we replaced the frozen node
+        /// ourselves, and the caller must retire `old_node`.
+        ///
+        /// Otherwise, this is `None`; another thread replaced the node
+        /// and is responsible for retirement.
         old_node: Option<node::Ptr>,
+
+        /// The latest edge after replacement.
         new_edge: Edge<M>,
     },
 
