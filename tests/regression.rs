@@ -51,3 +51,16 @@ fn range_common_prefix_72c2fceda258b00fc2e9d4a805b28e9ad8e8107d() {
             assert_eq!(value, 0);
         })
 }
+
+#[test]
+#[expect(clippy::reversed_empty_ranges)]
+fn range_reversed_bound_31ae57871b7b5789f21d5f9bcb939ae7ccaf945d() {
+    let mut map = crate::sequential::Map::<u64, u64>::new();
+
+    for i in 0..64u64 {
+        assert!(map.upsert(i, i).is_err());
+    }
+
+    assert_eq!(map.range(64..=32).entries(Order::Ascend).count(), 0);
+    assert_eq!(map.range(64..=32).entries(Order::Descend).count(), 0);
+}
