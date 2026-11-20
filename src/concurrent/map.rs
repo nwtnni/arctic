@@ -1132,18 +1132,10 @@ where
     unsafe fn get_raw<'g>(&'g self, _guard: &mut S::Guard<'g>, reader: K::Read<'_>) -> Option<u64> {
         unsafe {
             let mut cursor = self.seq.raw.cursor::<path::Discard<_>>(reader);
-            let walk = cursor.edge().load(Ordering::Relaxed);
+            let walk = cursor.edge().load(Ordering::Acquire);
             cursor
                 .traverse_value(walk)
-                .map(|cursor::Value { value, edge: _ }| {
-                    if V::INDIRECT {
-                        // Synchronizes with release compare_exchanges in
-                        // `upsert_with_raw` and `update_with_raw`.
-                        crate::sync::atomic::fence(Ordering::Acquire);
-                    }
-
-                    value
-                })
+                .map(|cursor::Value { value, edge: _ }| value)
         }
     }
 
@@ -1190,7 +1182,7 @@ where
         F: FnMut(Option<u64>, Option<u64>) -> ControlFlow<(), u64>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-        let mut walk = cursor.edge().load(Ordering::Relaxed);
+        let mut walk = cursor.edge().load(Ordering::Acquire);
 
         loop {
             match unsafe { cursor.traverse_insert(walk) } {
@@ -1198,12 +1190,6 @@ where
                     value: old_value,
                     edge: old_edge,
                 } => {
-                    if V::INDIRECT {
-                        // Synchronizes with release compare_exchanges in
-                        // `upsert_with_raw` and `update_with_raw`.
-                        crate::sync::atomic::fence(Ordering::Acquire);
-                    }
-
                     let new_value = match upsert(old_value, initial) {
                         ControlFlow::Continue(new_value) => new_value,
                         ControlFlow::Break(()) => {
@@ -1219,10 +1205,8 @@ where
                         match cursor.edge().compare_exchange(
                             old_edge,
                             new_edge,
-                            // Technically, if `new_edge` is an inline value, this could be relaxed.
-                            // Since it's likely to be a node, conservatively default to release.
-                            Ordering::Release,
-                            Ordering::Relaxed,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
                         ) {
                             Ok(_) => {
                                 return Ok(UpsertRaw::Success {
@@ -1256,8 +1240,8 @@ where
                     match cursor.edge().compare_exchange(
                         old_edge,
                         new_edge,
-                        Ordering::Release,
-                        Ordering::Relaxed,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
                     ) {
                         Ok(_) => {
                             unsafe { guard.retire_node(cursor.len().bits(), old_node.into_raw()) };
@@ -1330,7 +1314,7 @@ where
         F: FnMut(u64, Option<u64>) -> ControlFlow<(), u64>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-        let mut walk = cursor.edge().load(Ordering::Relaxed);
+        let mut walk = cursor.edge().load(Ordering::Acquire);
 
         loop {
             let cursor::Value {
@@ -1345,12 +1329,6 @@ where
                 }
             };
 
-            if V::INDIRECT {
-                // Synchronizes with release compare_exchanges in
-                // `upsert_with_raw` and `update_with_raw`.
-                crate::sync::atomic::fence(Ordering::Acquire);
-            }
-
             let new_value = match update(old_value, initial) {
                 ControlFlow::Continue(new_value) => new_value,
                 ControlFlow::Break(()) => {
@@ -1361,12 +1339,8 @@ where
             match cursor.edge().compare_exchange(
                 old_edge,
                 Edge::new_value(old_edge.meta(), new_value),
-                if V::INDIRECT {
-                    Ordering::Release
-                } else {
-                    Ordering::Relaxed
-                },
-                Ordering::Relaxed,
+                Ordering::AcqRel,
+                Ordering::Acquire,
             ) {
                 Ok(_) => {
                     return Ok(UpdateRaw::Success {
@@ -1422,7 +1396,7 @@ where
         F: FnMut(u64) -> ControlFlow<(), ()>,
     {
         let mut cursor = unsafe { self.seq.raw.cursor::<P>(reader) };
-        let mut walk = cursor.edge().load(Ordering::Relaxed);
+        let mut walk = cursor.edge().load(Ordering::Acquire);
 
         let (value, edge) = loop {
             let cursor::Value { value, edge } = match unsafe { cursor.traverse_value(walk) } {
@@ -1434,12 +1408,6 @@ where
                 }
             };
 
-            if V::INDIRECT {
-                // Synchronizes with release compare_exchanges in
-                // `upsert_with_raw` and `update_with_raw`.
-                crate::sync::atomic::fence(Ordering::Acquire);
-            }
-
             match remove(value) {
                 ControlFlow::Continue(()) => (),
                 ControlFlow::Break(()) => {
@@ -1450,9 +1418,9 @@ where
             match cursor.edge().compare_exchange(
                 edge,
                 Edge::NULL,
-                // Relaxed because publishing `Edge::NULL`
-                Ordering::Relaxed,
-                Ordering::Relaxed,
+                // No `Release` because we're publishing `Edge::NULL`
+                Ordering::Acquire,
+                Ordering::Acquire,
             ) {
                 Ok(_) => break (value, edge),
                 Err(conflict) => walk = conflict,
@@ -1473,7 +1441,7 @@ where
                 cursor.trim(K::Len::BYTE + trim);
                 pop += 1;
 
-                let mut old_edge = cursor.edge().load(Ordering::Relaxed);
+                let mut old_edge = cursor.edge().load(Ordering::Acquire);
 
                 'freeze: loop {
                     let addr = cursor.edge();
@@ -1540,7 +1508,7 @@ where
                 old_len,
                 old_node,
                 // Need to load here since we just popped
-                cursor.edge().load(Ordering::Relaxed),
+                cursor.edge().load(Ordering::Acquire),
             )
         }? {
             cursor::Freeze::Traverse { edge }

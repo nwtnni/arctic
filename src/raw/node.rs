@@ -143,6 +143,22 @@ fn replace<const CAPACITY: usize, M: edge::Meta, H: Header>(
         })
         .count();
 
+    // Note: even though we don't directly access the children,
+    // an acquire fence is required to transitively propagate the
+    // happens-before relationship:
+    //
+    // Updater                       Replacer                       Reader
+    // store(*value, 7)              load(edge, Relaxed)        ..> load(node3, Acquire)
+    //      |                            |                      .       |
+    //      | sequenced-before           | sequenced-before     .       | sequenced-before
+    //      |                            v                      .       |
+    //      |                    ..> fence(Acquire)             .       |
+    //      |                    .       | sequenced-before     .       |
+    //      |                    . synchronizes-with            . synchronizes-with
+    //      v                    .       v                      .       v
+    // cas(edge, value, AcqRel) ..   cas(node1, node3, AcqRel) ..   load(edge, Acquire)
+    crate::sync::atomic::fence(Ordering::Acquire);
+
     if len == 0 {
         return (Smo::DeleteNode, Edge::NULL);
     } else if len == 1 && total > 1 {

@@ -35,7 +35,7 @@ where
     pub(crate) unsafe fn new_all(
         root: &'g Atomic128<Edge<K::Edge>>,
     ) -> Shard<'g, 'k, K, RangeFull> {
-        let edge = root.load(Ordering::Relaxed);
+        let edge = root.load(Ordering::Acquire);
         unsafe { Shard::new(root as *const _ as *mut _, edge, K::Read::default(), ..) }
     }
 

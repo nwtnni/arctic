@@ -54,7 +54,7 @@ where
                 };
 
                 let (meta, child) = {
-                    let edge = unsafe { edge.as_ref() }.load(Ordering::Relaxed);
+                    let edge = unsafe { edge.as_ref() }.load(Ordering::Acquire);
                     let Some(child) = edge.child() else {
                         continue 'horizontal;
                     };
@@ -65,10 +65,6 @@ where
                 match child {
                     // Visit children before node
                     edge::Child::Node(node) if first => {
-                        // Synchronizes with release compare_exchanges in
-                        // `concurrent::Map::upsert_with_raw` and `raw::Cursor::freeze`.
-                        crate::sync::atomic::fence(Ordering::Acquire);
-
                         let iter = unsafe {
                             node.entries::<_, _>(
                                 self.order.is_some(),

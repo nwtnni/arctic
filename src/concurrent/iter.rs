@@ -1,6 +1,5 @@
 use core::marker::PhantomData;
 use core::ops::ControlFlow;
-use core::sync::atomic::Ordering;
 
 use crate::Key;
 use crate::concurrent::Value;
@@ -82,13 +81,6 @@ where
     pub fn lend(&mut self) -> Option<(K::Insert<'_>, &V::Borrowed)> {
         self.inner.lend().map(|(key, value, _)| {
             self.value = value;
-
-            if V::INDIRECT {
-                // Synchronizes with release compare_exchanges in
-                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
-                crate::sync::atomic::fence(Ordering::Acquire);
-            }
-
             (key, unsafe { V::borrow_from_raw_unchecked(&self.value) })
         })
     }
@@ -101,13 +93,6 @@ where
     {
         self.inner.try_fold(init, |acc, (key, value, _)| {
             self.value = value;
-
-            if V::INDIRECT {
-                // Synchronizes with release compare_exchanges in
-                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
-                crate::sync::atomic::fence(Ordering::Acquire);
-            }
-
             apply(
                 acc,
                 (key, unsafe { V::borrow_from_raw_unchecked(&self.value) }),
@@ -149,13 +134,6 @@ where
     pub fn lend(&mut self) -> Option<&V::Borrowed> {
         self.inner.lend().map(|(value, _)| {
             self.value = value;
-
-            if V::INDIRECT {
-                // Synchronizes with release compare_exchanges in
-                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
-                crate::sync::atomic::fence(Ordering::Acquire);
-            }
-
             unsafe { V::borrow_from_raw_unchecked(&self.value) }
         })
     }
@@ -169,13 +147,6 @@ where
     ) -> ControlFlow<B, C> {
         self.inner.try_fold(init, |acc, (value, _)| {
             self.value = value;
-
-            if V::INDIRECT {
-                // Synchronizes with release compare_exchanges in
-                // `concurrent::Map::upsert_with_raw` and `concurrent::Map::update_with_raw`.
-                crate::sync::atomic::fence(Ordering::Acquire);
-            }
-
             apply(acc, unsafe { V::borrow_from_raw_unchecked(&self.value) })
         })
     }

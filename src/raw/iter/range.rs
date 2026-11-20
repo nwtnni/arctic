@@ -214,7 +214,7 @@ where
                 'flatten: loop {
                     let (meta, child) = {
                         let edge = unsafe { edge.cast::<Atomic128<Edge<K::Edge>>>().as_ref() }
-                            .load(Ordering::Relaxed);
+                            .load(Ordering::Acquire);
                         let Some(child) = edge.child() else {
                             continue 'horizontal;
                         };
@@ -266,10 +266,6 @@ where
                             continue 'horizontal;
                         }
                         edge::Child::Node(node) => {
-                            // Synchronizes with release compare_exchanges in
-                            // `concurrent::Map::upsert_with_raw` and `raw::Cursor::freeze`.
-                            crate::sync::atomic::fence(Ordering::Acquire);
-
                             // Avoid pushing and popping node iterators with only one child
                             match unsafe {
                                 node.entry_or_entries(self.order.is_some(), lower, upper)

@@ -22,9 +22,6 @@ pub use crate::sequential::value::Arc;
 /// It's fine to create a concurrent map with non-Sync
 /// values; the map instance just won't implement Sync.
 pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
-    /// Whether this is an indirect value (otherwise it is inline).
-    const INDIRECT: bool;
-
     /// We need this extra layer of indirection relative to [`SequentialMap`][crate::sequential::Map]
     /// because edges can be concurrently modified.
     ///
@@ -57,8 +54,6 @@ macro_rules! impl_integer {
     ($($ty:ty),*) => {
         $(
             impl Value for $ty {
-                const INDIRECT: bool = false;
-
                 type Borrowed = Self;
 
                 type Guard<G>
@@ -81,8 +76,6 @@ impl_integer!(u64, i64);
 // `&T` itself can be freely copied, even if
 // `T` is not `Copy`.
 impl<'v, T: 'v + Sized> Value for &'v T {
-    const INDIRECT: bool = false;
-
     type Borrowed = Self;
 
     type Guard<G>
@@ -97,8 +90,6 @@ impl<'v, T: 'v + Sized> Value for &'v T {
 }
 
 impl<T: Sized> Value for Box<T> {
-    const INDIRECT: bool = true;
-
     type Borrowed = T;
 
     type Guard<G>
@@ -114,8 +105,6 @@ impl<T: Sized> Value for Box<T> {
 }
 
 impl<T: Sized> Value for Arc<T> {
-    const INDIRECT: bool = true;
-
     type Borrowed = ArcRef<T>;
 
     type Guard<G>

@@ -114,7 +114,7 @@ where
     /// Traverse to the root of the subtree prefixed by the key, if it exists.
     pub(crate) fn traverse_prefix(&mut self) -> Option<Edge<R::Edge>> {
         loop {
-            let edge = self.edge().load(Ordering::Relaxed);
+            let edge = self.edge().load(Ordering::Acquire);
             let child = edge.child()?;
             let meta = edge.meta();
 
@@ -125,10 +125,6 @@ where
                 && let edge::Child::Node(node) = child
                 && let Some(byte) = self.reader.get_byte(len_edge)
             {
-                // Synchronizes with release compare_exchanges in
-                // `concurrent::Map::upsert_with_raw` and `freeze`.
-                crate::sync::atomic::fence(Ordering::Acquire);
-
                 let next = unsafe { node.get(byte) }?;
                 self.push(len_edge, node, next);
                 continue;
@@ -162,14 +158,9 @@ where
                 edge::Child::Node(node) => {
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
-
-                    // Synchronizes with release compare_exchanges in
-                    // `concurrent::Map::upsert_with_raw` and `freeze`.
-                    crate::sync::atomic::fence(Ordering::Acquire);
-
                     let next = unsafe { node.get(byte) }?;
                     self.push(len, node, next);
-                    edge = self.edge().load(Ordering::Relaxed);
+                    edge = self.edge().load(Ordering::Acquire);
                     continue;
                 }
                 edge::Child::Value(value) => {
@@ -204,16 +195,12 @@ where
                         return Ok(edge);
                     };
 
-                    // Synchronizes with release compare_exchanges in
-                    // `concurrent::Map::upsert_with_raw` and `freeze`.
-                    crate::sync::atomic::fence(Ordering::Acquire);
-
                     let Some(next) = (unsafe { node.get(byte) }) else {
                         return Err(self.reader.len());
                     };
 
                     self.push(len, node, next);
-                    edge = self.edge().load(Ordering::Relaxed);
+                    edge = self.edge().load(Ordering::Acquire);
                     continue;
                 }
             }
@@ -244,17 +231,13 @@ where
                     // SAFETY: prefix precondition implies search key cannot equal node prefix
                     let byte = unsafe { self.reader.get_byte_unchecked(len) };
 
-                    // Synchronizes with release compare_exchanges in
-                    // `concurrent::Map::upsert_with_raw` and `freeze`.
-                    crate::sync::atomic::fence(Ordering::Acquire);
-
                     let Some(next) = (unsafe { node.get_or_insert(byte) }) else {
                         // Case: node replacement
                         return Insert::Replace { node, edge };
                     };
 
                     self.push(len, node, next);
-                    edge = self.edge().load(Ordering::Relaxed);
+                    edge = self.edge().load(Ordering::Acquire);
                 }
                 edge::Child::Value(value) => {
                     // Prefix precondition implies search key must match
@@ -377,7 +360,7 @@ where
             // ```
             while old_edge.meta().is_frozen() {
                 (old_len, old_node) = self.pop()?.expect("Root edge cannot be frozen");
-                old_edge = self.edge().load(Ordering::Relaxed);
+                old_edge = self.edge().load(Ordering::Acquire);
                 pop += 1;
             }
 
@@ -493,10 +476,6 @@ where
                 }
             };
 
-            // Synchronizes with release compare_exchanges in
-            // `concurrent::Map::upsert_with_raw` and `freeze`.
-            crate::sync::atomic::fence(Ordering::Acquire);
-
             let (smo, new_edge) = unsafe {
                 old_node.freeze::<R::Edge>();
                 old_node.replace(old_edge.meta())
@@ -505,8 +484,8 @@ where
             match self.edge().compare_exchange(
                 old_edge,
                 new_edge,
-                Ordering::Release,
-                Ordering::Relaxed,
+                Ordering::AcqRel,
+                Ordering::Acquire,
             ) {
                 Ok(_) => {
                     break Freeze::Success {
