@@ -103,6 +103,29 @@ pub struct Map<K: Key, V: Value, S = smr::Default> {
     seq: sequential::Map<K, V>,
 }
 
+unsafe impl<K, V, S> Sync for Map<K, V, S>
+where
+    // No bounds because keys are deconstructed into and
+    // reconstructed from edges.
+    K: Key,
+    // Need an additional `Send` bound because [`Map::remove`]
+    // can be used to send a value to another thread, even if
+    // the map itself remains on the original thread.
+    V: Value + Sync + Send,
+    S: Smr<K, V> + Sync,
+{
+}
+
+unsafe impl<K, V, S> Send for Map<K, V, S>
+where
+    // No bounds because keys are deconstructed into and
+    // reconstructed from edges.
+    K: Key,
+    V: Value + Send,
+    S: Smr<K, V> + Send,
+{
+}
+
 impl<K: Key, V: Value, S: Default> Default for Map<K, V, S> {
     fn default() -> Self {
         Self::new()

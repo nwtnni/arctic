@@ -17,10 +17,6 @@ pub use crate::sequential::value::Arc;
 /// value (e.g., [`u64`]) is stored directly in an edge and can be freely
 /// copied. An indirect value (e.g., [`Box<T>`]) is a pointer to a separate
 /// allocation; the pointer is stored in an edge.
-///
-/// Note: we don't need [`Send`] or [`Sync`] bounds here.
-/// It's fine to create a concurrent map with non-Sync
-/// values; the map instance just won't implement Sync.
 pub trait Value: sequential::Value + Borrow<Self::Borrowed> {
     /// We need this extra layer of indirection relative to [`SequentialMap`][crate::sequential::Map]
     /// because edges can be concurrently modified.
